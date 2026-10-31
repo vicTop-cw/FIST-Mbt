@@ -1,0 +1,10 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/executor",
+}
+
+supported_targets = "js+native"
+
+options(
+  link: { "native": { "cc-link-flags": "-lsqlite3" } },
+)

@@ -427,34 +427,61 @@ pub fn FistEngine::supervisor_task_upsert(
                 if item.priority != "" {
                   c = c.with_priority(item.priority, now)
                 }
+                // 依赖边必须过与 dag_depend **同一道**环闸（depend_edge_ok 是唯一真源）。
+                // 此前这里直接 with_depends_on 落库，是评委实测「DAG 接受成环依赖」的
+                // 那条形通道：dag_depend 拒得住的环，本入口照样写得进去。
+                // 任一条被拒 ⇒ 本条整笔不写（不留半套改动，与事务性迁移同口径）。
+                let mut dep_reject : String = ""
                 for d in item.depends_on {
-                  if d != "" {
-                    c = c.with_depends_on(d, now)
+                  if d != "" && dep_reject == "" {
+                    match self.depend_edge_ok(item.task_id, d) {
+                      Err(e) => dep_reject = e
+                      Ok(_) => ()
+                    }
                   }
                 }
-                match self.store.update_task(c) {
-                  Ok(_) => {
-                    ok_count = ok_count + 1
-                    ignore(
-                      results.push(
-                        Json::object({
-                          "ok": Json::boolean(true),
-                          "task_id": Json::string(item.task_id),
-                          "action": Json::string("updated"),
-                        }),
-                      ),
-                    )
+                if dep_reject != "" {
+                  ignore(
+                    results.push(
+                      Json::object({
+                        "ok": Json::boolean(false),
+                        "task_id": Json::string(item.task_id),
+                        "error": Json::string(
+                          "依赖边被拒，本条未写入: \{dep_reject}",
+                        ),
+                      }),
+                    ),
+                  )
+                } else {
+                  for d in item.depends_on {
+                    if d != "" {
+                      c = c.with_depends_on(d, now)
+                    }
                   }
-                  Err(e) =>
-                    ignore(
-                      results.push(
-                        Json::object({
-                          "ok": Json::boolean(false),
-                          "task_id": Json::string(item.task_id),
-                          "error": Json::string("更新落库失败: \{e}"),
-                        }),
-                      ),
-                    )
+                  match self.store.update_task(c) {
+                    Ok(_) => {
+                      ok_count = ok_count + 1
+                      ignore(
+                        results.push(
+                          Json::object({
+                            "ok": Json::boolean(true),
+                            "task_id": Json::string(item.task_id),
+                            "action": Json::string("updated"),
+                          }),
+                        ),
+                      )
+                    }
+                    Err(e) =>
+                      ignore(
+                        results.push(
+                          Json::object({
+                            "ok": Json::boolean(false),
+                            "task_id": Json::string(item.task_id),
+                            "error": Json::string("更新落库失败: \{e}"),
+                          }),
+                        ),
+                      )
+                  }
                 }
               }
             }
@@ -471,29 +498,53 @@ pub fn FistEngine::supervisor_task_upsert(
             ) {
             Ok(id) => {
               ok_count = ok_count + 1
-              // 追加任务可带依赖
+              // 追加任务可带依赖——同样过 depend_edge_ok 这道唯一环闸：
+              // 新任务 id 是刚分配的，成环不可能，但**悬空依赖**（指向不存在的 id）
+              // 同样是坏图，一并拒掉并如实回执（此前这里静默写进去，dag_check 事后才红）。
               if item.depends_on.length() > 0 {
                 match self.get_task(id) {
                   Some(t) => {
                     let mut c = t
+                    let mut dep_reject : String = ""
                     for d in item.depends_on {
-                      if d != "" {
-                        c = c.with_depends_on(d, now)
+                      if d != "" && dep_reject == "" {
+                        match self.depend_edge_ok(id, d) {
+                          Err(e) => dep_reject = e
+                          Ok(_) => ()
+                        }
                       }
                     }
-                    match self.store.update_task(c) {
-                      Ok(_) => ()
-                      Err(e) =>
-                        ignore(
-                          results.push(
-                            Json::object({
-                              "ok": Json::boolean(false),
-                              "task_id": Json::string(id),
-                              "action": Json::string("dep_update_failed"),
-                              "error": Json::string(e),
-                            }),
-                          ),
-                        )
+                    if dep_reject != "" {
+                      ignore(
+                        results.push(
+                          Json::object({
+                            "ok": Json::boolean(false),
+                            "task_id": Json::string(id),
+                            "action": Json::string("dep_rejected"),
+                            "error": Json::string(dep_reject),
+                          }),
+                        ),
+                      )
+                    } else {
+                      for d in item.depends_on {
+                        if d != "" {
+                          c = c.with_depends_on(d, now)
+                        }
+                      }
+                      match self.store.update_task(c) {
+                        Ok(_) => ()
+                        Err(e) =>
+                          ignore(
+                            results.push(
+                              Json::object({
+                                "ok": Json::boolean(false),
+                                "task_id": Json::string(id),
+                                "action": Json::string("dep_update_failed"),
+                                "error": Json::string(e),
+                              }),
+                            ),
+                          )
+                      }
                     }
                   }
                   None => ()

@@ -94,26 +94,26 @@ def main():
     pdf.add_page()
     pdf.hd("FIST-Mbt 项目申报书", 15, True)
     pdf.hd("FIST 指挥官任务分配体系的纯 MoonBit 原生重写与 MCP 化", 9)
-    pdf.hd("v0.2.4 · 已发布 mooncakes.io/fist-mbt · 67 MCP 工具 · 184 测试全绿 · JS+Native 双后端", 8)
+    pdf.hd("v0.3.10 · 已发布 mooncakes.io/fist-mbt + GitHub Release · 182 MCP 工具 · 1999 测试全绿 · JS 为权威门槛", 8)
 
     pdf.sec("一、项目简介")
     pdf.p("把多智能体任务编排框架 FIST（原 Python 版）用纯 MoonBit 原生重写，封装为 MCP Server。"
-          "任何 MCP 客户端（Claude Desktop / AtomCode / Cursor / 自研 JSON-RPC 客户端）均可经标准协议调用 67 个工具，"
+          "任何 MCP 客户端（Claude Desktop / AtomCode / Cursor / 自研 JSON-RPC 客户端）均可经标准协议调用 182 个工具，"
           "完成任务的发布 / 认领 / 拆分 / 执行 / 验收 / 归档全生命周期。")
 
     pdf.sec("二、方向与通用性")
     pdf.p("方向：MCP Server / 多智能体任务编排 / AI 基础设施。三层解耦（协议层 MCP → 引擎层 状态机+DAG → 执行层 可替换 Executor），"
-          "不绑定任何模型/领域；多租户命名空间隔离到独立 SQLite，可多项目共享一个服务实例。")
+          "不绑定任何模型/领域；多租户命名空间**物理**隔离到独立 SQLite（交互与无人值守路径同过 engine_for_ns 一道路由门，非法 ns 直接拒、不静默回落主库）。")
 
     pdf.sec("三、核心能力")
     pdf.table(
         [("模块", "能力", "工具"),
          ("生命周期", "九态状态机 · 父任务上卷 · K 值递归衰减 · 非法迁移拦截", "12"),
-         ("DAG 依赖", "关键路径 · 并行度 · 拓扑排序 · 依赖检查 · ASCII 可视化", "6"),
+         ("DAG 依赖", "关键路径 · 并行度 · 拓扑排序 · 依赖检查 · ASCII 可视化 · 环闸唯一真源 depend_edge_ok（三条写边入口全过）", "6"),
          ("智能调度", "L1-L4 自适应分级 · 成本档路由 · 执行器抽象", "3+"),
-         ("Omega 验证", "spec JSON 一票否决 · 自动修复 3 轮循环", "2"),
+         ("Omega 验证", "spec 一票否决 · 验收门 omega_archive_gate 覆盖 execute/verify/archive/force/自动续轮 · 自动修复真三轮（逐轮在上轮产物上收敛，未知根因不重盖章）", "2"),
          ("运维治理", "冲突检测 · 心跳 · 超时回滚 · 归档清理 · 审计权限", "5"),
-         ("多租户", "命名空间隔离 SQLite · 惰性开关", "3"),
+         ("多租户", "命名空间物理隔离 SQLite（含自驱/看护/report_bug 等无人值守写路径）· 惰性开关 · scratch 临时区", "3"),
          ("自进化/自驱", "memory_consolidate · evolve_distill · 审视-拆解-发布 自收敛", "8")],
         [38, 112, 14])
 
@@ -123,8 +123,19 @@ def main():
           "自愈运维：heartbeat 心跳 + heal 超时回滚 + dag_ready 拓扑派发，避免任务卡死。")
 
     pdf.sec("五、质量与可复现")
-    pdf.p("165 项测试覆盖全生命周期/DAG/审计/并发/Omega；moon check 0 错误；JS 与 Native 双后端测试通过，"
-          "CI 三轨道绿色徽章。无硬编码路径，任意机器可复现。")
+    pdf.p("1999 项测试（`Total tests: 1999, passed: 1999, failed: 0`，判绿看汇总行不看退出码）覆盖全生命周期/DAG（含成环拒绝的盘上核对）/"
+          "审计/并发/Omega（含验收门五条路径与自动修复三轮）。针对上轮拒收六项的**回归锁已入库**："
+          "`src/engine/engine_acc_reject_wbtest.mbt`(7 格) + `src/omega/omega_acc_fix_test.mbt`(4) + "
+          "`src/evidence/evidence_acc_fix_test.mbt`(2) + **独立包** `tests/external_executor/`(3)；"
+          "克隆后一条命令复跑：`python scripts/moon_test_env.py --target js`。"
+          "moon check 0 错误（48 条 warning 全部在 `docs/warning-ledger.md` 点名，覆盖率 100%）；~90 把 `check_*.py` 常驻守卫。"
+          "另有一支**六格活体探针**（真起 server、真发工具调用、真读 sqlite，另带一格合成违例自证「尺子会红」）"
+          "`scripts/blackbox/e2e_acceptance_recheck.py`，2026-10-31 本机读数 `A1 PASS / A2 PASS / A3 PASS / A4 SKIP / A5 PASS / A6 PASS / ST1 PASS`。"
+          "**如实声明：该探针脚本本轮尚未进 git**——本仓纪律要求「脚本」与「它的电池登记面」必须同一笔提交，"
+          "而登记面此刻被另一条并发车道的未提交改动占用（成因与执行法见 `reports/2026-10-31-hackathon-rejection-closure-report.md` §四.7）。"
+          "如实边界：native 轨未知子命令退出码仍为 0（js 轨为 2，账本 BUG-506 OPEN）；执行器注册表存名字与能力标签、"
+          "不持有 trait 实例，远程沙箱接入需本地包装可执行文件（BUG-505 未锁的缺口）；"
+          "测试总数现状面（README/AGENTS 等 10 份）仍写上一轮的 1983，同步动作与上述同一笔结转（§四.2）。")
 
     pdf.sec("六、性质 / 参考 / 仓库")
     pdf.p("移植项目（原 Python FIST → 纯 MoonBit，未搬运 Python 代码，Apache-2.0）。")

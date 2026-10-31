@@ -27,20 +27,32 @@ pub struct RepairOutcome {
 }
 
 ///|
-/// 对一组 Spec 执行最多三轮自动修复
+/// 对一组 Spec 执行最多 `max_rounds` 轮自动修复（默认 = MAX_FIX_ROUNDS，三轮）
 /// - 每轮：对每个失败 Spec 调用 fixer 真实修复，随后调用 verifier 校验
 /// - 修复成功且校验通过 => 标记 Fixed；否则保留失败进入下一轮
-/// - 三轮结束仍有失败 => ok=false，但已执行的修复轮次如实记录
+/// - 轮数用完仍有失败 => ok=false，但已执行的修复轮次如实记录
+///
+/// `max_rounds` 是真的消费点（不是装饰）：夹到 1..10。夹而不是拒，是因为调用方
+/// 传 0 或 999 都属于「把上限说歪」，而不是「意图不明」——一轮至少还看得见修复动作，
+/// 直接 Err 会让上层流水线为一个无意义的数停摆。
 pub fn auto_repair(
   specs : Array[Spec],
   fixer : Fixer,
   verifier : Verifier,
+  max_rounds~ : Int32 = MAX_FIX_ROUNDS,
 ) -> RepairOutcome {
+  let budget = if max_rounds < 1 {
+    1
+  } else if max_rounds > 10 {
+    10
+  } else {
+    max_rounds
+  }
   let mut working = specs
   let evidence : Array[FixEvidence] = []
   let mut rounds = 0
   let mut round = 1
-  while round <= MAX_FIX_ROUNDS {
+  while round <= budget {
     let mut any_failed = false
     let next : Array[Spec] = []
     for spec in working {
