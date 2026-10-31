@@ -13339,7 +13339,7 @@ Error: [4145]
   不能持有一个 trait 实例 ⇒ 「远程沙箱」目前仍需一个本地包装可执行文件。已在整改报告点名。
 
 
-## BUG-506 [2026-10-31T01:55:50Z] [medium] OPEN
+## BUG-506 [2026-10-31T01:55:50Z] [medium] FIXED
 - summary: native 轨的 `cli_exit` 不生效——未知子命令在 js 轨回 rc=2，native 轨回 rc=0；
   申报书承诺的「未知参数必须非 0」这一档在 native 上无人守
 - detail: ## 实测（两个后端同一条命令）
@@ -13382,6 +13382,32 @@ libC `exit` 那一跳**（rc 仍是 0，说明退出码没交给进程）。
 所以公网 Release 至今只有 linux-x64 一个 native 资产）。A4 格已把「zip 内文件魔数 ↔ 资产名声明平台」
 纳入判据，本机残留只登记不判红。
 - reported_by: Qoder 主会话（九月黑客松拒收整改）
+
+### FIXED(2026-10-31T11:40:00Z / BUG-506)
+- **本单的主张在 HEAD 上不复现**：原判绿用的是 `_release/native/fist-mbt.exe`（2026-10-30 12:34 的
+  **本机构建残留**，`_release/` 在 .gitignore 面）。`native_exit` 自 `84bddb299`（2026-10-22）就接在
+  `#cfg(any(target="native", target="llvm"))` 那臂上——也就是说那枚残留**不可能**是「源码里没接线」的形状，
+  它只能是**旧树建出来的产物**。这正是判例-32 写过的形状：**产物在场 ≠ 产物新鲜**，
+  而「在旧产物上量到的 rc」会被下一轮当成产品主张。
+- **新鲜产物复测**（run `41194094357` 的 CI 资产，ELF 64-bit pie，`file -b` 逐字记录，moon `0.1.20261021` 构建）：
+  复跑配方（rc 一律落文件再读，**不接管道** —— `cmd | head; rc=$?` 测的是 `head`）：
+  ```bash
+  B=/path/to/解包后的/fist-mbt        # 即 v0.3.11 那枚 native-linux 资产里的文件
+  cd "$(dirname "$B")"
+  for arm in version --help definitely-not-a-subcmd demo; do
+    ./fist-mbt "$arm" >o.txt 2>e.txt; echo "arm=[$arm] rc=$? firstline=$(head -1 o.txt)"
+  done
+  ```
+  实测读数：`version` rc=0 首行 `FIST-Mbt v0.3.11` / `--help` rc=0 首行 `FIST-Mbt Help  v0.3.11  (182 MCP tools)`
+  / `demo` rc=0 / **`definitely-not-a-subcmd` rc=2** 首行 `未知子命令: definitely-not-a-subcmd`。
+  ⇒ native 轨的 `cli_exit` **生效**，本单抬头那档（「未知参数必须非 0 在 native 上无人守」）不成立。
+- **回归锁（点名，且写清它守在哪一轨）**：`.github/workflows/release.yml` 的 `Package native artifact` 步
+  —— 交付前真调一次，第二条子句就是「未知子命令 rc 必须非 0，否则 `::error::` + `exit 1`」。
+  这一条就是本单「出路 ①」的原样落地。它守的是**分发轨**（tag/派发到才跑），不是每次 PR；
+  每次 PR 那一侧由 `scripts/cli_flag_probe.py`（js 轨真 rc）与 `e2e_acceptance_recheck.py` 的 A4 格
+  （有本平台 native 产物时真跑、没有则 SKIP 并写明缺什么）覆盖。
+- ⚠️ **不宣称的事**：本单关闭**不等于** native 全项目构建可用（BUG-527 仍 OPEN）、
+  也不等于 CI 的 `Test (native)` 臂转绿（BUG-523 仍 OPEN，红因在 BUG-133 的依赖侧抽检）。
 
 ## BUG-507 [2026-10-31T05:00:41Z] [high] FIXED
 - summary: `.mbt` 放行规则的临时目录**只认 `TEMP`/`TMPDIR`/`TMP` 三个环境变量** ⇒ Linux runner 上
