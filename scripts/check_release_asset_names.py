@@ -423,9 +423,9 @@ def selftest():
         # R8 三支（BUG-111 的三种退化）：needs 退回顶掉发布 / 摘掉 meta / 摘掉 native 的容错
         ("release_yml", "needs: [meta, build-js]", "needs: [build-js, build-native-linux]", "R8"),
         ("release_yml", "needs: [meta, build-js]", "needs: [build-js]", "R8"),
-        # R9 两支（BUG-112 的两种退化）：moon 目录不交给下一步 / 安装 URL 退回少 `.sh`
-        ("wf:release.yml", 'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', "echo '# (变异：不把 moon 交给下一步)'", "R9"),
-        ("wf:release.yml", "cli.moonbitlang.com/install/unix.sh", "cli.moonbitlang.com/install/unix", "R9"),
+        # R9 对真 release.yml 的两支 unix 形状变异（BUG-112 原版）已脱锚：
+        # BUG-513 后 windows native 臂改用 pwsh 形状写 GITHUB_PATH（Out-File），文件里仍有 PATH 写入行
+        # ⇒ 摘掉 unix 那两行不红。改在「只有 unix/pwsh 单一形状」的合成夹具上点火（见下方 R9 +3 格）。
         # R10 两支：文档线退回裸 `irm … | iex`（安装器侧 / README 侧）
         ("ps1", "TrimStart([char]0xFEFF)", "NO-TRIM", "R10"),
         ("readme", "TrimStart([char]0xFEFF)", "NO-TRIM", "R10"),
@@ -505,6 +505,48 @@ def selftest():
     probs = judge(dict((k, v) for k, v in base.items() if not str(k).startswith("wf:")))
     if not any(p.startswith("R9 FATAL") for p in probs):
         fails.append("R9 扫描面空转时不红（没抓到 ≠ 没有问题，空扫描必自拒）")
+    executed.append("R9")
+
+    # R9 +3 格（BUG-513 后补）：真 release.yml 现在同时含 unix 形状（echo >> $GITHUB_PATH）与
+    # pwsh 形状（Out-File -Append $env:GITHUB_PATH）两种写入，判据是文件级"有没有 GITHUB_PATH"，
+    # 单摘一种形状打不红 ⇒ 用只含单一形状的合成夹具分别点火。
+    # unix-only：保住 BUG-112 原两支变异的火种（unix 写入行 / 安装 URL 少 .sh）。
+    unix_only = chr(10).join([
+        "name: u", "on: push", "jobs:", "  a:", "    runs-on: ubuntu-latest", "    steps:",
+        "      - run: curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash",
+        '      - run: echo "$HOME/.moon/bin" >> "$GITHUB_PATH"',
+        "      - run: moon build --target js",
+    ])
+    assert 'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"' in unix_only
+    assert "cli.moonbitlang.com/install/unix.sh" in unix_only
+    d2 = dict(base); d2["wf:unix-only.yml"] = unix_only.replace(
+        'echo "$HOME/.moon/bin" >> "$GITHUB_PATH"', "echo 'NO-PATH-WRITE'")
+    probs = judge(d2)
+    if not any(p.startswith("R9") and "unix-only.yml" in p for p in probs):
+        fails.append("R9 unix 写入行变异未红（合成 unix-only 夹具摘掉 GITHUB_PATH）：%s" % probs[:1])
+    executed.append("R9")
+    d2 = dict(base); d2["wf:unix-only.yml"] = unix_only.replace(
+        "cli.moonbitlang.com/install/unix.sh", "cli.moonbitlang.com/install/unix")
+    probs = judge(d2)
+    if not any(p.startswith("R9") and "unix-only.yml" in p for p in probs):
+        fails.append("R9 安装 URL 少 .sh 变异未红（合成 unix-only 夹具）：%s" % probs[:1])
+    executed.append("R9")
+    # win-only：锁定 BUG-513 新形状——摘掉 pwsh 的 GITHUB_PATH 写入必须红（否则 windows 臂退回裸安装没人管）。
+    win_only = chr(10).join([
+        "name: w", "on: push", "jobs:", "  a:", "    runs-on: windows-latest", "    steps:",
+        "      - run: irm https://cli.moonbitlang.com/install/powershell.ps1 | iex",
+        "        shell: pwsh",
+        "      - name: Add moon to PATH", "        shell: pwsh", "        run: |",
+        '          "$HOME\\.moon\\bin" | Out-File -Append $env:GITHUB_PATH',
+        '          "$env:USERPROFILE\\.moon\\bin" | Out-File -Append $env:GITHUB_PATH',
+        "      - run: moon build --target js", "        shell: pwsh",
+    ])
+    assert " | Out-File -Append $env:GITHUB_PATH" in win_only
+    d2 = dict(base); d2["wf:win-only.yml"] = win_only.replace(
+        " | Out-File -Append $env:GITHUB_PATH", " | Out-Null")
+    probs = judge(d2)
+    if not any(p.startswith("R9") and "win-only.yml" in p for p in probs):
+        fails.append("R9 pwsh 写入变异未红（合成 win-only 夹具摘掉 Out-File GITHUB_PATH）：%s" % probs[:1])
     executed.append("R9")
 
     from collections import Counter
