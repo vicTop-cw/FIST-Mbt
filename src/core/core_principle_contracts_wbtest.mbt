@@ -1,4 +1,3 @@
-
 ///|
 /// R225：core_principle（开发规范 7 条的真源）零覆盖契约锁。
 /// principles() 被 project_standards 机器投影引用 —— 序号/标题是协议面：
@@ -9,9 +8,16 @@
 /// 条数、序号连续 1..N、无空标题/空正文。
 test "principles 的形状契约：条数与序号连续" {
   let ps = principles()
-  assert_true(ps.length() >= 7, msg="规范条数不得少于既有的 7 条（删条=投影缺规则）")
+  assert_true(
+    ps.length() >= 7,
+    msg="规范条数不得少于既有的 7 条（删条=投影缺规则）",
+  )
   for i, p in ps {
-    assert_eq(p.get_index(), i + 1, msg="序号必须从 1 连续递增（下游按 index 检索）")
+    assert_eq(
+      p.get_index(),
+      i + 1,
+      msg="序号必须从 1 连续递增（下游按 index 检索）",
+    )
     assert_true(p.get_title().length() > 0, msg="标题不得为空")
     assert_true(p.get_body().length() > 0, msg="正文不得为空")
   }
@@ -24,7 +30,11 @@ test "principles_json 的字段契约与规模一致" {
   let ps = principles()
   match principles_json() {
     Json::Array(items) => {
-      assert_eq(items.length(), ps.length(), msg="JSON 数组与真源条数不一致")
+      assert_eq(
+        items.length(),
+        ps.length(),
+        msg="JSON 数组与真源条数不一致",
+      )
       for i, item in items {
         match item {
           Json::Object(m) => {

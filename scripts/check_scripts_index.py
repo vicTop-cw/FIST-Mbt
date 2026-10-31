@@ -11,7 +11,7 @@
 判据（本单修复：子串假绿 → 文件名 token 词界匹配）
 ------------------------------------------------
 旧判据 `name in index_text or base in index_text` 是**子串**匹配：fist.py 的基名
-`fist` 只要被 `fist-mbt-http.py` / `pentad_fist.py` 这类条目的正文子串命中就算「已
+`fist` 只要被 `run_fist_mbt_http.py` / `pentad_fist.py` 这类条目的正文子串命中就算「已
 登记」，于是最常用的入口 `fist.py` 从未被要求登记。
 
 新判据：完整文件名 **或** 去扩展名基名，都要以「完整词」命中索引——词界 = 前后不紧邻
@@ -240,12 +240,12 @@ def selftest() -> int:
     )
 
     # ① 本单要求的对照格：子串命中但完整文件名不在索引里 ⇒ 必须判红（判为未登记）。
-    #    索引里只有 fist-mbt-http.py（fist 是其子串），既无完整文件名 fist.py 也无独立
+    #    索引里只有 run_fist_mbt_http.py（fist 是其子串），既无完整文件名 fist.py 也无独立
     #    词 fist ⇒ 旧子串判据会假绿，新词界判据必须把它点名为未登记。
     cell(
         "substring-hit-fullname-not-in-index-must-be-red",
-        missing_scripts(["fist.py"], "- `fist-mbt-http.py` — HTTP 服务入口。") == ["fist.py"],
-        "fist 是 fist-mbt-http.py 的子串，但 fist.py 未登记 ⇒ 必须判红（不再假绿）",
+        missing_scripts(["fist.py"], "- `run_fist_mbt_http.py` — HTTP 服务入口。") == ["fist.py"],
+        "fist 是 run_fist_mbt_http.py 的子串，但 fist.py 未登记 ⇒ 必须判红（不再假绿）",
     )
 
     # ② 完整文件名登记（反引号包裹，真实登记形状）⇒ 仍是登记，不误伤。

@@ -717,7 +717,7 @@ AIGC:
   AGENTS 守卫族段与 `scripts/README.md` 索引同步。**台账现 0 条待修**（119 条入账 = 106 已修 / 9 重复并入 / 4 误报）。
 - **BUG-121（上报即收口，盖章 2026-09-29T07:16:30Z）**：终审自证「文档点名的开发模式名 ↔ 注册表」时抓到插件态说谎——`plugins/source/SKILL.md` 与 `references/seven-modes.md` 写着 `hunt`、`fix-and-merge`、`night-loop` 三个服务端不接受的标识符，矩阵还整列漏了 `polish` 与新加的 `explore`（四宿主 SKILL 是 `gen_plugins.py` 投影出去的，消费方按名调用当场被拒）。改为注册表 7 个标识符 + 服务端 `mode_display_name` 中文名、补 explore 行（含四道并行门）、模板落点写明 `templates/pipeline_mode_<identifier>.md`，重投影后 cl7 逐字节一致。**台账现 0 条待修**（120 条入账 = 107 已修 / 9 重复并入 / 4 误报）。
 - **BUG-122 / BUG-123（上报即收口，盖章 2026-09-29T07:28:19Z / 07:28:20Z）**：终审按文档命令逐条跑 demo 面时抓到两条指引缺陷——①`mcp_smoke.py`/`enrich_selfdrive.py`/`award_demo.py`/`omega_lesson_verify.py` 都不设 `FIST_DB_PATH`，而 README/USAGE/agent-map/deliverable 四处教人裸跑⇒ 演示任务与调用行写进仓库根的自举台账（实测根账 1986/6905 → 1987/6909，本轮这一次已进真实账，只追加不删）；四脚本现默认改道 `temp/<脚本名>.db`（显式设过的调用方不变），改道后裸跑 rc=0 且根账计数逐字不变。②`gen_help_docs.py` 自称是 `help_tools()` 文案的落笔依据，实测它反解的是 `fist://map` 的**定位图**（12 组/107 个简写 token）而非 129 个的注册表 ⇒ 照它写会把刚修好的 13 组/129 倒退回 12 组/107；docstring、脚本输出的边界行与索引条目都已改，CLI 权威面点名 = `node cli.js help tools` + AGENTS/README 表（J1/J2 钉）。**台账现 0 条待修**（122 条入账 = 109 已修 / 9 重复并入 / 4 误报）。
-- **BUG-124（上报即收口）**：BUG-122 的**残留同型面**收干净——另外 21 个 spawn `serve` 的 demo/verify 脚本（`scratch_verify`/`dispatch_verify`/`fist.py`/`issue_scan.py`/`output_validate.py`/`*_selfdrive.py` …）同样裸跑即写仓库根自举台账；全部改为「未显式设置时默认落 `temp/<脚本名>.db`」，并补常驻判据 `scripts/check_demo_isolation.py`（I1 缺改道针必红 / I2 豁免面漂移必红 / I3 空扫描必自拒，`--selftest` 五支从已执行格子反解；现状面 29 个 spawn 脚本全合规）。**按文档命令逐条跑的 demo 审计**：README 的 DEMO 表 7 条 + 独立 CLI 表 2 条（`temp/demo_audit.log` 9 行）+ `scripts/README` 点名的 `demo.ps1`/`showcase.ps1` 2 条（`temp/demo_audit2.log`）= **11 条全 rc=0**，全程仓库根台账 **tasks=1987 / call_log=6909 逐字不变**。
+- **BUG-124（上报即收口）**：BUG-122 的**残留同型面**收干净——另外 21 个 spawn `serve` 的 demo/verify 脚本（`scratch_verify`/`dispatch_verify`/`fist.py`/`issue_scan.py`/`check_output_validate.py`/`*_selfdrive.py` …）同样裸跑即写仓库根自举台账；全部改为「未显式设置时默认落 `temp/<脚本名>.db`」，并补常驻判据 `scripts/check_demo_isolation.py`（I1 缺改道针必红 / I2 豁免面漂移必红 / I3 空扫描必自拒，`--selftest` 五支从已执行格子反解；现状面 29 个 spawn 脚本全合规）。**按文档命令逐条跑的 demo 审计**：README 的 DEMO 表 7 条 + 独立 CLI 表 2 条（`temp/demo_audit.log` 9 行）+ `scripts/README` 点名的 `demo.ps1`/`showcase.ps1` 2 条（`temp/demo_audit2.log`）= **11 条全 rc=0**，全程仓库根台账 **tasks=1987 / call_log=6909 逐字不变**。
 - **BUG-125（上报即收口）**：BUG-116 的**内部半**补修——安装器内部取 `moon.mod` 定版本与取资产 zip 那两发以前只有 .NET 单栈（这就是「脚本取回来了、红在内部那一发」的来源），现两处都接上 curl 兜底臂，且只对「没有 HTTP 响应」的传输层错误换栈（404/403 仍直接换源，不拖慢用户）。承重证据 = `scripts/blackbox/e2e_transport_stack_fallback.py` 三格（A 换栈装通且回执带 `curl-fallback` / B 剥掉 curl 必红 / C 干净安装不误伤，PATH 逐字还原、真产物 sha 不变）；判据加 **R14**（五支变异），`--selftest` 反解 `R14×5`。
 - **BUG-126（上报即收口，盖章 2026-09-29T08:19:52Z）**：`scripts/README` 的 `showcase.ps1` 条目把**读盘实时计数**当事实写死（548 tasks / 196 exec），而这两个数是脚本自己 `select count(*)` 现数的（`scripts/showcase.ps1:119-138`）⇒ 每次演示都在长；实测盘面真值 tasks=1987 / executions=461，写死的两个已漂。改为「读盘实时计数，索引不写死数字；数不到时降级 n/a 不崩」，顺带把取证侧一条实测坑写进同一行：默认码页下 `-File` 重定向出来的中文回执在**子进程内**就成了 `?`，外层按 UTF-8 或 GBK 都还原不回来，须先置 `[Console]::OutputEncoding=UTF-8`。缺口如实登记不假装有守卫：目前没有常驻判据把「文档里的活体计数字面量」打到盘上真值（R13 只管资产名形状，J 系列不管任务计数），已写进报告 §7 下一轮建议。
 - **发布到 mooncakes（0.3.4，2026-09-29T09:26:54Z）**：`moon publish --dry-run` 得 `Server status: 202 Accepted`（包名/版本 `vicTop-cw/fist-mbt version 0.3.4`），正式发得 `Server status: 200 OK`、rc=0；`moon view` 回读 `Latest: 0.3.4 / Versions: 9 / Downloads: 31`。发布前置门：`moon test --target js` **572/572 rc=0**（`temp/publish_gate_js.log`，另一次独立复跑在 `temp/final_js4.log`）＋守卫族 11 步逐条 rc=0（含两个新守卫的 `--selftest`）＋`moon fmt --check` no work。
@@ -1155,7 +1155,7 @@ AIGC:
 ### 🧹 一次性文档同步
 
 - 测试总数 376 → **394**（README 徽章/正文、AGENTS、deliverable、scoring_rubric 全量同步；`moon test --target js -j 1` = 394/394）。
-- `check_scripts_index` 实测暴露 5 个历史欠账脚本未登记（`flush_github.mjs` / `output_validate.py` / `mcp_bug_loop.py` / `pentad_fist.py` / `test_mcp_bugs.py`），连同 2 个新脚本一并补登。
+- `check_scripts_index` 实测暴露 5 个历史欠账脚本未登记（`flush_github.mjs` / `check_output_validate.py` / `run_mcp_bug_loop.py` / `pentad_fist.py` / `test_mcp_bugs.py`），连同 2 个新脚本一并补登。
 - 守卫族 4 → **5** 个，ci.yml 增 cl7 步骤；五守卫本轮全绿。
 
 ### ⚠️ 过程中被外部流水线入账
@@ -1223,7 +1223,7 @@ MCP 新工具：`mode_list` / `mode_templates`
 
 - **GitHub 同步扩展**：8 个 github_* 工具 + selfdrive_round_tick 轮次决策
 - **CI Workflows**：fist-ci.yml + fist-bug-sync.yml
-- **工具脚本**：mcp_bug_loop.py（MCP 闭环验证）、flush_github.mjs、pentad_fist.py
+- **工具脚本**：run_mcp_bug_loop.py（MCP 闭环验证）、flush_github.mjs、pentad_fist.py
 - **fist-mbt.db 移出 git 跟踪**：保留 `*.db` 忽略规则
 - **测试基线**：366/366 ✅（含 BUG-2/BUG-4/BUG-5 回归测试 + ops_modes 25 条）
 - **MCP 工具数**：57 → 116

@@ -354,10 +354,12 @@ pub fn report_bug(
   //
   // ⚠️ 诚实边界：**它不是 CAS**（两次读之间仍可能有人插入）。
   //    真正的消除需要「拿到文件锁 → 读 → 算 → 写 → 放锁」，属账本格式/协议改动（BUG-489 方案 A）。
-  let seq2 = bug_next_seq(match mem_read(path) {
-    None => ""
-    Some(s) => s
-  })
+  let seq2 = bug_next_seq(
+    match mem_read(path) {
+      None => ""
+      Some(s) => s
+    },
+  )
   let final_seq = if seq2 > seq { seq2 } else { seq }
   let bug_id = "BUG-" + final_seq.to_string()
 

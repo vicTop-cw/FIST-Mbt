@@ -60,7 +60,7 @@ node _build/js/debug/build/cmd/cli/cli.js
 ./_build/native/debug/build/cmd/cli/cli.exe
 
 # 方式 C：HTTP/SSE 桥接（可选）
-FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
+FIST_MCP_PORT=3000 python scripts/run_fist_mbt_http.py
 ```
 
 - 启动后进程在 **STDIO** 上按行读取 JSON-RPC 2.0 请求、按行回写响应，直到 EOF 退出；

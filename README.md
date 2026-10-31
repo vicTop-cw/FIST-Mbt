@@ -40,7 +40,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 | 形态 | 是什么 | 谁用 | 示例 |
 |---|---|---|---|
 | **MCP**（主形态） | MoonBit server 暴露的 JSON-RPC 工具 | Claude Desktop / Trae / AtomCode / 任何 MCP 客户端 | `tools/call output_validate` |
-| **CLI** | Python 薄封装脚本（拉起 server → 调工具 → 打印 JSON） | CI 管道、手动验证、无 MCP 客户端场景 | `python scripts/output_validate.py . --artifacts '[...]'` |
+| **CLI** | Python 薄封装脚本（拉起 server → 调工具 → 打印 JSON） | CI 管道、手动验证、无 MCP 客户端场景 | `python scripts/check_output_validate.py . --artifacts '[...]'` |
 | **Skill** | Markdown 文档（何时用 / 怎么用 / 怎么闭环） | AI agent 读的使用手册；真源 `plugins/source/` | `docs/output-validate-skill.md` |
 | **Plugin**（宿主插件态） | 四宿主插件目录，由 `scripts/gen_plugins.py` 从真源**生成**（禁手改，cl7 守卫拦漂移） | AtomCode / CodeArts Doer / DeepSeek Harness / Claude | `plugins/claude/.claude-plugin/plugin.json` |
 
@@ -129,7 +129,7 @@ python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sql
 node _build/js/debug/build/cmd/cli/cli.js serve   # 必须带 serve：裸跑只打印 help
 
 # 3. 或用 HTTP/SSE 桥接
-FIST_MCP_PORT=3000 python scripts/fist-mbt-http.py
+FIST_MCP_PORT=3000 python scripts/run_fist_mbt_http.py
 
 # 4. CLI 通用网关（一源四态·CLI 形态）
 python scripts/fist.py list-tools                     # 全量工具名清单（数量以本命令末行为准，不抄数——抄一次就是下一次漂移）
@@ -198,7 +198,7 @@ fist doctor        # 5 项健康检查
 | 脚本 | 对应 MCP | 场景 |
 |---|---|---|
 | `scripts/issue_scan.py <dir>` | `issue_scan` | CI 扫描潜在 MoonBit 高危模式 |
-| `scripts/output_validate.py <dir> --artifacts ...` | `output_validate` | 交付物 L4 硬门验证 |
+| `scripts/check_output_validate.py <dir> --artifacts ...` | `output_validate` | 交付物 L4 硬门验证 |
 | `scripts/mcp_smoke.py` | 多工具联动 | 一键 MCP 冒烟自检 |
 
 ---

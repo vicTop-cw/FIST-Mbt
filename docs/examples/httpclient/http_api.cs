@@ -4,7 +4,7 @@
 // 以及 §4 的语言家族策略：非 MoonBit 语言一律经 HTTP 契约接入，自带 HTTP 能力即可——
 // .NET 侧那份"能力"就是 HttpClient（BCL 内置，零 NuGet 依赖）。
 //
-// 契约真源 docs/openapi/fist.yaml；桥起法：python scripts/fist-mbt-http.py [port]
+// 契约真源 docs/openapi/fist.yaml；桥起法：python scripts/run_fist_mbt_http.py [port]
 // 用法（本机有 dotnet）：
 //   dotnet run docs/examples/httpclient/http_api.cs [port]      // .NET 10+ 支持直接 run 单文件
 //   或：csc /nologo /out:http_api.exe docs/examples/httpclient/http_api.cs && http_api.exe [port]

@@ -126,10 +126,10 @@ def gated(script, need, *args, expect=0, why="依赖 temp 临时件", kind="gate
 def discover_scripts():
     """扫描 scripts/ + scripts/blackbox/ 的全部 .py 脚本（TASK-007：宇宙不限于 check_*）。
     排除：__init__.py / test_* / verify_* / selfdrive_* / run_guards.py（纯测试/工具脚本），
-    以及长驻服务脚本（R84 实测：fist-mbt-http.py 进电池即起 serve 永不退出——
+    以及长驻服务脚本（R84 实测：run_fist_mbt_http.py 进电池即起 serve 永不退出——
     e2e_http_contract 外的裸跑无终止路径，电池整轮挂死；CI 只跑 --selftest/--list 不受影响）。
     返回相对 scripts/ 的路径名（blackbox 子目录带 `blackbox/` 前缀）。"""
-    EXCLUDE_EXACT = {"__init__.py", "run_guards.py", "fist-mbt-http.py", "fist-mbt-web.py"}
+    EXCLUDE_EXACT = {"__init__.py", "run_guards.py", "run_fist_mbt_http.py", "run_fist_mbt_web.py"}
     EXCLUDE_PREFIX = ("test_", "verify_", "selfdrive_")
     out = []
     for base, prefix in ((SCRIPTS_DIR, ""), (BLACKBOX_DIR, "blackbox/")):
@@ -504,7 +504,7 @@ SPECIAL_CASES = [
              kind="diag"),
     case("check_ps_encoding.py"),
     # —— R82：scripts_index 那格按本文件自订的律改记预存红——master 现状 red 的根因是主机
-    #    fist-gate.py（454aea3）未在 scripts/README.md 登记（TASK-003/004 施工面，R81 点名）。
+    #    fist_gate.py（454aea3）未在 scripts/README.md 登记（TASK-003/004 施工面，R81 点名）。
     #    主机一登记，got 0 ≠ expect 1 当场现形，逼着把期望改回 0。 ——
     #    R106 追记：这一形**兑现了**——主机把 `scripts/merge-prompt.txt` 从跟踪面删掉（b465915f 系），
     #    现读 got=0 ⇒ 按那条律把期望从 1 改回 0，转回门禁格。
@@ -602,33 +602,30 @@ SPECIAL_CASES = [
     #    现读 `扫描面=gitcode/main | 落差 0 条 / 上限 0 条` ⇒ 登记的那条红已不成立。
     #    按本文件自订的律「被检内容修好 ⇒ 把期望改回 0」，转回门禁格，依据一起删。
     case("check_backlog_status_staleness.py"),
-    # 【这是债，不是判据坏了】（R185 登记，理由按统帅要求写全）
-    # 判据工作正常：它如实数出 N1/N2 命名债仍在棘轮上限之上。红的含义是「命名债没还完」。
-    # 出路：把 N1/N2 真正降到上限内（改名 + 同批下调上限）；禁止为了变绿去改上限常量。
-    expected("check_scripts_naming.py", 1,
-             "预存红（债非坏）：现读 2 条命名判定面（N1=27 无角色名（上限 16）/ N2=5 连字符（上限 4））"
-             "—— **判据工作正常，它正确报告了命名债**，不是判据算错。"
-             "出路：改名还债并同批下调上限；禁止为变绿改常量（放宽是人的决定）。"
-             # ⚠️ R219 补：三条防误读的口径，每条都是实测踩出来的
-             "⚠️ **①「944」是改名成本（引用处数），不是违规数**："
-             "TASK-008 实测改名总成本 1224 处引用 = 活面 163 / **归档面 944** / 其余 117。"
-             "R47 记对、R50 被读成「944 个违规文件」⇒ **每个数都必须带单位**。"
-             "⚠️ **② 棘轮上限（N1=16 / N2=4）是源码常量，它就是要红**："
-             "「超 11 份」不是「有人刚加了 11 个违规」，是「棘轮一直红着，只是没人还债」。"
-             "⇒ blame=subject 指的是「源码里有 32 份该改名」，不是「棘轮坏了」。"
-             "⚠️ **③ `_` 开头的 5 份已分两类**（R219 逐个读文件头核实，不是看名字）："
-             "3 个（_badge_anchor / _deployment_symbols / _tool_registry）自述「共用真源/单一真源/内部共享模块」"
-             "⇒ 进 NAMING.md 的 `naming-shared-modules:` 白名单，N1 已 30 → 27；"
-             "另 2 个（_new_script_hygiene / _run_check_t0r21）**是可独立执行的判据**，"
-             "只是名字带 `_` ⇒ 正确归宿是改名 `check_*.py`，不是进白名单。"
-             "⚠️ **豁免不读文件头自述**：那等于「写一句注释就绕过判据」（判例-30 同族）"
-             "⇒ 白名单必须改 NAMING.md（另一个文件）才生效，摩擦就是防线。",
-             kind="known-red",
-             until={"kind": "manual", "by": "owner",
-                    "deadline": "2026-11-05",
-                    "note": "改名范围撞定律-3（944 处在归档面）⇒ 需 owner 裁决是「改判据口径」还是「改名」；"
-                            "决策单见 reports/2026-10-29-scripts-naming-decision-sheet.md"},
-             blame="subject"),
+    # 【债已还完】（R185 登记为债 → R115 还债）：判据一直工作正常，它如实数出命名债在棘轮上限之上。
+    #   R115 按决策单（reports/2026-10-29-scripts-naming-decision-sheet.md，期限 2026-11-05）的 **B 分批**执行：
+    #   batch 1 还 N2 5 份（fist-gate / fist-pr-automator / fist-mbt-http / fist-mbt-web / fist-task-pool）；
+    #   batch 2 还 N1 6 份（_new_script_hygiene→check_new_script_hygiene、_run_check_t0r21→check_t0r21、
+    #   calibrate_goal_drift→run_calibrate_goal_drift、mcp_bug_loop→run_mcp_bug_loop、
+    #   output_validate→check_output_validate，并**删除** gitignored 孤儿 fix_esm_require.py）
+    #   ⇒ 现读 `N1=16（上限 16）/ N2=0（上限 4）` ⇒ **rc=0**。
+    #   **没动任何上限常量**（N1_CEILING 仍是 16、N2_CEILING 仍是 4）——「改名还债」不是「为变绿改常量」。
+    #   判例-39（入 AGENTS.md）：改名会**同时**失去按名/按前缀匹配的豁免（如 check_hardcoded_paths
+    #   的 `scripts/_*.py` 豁免③），也会让 REGISTRY/EXEMPT_RULES 的前缀规则失配 ⇒ 改名必须同批扫豁免面。
+    # ⚠️ 三条防误读的口径（R219 补，每条都是实测踩出来的，**是历史教训不是现行期望**）：
+    #   **①「944」是改名成本（引用处数），不是违规数**：TASK-008 实测改名总成本 1224 处引用 =
+    #      活面 163 / **归档面 944** / 其余 117。R47 记对、R50 被读成「944 个违规文件」
+    #      ⇒ **每个数都必须带单位**。
+    #   **② 棘轮上限（N1=16 / N2=4）是源码常量**：「超 11 份」不是「有人刚加了 11 个违规」，
+    #      是「棘轮一直红着，只是没人还债」⇒ blame=subject 指的是「源码里有 32 份该改名」。
+    #   **③ `_` 开头的 5 份已分两类**（R219 逐个读文件头核实，不是看名字）：
+    #      3 个（_badge_anchor / _deployment_symbols / _tool_registry）自述「共用真源/单一真源/内部共享模块」
+    #      ⇒ 进 NAMING.md 的 `naming-shared-modules:` 白名单，N1 已 30 → 27；
+    #      另 2 个（_new_script_hygiene / _run_check_t0r21）**是可独立执行的判据**，
+    #      只是名字带 `_` ⇒ 正确归宿是改名 `check_*.py`，不是进白名单（R115 已做）。
+    #   ⚠️ **豁免不读文件头自述**：那等于「写一句注释就绕过判据」（判例-30 同族）
+    #      ⇒ 白名单必须改 NAMING.md（另一个文件）才生效，摩擦就是防线。
+    case("check_scripts_naming.py"),
     # 【债已还完】（R185 登记 → R55 还债）：R185 时的「判定面 5 条 > 上限 0」已清零 ——
     # 4 处 `raise SystemExit("FATAL…")`（check_badge ×1 / check_test_sync ×3）改成
     # `print(…) + raise SystemExit(2)`（**把码改真**）；check_index_gitlinks 的元组出口补了字面
@@ -685,9 +682,9 @@ SPECIAL_CASES = [
     # ⚠️ **不会自己收紧**：`(0, 2)` 里 0 也允许 ⇒ BUG-388 修好后本格**照样绿**。
     # 所以这条依赖人复查（`check_fmt_gate.py` 能出 0/1 时就该把 allow 收窄到 (0,)）；
     # 写在这里而不是假装它自动红 —— 本仓纪律要求把「靠人」的部分明说。
-    tolerant("fist-gate.py", (0, 2),
+    tolerant("fist_gate.py", (0, 2),
              "诊断口径：本机 `moon fmt --check` 因 BUG-388（工具链 `--check` 管线报 No such file / rc=-1）"
-             "不可测 ⇒ `fist-gate.py` 读 2（DEGRADED，拒绝判红也拒绝判绿）；CI Linux nightly 上读 0。"
+             "不可测 ⇒ `fist_gate.py` 读 2（DEGRADED，拒绝判红也拒绝判绿）；CI Linux nightly 上读 0。"
              "两者都是**正确读数**，缺陷不在判据也不在本仓代码。"),
     # ── R134：轮次号在 reports/ 交付面被不同单元复用（R110/R113/R118/R121 各两组）是
     #    「编号没有认领面」的直接后果——两支各自读开工时刻的远端快照，谁先推谁占号。历史
@@ -722,7 +719,7 @@ NON_GATE_RULES = (
     ("probe", "一次性探针（人工按需）"),
     ("score_gate", "评分辅助（人工按需）"),
     ("issue_scan.py", "MCP 工具薄封装（人工调用）"),
-    ("output_validate.py", "MCP 工具薄封装（人工调用）"),
+    ("check_output_validate.py", "MCP 工具薄封装（人工调用）"),
     ("laya_decide.py", "MCP 工具薄封装（人工调用）"),
     ("_verify.py", "一次性验收演示（跑完即弃）"),
 )
@@ -733,7 +730,7 @@ GEN_PLUGINS_GATE = "gen_plugins.py"
 # 默认全进会把改码工具/演示脚本跑起来（实测改过 src/router/*.mbt），
 # 而"新脚本默认不进电池"最多是漏检——漏检由 --list 的非判据清单兜底（可见 + 有理由）。
 AUTO_CASE_PREFIXES = ("check_", "cleanup_")
-AUTO_CASE_EXACT = {"gen_plugins.py", "fist-gate.py", "check_repo_shape.py"}
+AUTO_CASE_EXACT = {"gen_plugins.py", "fist_gate.py", "check_repo_shape.py"}
 
 
 # ── 判例-33：性能逃生口 `FIST_BADGE_FRESH=0` ──────────────────────────────────
@@ -787,7 +784,7 @@ CASES = build_cases()
 # —— R94：无参兜底格普查（TASK-007 自动发现的反面一课）——
 # 自动发现给每支未点名脚本补的是一格**无参**跑法。脚本若带不可逆动作（强推共享线、
 # reset --hard、开 MR 后 merge），跑守卫电池就等于替所有人跑了它。cef1e9c 上
-# whisperer.py 与 fist-pr-automator.py 正是这样进电池的——前者 Step 0 会
+# whisperer.py 与 fist_pr_automator.py 正是这样进电池的——前者 Step 0 会
 # `git push --force HEAD:main HEAD:master` 打两个远端。排除表靠人想起加，
 # 所以这条纪律本身要做成判据，而不是只写在注释里。
 HAZARD_RE = re.compile(r"reset --hard|--force|\"push\"|/merge\b")
@@ -839,7 +836,7 @@ def ci_referred():
 # R82（TASK-007）：宇宙从「check_*.py 顶层+blackbox」扩到 **scripts/**/*.py 递归自动扫描**
 # ——风语者实测 26 把尺 vs 88 份 .py，漏 64；根因是宇宙定义写死了 check_ 前缀。
 # 排除族（测试/一次性/内部辅助，不进宇宙）：
-#   `_` 前缀（一次性临时件，如 _run_check_t0r21.py / _tool_registry.py）、
+#   `_` 前缀（一次性临时件，如 check_t0r21.py / _tool_registry.py）、
 #   `test_` / `verify_` 前缀与 `*_verify.py` / `*_selfdrive*.py`（实验/自驱验证脚本族）。
 # 三种执行面（G1 的对象）：CI（.github/workflows 现读）/ 电池（CASES + 自动格）/ 登记（REGISTRY）。
 UNIVERSE_EXCLUDE_RE = re.compile(r"(^_|^test_|^verify_|^selfdrive_|_verify\.py$|_selfdrive)")
@@ -877,8 +874,19 @@ EXEMPT_RULES = (
     ("probe.py", "一次性探针（人工按需跑）"),
     ("score_gate", "评分辅助（人工按需）"),
     ("issue_scan.py", "MCP 工具薄封装（人工调用）"),
-    ("output_validate.py", "MCP 工具薄封装（人工调用）"),
+    ("check_output_validate.py", "MCP 工具薄封装（人工调用）"),
     ("laya_decide.py", "MCP 工具薄封装（人工调用）"),
+    # —— R115 判例-39（改名不是接线，**豁免也按前缀匹配**）：batch 1/2 把 5 份脚本的
+    #    角色词从**词首**挪到了 `run_` 之后（`calibrate_goal_drift.py` → `run_calibrate_goal_drift.py`），
+    #    于是原本命中的前缀规则（`calibrate_` / `mcp_` / `fist-mbt-`）**全部失配** ⇒
+    #    `--list` 的「豁免（带理由）」从 28 掉到 23，5 份脚本掉出豁免面。
+    #    改名是**换标签**不是**改性质**：规则表必须同批跟着换标签，否则分类面静默漂移。
+    #    这里用**精确文件名**规则（`_match_rule` 对 `.py` 结尾的 pat 走 `base == pat`）钉住，
+    #    理由逐字沿用被替掉的前缀规则——**不趁机改分类结论**。
+    ("run_calibrate_goal_drift.py", "一次性难度标定"),
+    ("run_mcp_bug_loop.py", "MCP 冒烟/演练（需宿主进程，非离线判据）"),
+    ("run_fist_mbt_http.py", "HTTP/Web 宿主进程入口"),
+    ("run_fist_mbt_web.py", "HTTP/Web 宿主进程入口"),
     ("plan_gradient_verify.py", "一次性验收演示"),
     ("task_challenge_verify.py", "一次性验收演示"),
     ("lesson_chain_verify.py", "一次性验收演示"),
@@ -926,11 +934,11 @@ REGISTRY = {
     "caf_offline_replay.py": "CAF 实验重放（长跑/需语料）",
     "caf_p2c_ab_preflight.py": "CAF A/B 预检（长跑/需语料）",
     "caf_p2d_coldstart_ab.py": "CAF 冷启动 A/B（长跑/需语料）",
-    "calibrate_goal_drift.py": "goal_drift 阈值标定（一次性标定，读数已固化入 goal_drift_check）",
-    "fist-gate.py": "统一门链（merge_markers/fmt/build/ps_encoding/store_path）：CI/本地单独跑；"
+    "run_calibrate_goal_drift.py": "goal_drift 阈值标定（一次性标定，读数已固化入 goal_drift_check）",
+    "fist_gate.py": "统一门链（merge_markers/fmt/build/ps_encoding/store_path）：CI/本地单独跑；"
                     "进自动电池会在 fmt 环境差异（本地钉版 vs nightly）上假红",
-    "fist-mbt-http.py": "HTTP 服务入口（起服务长跑）",
-    "fist-mbt-web.py": "Web 面板入口（起服务长跑）",
+    "run_fist_mbt_http.py": "HTTP 服务入口（起服务长跑）",
+    "run_fist_mbt_web.py": "Web 面板入口（起服务长跑）",
     "fist.py": "FIST CLI 主入口（交互/长跑）",
     "fist_mbt_mcp_client.py": "MCP 客户端演示（需 server 活着）",
     "gen_apply_pdf.py": "按需生成器（产出报告 PDF，无门禁语义）",
@@ -942,10 +950,18 @@ REGISTRY = {
     # 登记表是「在册但不当格跑」的说明，脚本不在仓里就不该在册——与 BUG-373「先入账再引用」同律。
     "issue_scan.py": "MCP issue_scan 的 CLI 辅助入口（能力面由 src/server 白盒锁覆盖）",
     "laya_decide.py": "Laya 决策 CLI（无门禁语义）",
-    "mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",
+    "run_mcp_bug_loop.py": "MCP bug 闭环长跑（需 server 活着）",
+    # —— R115：`fist-task-pool.py` → `run_fist_task_pool.py`（N1+N2 双债改名）后**掉出了豁免面**
+    #    （旧名靠 `("fist.py", …)` 的 `startswith("fist")` 前半段命中，新名以 `run_` 开头 ⇒ 失配），
+    #    而它既不在 REGISTRY 也不匹配任何 EXEMPT_RULES ⇒ `check_battery_count_doc` 直接 FATAL
+    #    「缺面清单：run_fist_task_pool.py」。判例-39（改名不是接线）：改名换标签，
+    #    分类表必须同批跟着换。它的**性质**是任务池 yaml 管理器 CLI（`.git/fist/tasks/` 文件协议，
+    #    见 scripts/README.md 2026-10-22 补登记段），属「在册但不自动跑」⇒ 进 REGISTRY 而不是补豁免。
+    "run_fist_task_pool.py": "任务池 yaml 管理器 CLI（.git/fist/tasks/ 文件协议，多机认领；"
+                             "非判据，跑法见 scripts/README.md）",
     "mcp_smoke.py": "MCP 冒烟（需构建产物 + node，CI 由 run_check 面另跑）",
     "ns_route_probe.py": "ns 路由探针（需 server 活着）",
-    "output_validate.py": "交付物硬门 CLI（对给定 artifacts 运行，无固定入参；语义由 server 侧白盒锁覆盖）",
+    "check_output_validate.py": "交付物硬门 CLI（对给定 artifacts 运行，无固定入参；语义由 server 侧白盒锁覆盖）",
     "patch_router_config_caf_field.py": "一次性补丁（patch_ 语义，跑完即退场）",
     "pentad_fist.py": "Pentad 外部项目驱动器（长跑）",
     "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
@@ -1395,18 +1411,26 @@ def selftest():
     # 统帅要求：「理由必须写清『这是债不是坏』——否则每轮有人以为判据坏了去改常量」。
     # 这几格把该要求**变成可执行断言**，而不是只留在注释里：
     #   ① 每个 known-red 格必须带非空 why（空 why = 发了张免检牌，判据不属于任何人）；
-    #   ② 只剩**一把**棘轮债在册（`check_scripts_naming` 的命名债）—— 少一条说明有人**删了登记**
-    #      而不是把债还了；**还了债的要同批从册上摘掉并转回门禁格**（R55/R56 已摘两把：
-    #      `check_exit_code_contract` 判定面归零 / `check_ci_step_position` 35→30）。
+    #   ② 命名债（`check_scripts_naming`）**已由 R115 还清**（N1 27→16 到上限 / N2 5→0）
+    #      ⇒ 按本文件自订的律「被检内容修好 ⇒ 把期望改回门禁格」，从 known-red 转回 `case(...)`。
+    #      这里锁的是**转换本身**（判例-29：机制格 ≠ 实现路径格——光看「登记里没这把」
+    #      分不清「债还了」和「有人偷偷删了登记」）：
+    #      a) 它在册**恰好一条**、kind 是 `gate`、argv 为空（真跑、真判、不带额外旗标）；
+    #      b) 它**不在** known-red 集里（债还了还挂着 known-red ⇒ 电池会永远按 rc=1 期望它，
+    #         还清了反而红）。
     _kr = [c for c in CASES if c.get("kind") == "known-red"]
     cell("known-red-all-have-why", all((c.get("why") or "").strip() for c in _kr), True)
     _kr_scripts = {c.get("script") for c in _kr}
-    cell("known-red-covers-remaining-ratchet-debt",
-         {"check_scripts_naming.py"} <= _kr_scripts, True)
-    # ③ 在册那把的 why 必须写明「债非坏」的口径词（防止有人把理由改成一句"已知红"就交差）
-    _kr_why = " ".join((c.get("why") or "") for c in _kr
-                       if c.get("script") in ("check_scripts_naming.py",))
-    cell("known-red-why-says-debt-not-broken", "债非坏" in _kr_why, True)
+    _naming = [c for c in CASES if c.get("script") == "check_scripts_naming.py"]
+    cell("naming-debt-paid-moved-to-gate",
+         len(_naming) == 1
+         and _naming[0].get("kind") == "gate"
+         and _naming[0].get("argv") == []
+         and "check_scripts_naming.py" not in _kr_scripts, True)
+    #   ②b 正向锁：它必须在**电池**里（`battery` 是自动补面的来源）——否则「还了债」的
+    #      唯一证据就是一句注释，而判据照样不跑。
+    cell("naming-gate-is-in-battery-face",
+         "check_scripts_naming.py" in battery, True)
     # R106 第二处同形缺陷：run_battery 里 `auto_cases(battery, ci, guards)` 是**另一版**的三参签名，
     # 合并后调用面与定义不同形 ⇒ 只有真跑电池才炸（`--selftest`/`--list` 都摸不到那一行）。
     # arity 对表是这一类「定义与调用被拆到两次改动」最便宜的常驻锁。

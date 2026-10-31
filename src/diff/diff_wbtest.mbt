@@ -44,11 +44,23 @@ test "render_json 危险字符逐项转义" {
   // ① 双引号 / 反斜杠 / 换行 / 回车 / 制表符 必须是转义形式（不得以裸字符出现）
   assert_true(s.contains("\\\""), msg="双引号未转义")
   assert_true(s.contains("\\\\"), msg="反斜杠未转义")
-  assert_true(s.contains("\\n"), msg="换行未转义（应为字面反斜杠+n）")
-  assert_true(s.contains("\\r"), msg="回车未转义（应为字面反斜杠+r）")
-  assert_true(s.contains("\\t"), msg="制表符未转义（应为字面反斜杠+t）")
+  assert_true(
+    s.contains("\\n"),
+    msg="换行未转义（应为字面反斜杠+n）",
+  )
+  assert_true(
+    s.contains("\\r"),
+    msg="回车未转义（应为字面反斜杠+r）",
+  )
+  assert_true(
+    s.contains("\\t"),
+    msg="制表符未转义（应为字面反斜杠+t）",
+  )
   // ② 控制字符必须走 \u00XX（大写十六进制 + 4 位）—— 断言里找的是**字面反斜杠 + u0001**
-  assert_true(s.contains("\\u0001"), msg="控制字符未按字面 \\u00XX 转义")
+  assert_true(
+    s.contains("\\u0001"),
+    msg="控制字符未按字面 \\u00XX 转义",
+  )
   // ③ 原文里**不许**出现裸换行/裸回车（那会直接破坏 JSON 字面量）
   assert_true(!s.contains("\n"), msg="输出里出现裸换行")
   assert_true(!s.contains("\r"), msg="输出里出现裸回车")

@@ -30,7 +30,7 @@ scripts/fist.py — FIST-Mbt 统一 CLI 网关（一源四态 · CLI 形态）
 
 退出码：verdict=pass / result.ok=true → 0；fail / error → 1
 
-设计：与 issue_scan.py / output_validate.py 同款薄封装模式，单真源在 MoonBit。
+设计：与 issue_scan.py / check_output_validate.py 同款薄封装模式，单真源在 MoonBit。
 """
 import json
 import os

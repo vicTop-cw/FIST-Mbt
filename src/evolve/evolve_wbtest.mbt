@@ -212,6 +212,10 @@ test "jaccard_invariants_symmetry_set_semantics_range" {
     assert_true(ab >= 0.0 && ab <= 1.0, msg="越界: " + ab.to_string())
   }
   // ② 重复词折叠：集合语义下 ["a","a"] vs ["a"] == 1.0
-  assert_eq(jaccard(["a", "a"], ["a"]), 1.0, msg="重复词未折叠（应回 1.0 而非 0.5）")
+  assert_eq(
+    jaccard(["a", "a"], ["a"]),
+    1.0,
+    msg="重复词未折叠（应回 1.0 而非 0.5）",
+  )
   assert_eq(jaccard(tokens("a a a"), tokens("a")), 1.0)
 }

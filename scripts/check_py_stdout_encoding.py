@@ -54,7 +54,7 @@ def ci_script_faces():
 
 def all_script_faces():
     """全部正式脚本面（BACKLOG P3 扩面）：glob 而非反解，所以带连字符的文件名
-    （`scripts/fist-mbt-http.py`）也在面上——CI 反解的正则 `scripts/[\\w/]+\\.py` 认不出
+    （`scripts/run_fist_mbt_http.py`）也在面上——CI 反解的正则 `scripts/[\\w/]+\\.py` 认不出
     连字符，那一格只有 glob 兜得住。测试用临时脚本落 temp/，不在 scripts/ 下，天然排除。
 
     2026-10-13 再扩：`docs/examples/**/*.py` 也在面上。触发点是我自己新加的
@@ -84,7 +84,7 @@ def has_gate(text):
     """真有 `sys.stdout.reconfigure(...)` 这类**调用**吗（AST 判定）。
 
     ⚠️ 旧实现是 `return "reconfigure" in text` —— **注释里提一嘴就算通过**（判例-30 同族：
-   锁被注释满足）。实测铁证：`scripts/_new_script_hygiene.py` 打印中文却没真调用，
+   锁被注释满足）。实测铁证：`scripts/check_new_script_hygiene.py` 打印中文却没真调用，
     只因头注释提到该词而 PASS。⇒ 改成 AST：只认**被调用的属性方法** `*.reconfigure(...)`。
 
     解析失败（语法错）按「无门」处理：解析不出调用面 ⇒ 拒绝判绿，不用子串兜底。

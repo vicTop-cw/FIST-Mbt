@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""scripts/fist-pr-automator.py - yaml -> PR -> gate -> (explicit) merge pipeline.
+"""scripts/fist_pr_automator.py - yaml -> PR -> gate -> (explicit) merge pipeline.
 
 Reads a PR definition yaml: runs the local unified gate, pushes the branch, opens
 
@@ -36,9 +36,9 @@ def usage():
 
     """One-line CLI contract (also asserted by --selftest)."""
 
-    return ("usage: python scripts/fist-pr-automator.py <pr.yaml> <github|gitcode> [--dry-run]"
+    return ("usage: python scripts/fist_pr_automator.py <pr.yaml> <github|gitcode> [--dry-run]"
 
-            " | python scripts/fist-pr-automator.py --selftest")
+            " | python scripts/fist_pr_automator.py --selftest")
 
 def run(cmd, cwd=None, env=None):
 
@@ -140,7 +140,7 @@ def plan_lines(conf, repo, platform, token_present):
 
         "  remote: %s" % remote,
 
-        "  local gate: %s" % ("run scripts/fist-gate.py" if gate_enabled(conf) else "skipped (gate: false)"),
+        "  local gate: %s" % ("run scripts/fist_gate.py" if gate_enabled(conf) else "skipped (gate: false)"),
 
         "  push: git push -u %s %s" % (remote, branch),
 
@@ -254,7 +254,7 @@ def pipeline(conf, repo, platform, dry_run=False):
 
     if gate_enabled(conf):
 
-        r = run(["python", "scripts/fist-gate.py"], cwd=ROOT)
+        r = run(["python", "scripts/fist_gate.py"], cwd=ROOT)
 
         if r.returncode >= 1:
 

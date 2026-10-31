@@ -51,7 +51,7 @@ def run(moon_rc, output, markers=None):
     """纯函数：把 (moon 的 rc, 输出) 判成 'clean' / 'degraded' / 'red'。
 
     `markers`（**R194**，可选）：判「输出是否像工具链故障」的**字面量表**。
-    缺省用本文件的 `BROKEN_SIGNATURES`；`fist-gate.py` 传它自己的 `FMT_COLD_MARKERS`
+    缺省用本文件的 `BROKEN_SIGNATURES`；`fist_gate.py` 传它自己的 `FMT_COLD_MARKERS`
     ⇒ **marker 匹配只有一处实现**，而「三档怎么映射成本门的四档」仍由各调用方决定
     （机制与策略分离：机制在此，策略在调用方）。
 
@@ -59,7 +59,7 @@ def run(moon_rc, output, markers=None):
     - rc!=0 但输出命中 `_build/…/format/…` 这一族签名 ⇒ degraded（量不出来）；
     - 其余非 0 ⇒ red（真格式差异）。
 
-    ⚠️ **R174 的历史（R194 已收口）**：`fist-gate.py:classify_fmt()` 曾是**另一套判定**
+    ⚠️ **R174 的历史（R194 已收口）**：`fist_gate.py:classify_fmt()` 曾是**另一套判定**
     （4 档 / 不同 marker 字面量 / `rc==1` 软化）。R173 直接委派失败（丢 marker ⇒ 2 格红）。
     R194 用「本函数收 markers 参数 + fist-gate 只做档位映射」解决：两边行为**逐字不变**，
     而 marker 匹配不再有第二份实现。

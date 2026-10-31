@@ -6,7 +6,7 @@
 机器本地）⇒ 本脚本**不挂 CI**，是人工标定工具；CI 侧的锁是 src/engine/engine_goal_drift_test.mbt
 的内嵌夹具（口径与本脚本逐字一致）。
 
-用法：python scripts/calibrate_goal_drift.py [--json]
+用法：python scripts/run_calibrate_goal_drift.py [--json]
 退出码：0=标定完成；2=语料缺失/判据无法自证（绝不静默报"通过"）。
 
 口径（与 src/evolve/evolve.mbt 的 tokens/coverage、src/engine/engine_dag_ext.mbt 的

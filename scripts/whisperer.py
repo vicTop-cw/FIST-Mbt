@@ -203,14 +203,14 @@ def step0_head_safety(full=True, sync_mirror=False, state_file=None, log_file=No
     return (local[:7], status)
 
 # ============================================================
-# Step 1 — 分支普查（调用 fist-gate.py --scan）
+# Step 1 — 分支普查（调用 fist_gate.py --scan）
 # ============================================================
 def step1_branch_scan():
-    print("[Step 1] fist-gate.py --scan")
+    print("[Step 1] fist_gate.py --scan")
     run(["git", "fetch", "--all", "--prune"])
-    r = run(["python", "scripts/fist-gate.py", "--scan"])
+    r = run(["python", "scripts/fist_gate.py", "--scan"])
     if r.returncode != 0 and "SELFTEST" not in r.stdout:
-        print(f"  fist-gate.py 失败: {r.stderr[:200]}")
+        print(f"  fist_gate.py 失败: {r.stderr[:200]}")
         return (0, 0, [])
     lines = r.stdout.splitlines()
     mc = sum(1 for l in lines if "MERGE-CODE" in l)
@@ -358,22 +358,22 @@ def step3_issue_scan():
 def selftest():
     print("[self-test] 风语者自检")
     rc = 0
-    # G1: fist-gate.py --scan 能跑。
+    # G1: fist_gate.py --scan 能跑。
     # 三点是实测补的（2026-10-22）：
-    #   (a) 必须 cwd=ROOT —— 否则在任何别的目录里跑自检都会「找不到 scripts/fist-gate.py」，
+    #   (a) 必须 cwd=ROOT —— 否则在任何别的目录里跑自检都会「找不到 scripts/fist_gate.py」，
     #       看起来像判据坏了；
     #   (b) 红要自己说清原因：只印 rc=N 等于把「我没量到」和「下游坏了」混成一个红，
     #       人得自己去猜（本项目「红着没人读」的起点就是这个）。这里印末行 + 提示；
     #   (c) rc=2 是 DEGRADED（下游判据拒绝出数），既不是绿也不是"代码坏了"，单列一档。
-    r = run(["python", "scripts/fist-gate.py", "--scan"], cwd=ROOT)
+    r = run(["python", "scripts/fist_gate.py", "--scan"], cwd=ROOT)
     tail = ([l for l in ((r.stdout or "") + (r.stderr or "")).splitlines() if l.strip()] or ["(无输出)"])[-1].strip()
     if r.returncode == 0:
-        print("  ✅ G1 fist-gate.py --scan 正常")
+        print("  ✅ G1 fist_gate.py --scan 正常")
     elif r.returncode == 2:
-        print(f"  ⚠ G1 fist-gate.py --scan DEGRADED rc=2：{tail[:120]}")
+        print(f"  ⚠ G1 fist_gate.py --scan DEGRADED rc=2：{tail[:120]}")
         print("      （下游判据自己拒绝出数，不是本脚本坏了；先修下游再复检）")
     else:
-        print(f"  ❌ G1 fist-gate.py --scan rc={r.returncode}：{tail[:160]}")
+        print(f"  ❌ G1 fist_gate.py --scan rc={r.returncode}：{tail[:160]}")
         if "FileNotFoundError" in tail or "No such file" in tail:
             print("      提示：常见根因在 **git worktree** 里 `.git` 是文件而非目录；"
                   "scan 已改用 `git rev-parse --absolute-git-dir`，若仍红请看上面的 traceback")

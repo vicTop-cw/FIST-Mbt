@@ -1,6 +1,6 @@
 // docs/examples/fetch/http_api.mjs — 多语言接入的 fetch (Node 18+ / 浏览器同形) 示例
 // 计划 multilang §4「HTTP 直连：curl / requests / HttpClient / fetch 二选一即可」的 fetch 格。
-// 契约真源 docs/openapi/fist.yaml；桥起法：python scripts/fist-mbt-http.py [port]
+// 契约真源 docs/openapi/fist.yaml；桥起法：python scripts/run_fist_mbt_http.py [port]
 // 用法：node docs/examples/fetch/http_api.mjs [port]     # 默认 3137
 // 无依赖（fetch 是 Node 18+ 全局；浏览器里去掉 process 行即可原样跑）。
 const BASE = `http://127.0.0.1:${process.argv[2] ?? "3137"}`;

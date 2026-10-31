@@ -1,4 +1,3 @@
-
 ///|
 /// R223：监控器的前缀单调性（runtime monitoring 的核心保证）。
 ///
@@ -13,7 +12,10 @@
 test "G p 的 Violated 在任意扩展下保持（前缀单调性）" {
   let p = atom("p")
   let g = globally(p)
-  let prefix : Array[State] = [State::new().set("p", true), State::new().set("p", false)]
+  let prefix : Array[State] = [
+    State::new().set("p", true),
+    State::new().set("p", false),
+  ]
   assert_eq(evaluate(g, prefix), Violated, msg="前缀应已 Violated")
   let tails : Array[Array[State]] = [
     [State::new().set("p", true)],
@@ -28,7 +30,11 @@ test "G p 的 Violated 在任意扩展下保持（前缀单调性）" {
     for s in tail {
       longer.push(s)
     }
-    assert_eq(evaluate(g, longer), Violated, msg="扩展后 Violated 被翻转 —— 监控器会反悔")
+    assert_eq(
+      evaluate(g, longer),
+      Violated,
+      msg="扩展后 Violated 被翻转 —— 监控器会反悔",
+    )
   }
 }
 
@@ -37,7 +43,10 @@ test "G p 的 Violated 在任意扩展下保持（前缀单调性）" {
 test "F p 的 Hold 在任意扩展下保持" {
   let p = atom("p")
   let f = eventually(p)
-  let prefix : Array[State] = [State::new().set("p", false), State::new().set("p", true)]
+  let prefix : Array[State] = [
+    State::new().set("p", false),
+    State::new().set("p", true),
+  ]
   assert_eq(evaluate(f, prefix), Hold, msg="前缀应已 Hold")
   let longer : Array[State] = [
     State::new().set("p", false),
@@ -68,11 +77,19 @@ test "monitor_step 与 evaluate 结论一致" {
     [],
     [State::new().set("p", true)],
     [State::new().set("p", false), State::new().set("q", true)],
-    [State::new().set("p", true), State::new().set("q", true), State::new().set("p", false)],
+    [
+      State::new().set("p", true),
+      State::new().set("q", true),
+      State::new().set("p", false),
+    ],
   ]
   for f in fs {
     for tr in traces {
-      assert_eq(monitor_step(f, tr), evaluate(f, tr), msg="monitor_step 与 evaluate 分叉")
+      assert_eq(
+        monitor_step(f, tr),
+        evaluate(f, tr),
+        msg="monitor_step 与 evaluate 分叉",
+      )
     }
   }
 }

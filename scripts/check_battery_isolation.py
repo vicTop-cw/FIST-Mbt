@@ -7,7 +7,7 @@ r"""scripts/check_battery_isolation.py — 「跑完一条命令，git 跟踪面
      在工作树里被刷成「同一个 struct literal 里 `use_caf_memory` 重复插入」——编译必红的形状，
      来源是电池里某格执行了会改跟踪面的补丁脚本（真因在 `patch_router_config_caf_field.py`，R99 已修）。
      当时是我手工 `git checkout --` 收的场，而「电池脏了跟踪面」这件事**没有任何判据会红**。
-  2. `mcp_bug_loop.py` 这类 e2e 会把演示行写进真台账 `memory/bugs.md`；`check_demo_isolation`
+  2. `run_mcp_bug_loop.py` 这类 e2e 会把演示行写进真台账 `memory/bugs.md`；`check_demo_isolation`
      只钉 `FIST_DB_PATH` 一个方向（库改道），钉不到「文件面被写脏」。
 
 本判据只回答一个问题：**被包住的那条命令，跑完之后 git 视图变没变**。它不判那条命令成功与否
