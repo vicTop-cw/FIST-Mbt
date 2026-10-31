@@ -16,6 +16,13 @@
   5 活体持有者不被串行夺走（同上，反向对照）
   6 过期绑定可让渡，报 taken_over 并点名 prev_agent（TTL 语义不许被修掉）
 
+⚠️ 格 1~3 用未登记的 `temp/f094/*`（要的就是并发裁决本身，与角色无关）；
+   格 4~6 用**权限表里登记的 scope**（`moon.mod`，allowed_roles=["HumanSteward"]，
+   身份取 `human_steward` / `human` 两个不同字符串都推断成 HumanSteward）——
+   因为未登记分支会把成功获取的 action 一律标成 `unregistered`（`engine_rsv.mbt:826-837`，
+   前导词逐字不变是刻意的，上游有精确相等断言），`renewed`/`taken_over` 在那条分支上根本不出现。
+   锚点格 `p_anchor_first_bind` 钉住这件事：锚点一旦退化 ⇒ **rc=3 自拒**（尺子坏了），不报「产品没续期」。
+
 用法（与 ci.yml 的 "Reserve cross-process guard" 一步同形）：
   moon build --target js cmd/cli
   python scripts/patch_esm_main.py <该产物>
@@ -97,6 +104,14 @@ def p_warmup_ok(rsv):
      outcome 只看 `reserved` 布尔——`action=unregistered+…` 带后缀时同样算拿到（advisory 不参与裁决）。
     """
     return rsv.get("reserved") is True
+
+
+def p_anchor_first_bind(rsv):
+    """锚点格（尺子自己的前置）：登记的 scope 首绑必须报 base=`reserved`。
+    报出 `unregistered` ⇒ 该 scope 已不在权限表里 ⇒ 格 4/5/6 的字面锁集体失效，
+    那是**尺子坏了**（rc=3 自拒），不是「产品没续期/没让渡」（判例-32）。
+    """
+    return rsv.get("reserved") is True and action_base(rsv.get("action")) == "reserved"
 
 
 def p_rounds_no_double_success(both_ok, rounds):
@@ -353,28 +368,39 @@ def main():
     n_rows = len(db_rows("select scope from reservations where scope like 'temp/f094/%'"))
     arm("3 每个 scope 库里恰 1 行", p_exactly_one_row(n_rows, ROUNDS), "行数=%d 期望=%d" % (n_rows, ROUNDS))
 
-    # ---- 4) 同 agent 续期不许误拒 ----
-    s4 = "temp/f094/renew.mbt"
-    a.call("reserve_scope", {"scope": s4, "agent": "xA", "ttl_until": future()})
-    r4 = a.call("reserve_scope", {"scope": s4, "agent": "xA", "ttl_until": future()})
+    # ---- 4~6 打在**权限表里登记过的 scope** 上（BUG-521）----
+    # 未登记的 scope 走 advisory 分支：产品把「成功获取」的 action 一律标成 `unregistered`
+    # （`engine_rsv.mbt:826-837` 明写：前导词逐字不变，因为上游有精确相等断言）⇒
+    # `renewed` / `taken_over` 这两个字面在 unregistered 分支上**根本不出现**。
+    # 这三格要锁的正是「续期 / 夺回」的自述面 ⇒ 必须打在 Allowed 分支上：
+    # `moon.mod` 的 allowed_roles=["HumanSteward"]，而 `human_steward` 与 `human` 是两个**不同字符串**
+    # 却都推断成 HumanSteward（2026-10-31 用 release 产物实测：首绑 `reserved+…`、续期 `renewed+…`、
+    # 过期让渡 `taken_over+…` 且 `prev_agent` 点名）。
+    REG_SCOPE, HOLDER, CHALLENGER = "moon.mod", "human_steward", "human"
+    # 反脱锚格（判例-32：尺子的腐烂与对象的陈旧是两种结论）：锚点 scope 一旦不再被权限表命中，
+    # 这三格会集体退化成 `unregistered` —— 那是**尺子坏了**，必须 rc=3 自拒，不许报「产品没续期」。
+    anchor = a.call("reserve_scope", {"scope": REG_SCOPE, "agent": HOLDER, "ttl_until": future()})
+    if not p_anchor_first_bind(anchor):
+        die("锚点 scope 失效：%s 的 action=%s（期望 base=reserved） ⇒ 权限表里这一条不在了"
+            % (REG_SCOPE, anchor.get("action")),
+            "换用 `src/engine/engine_scope_perm.mbt` 的 scope_permissions 里仍存在的 scope，"
+            "并把本探针的 REG_SCOPE 同批改指——**别改判定式去迁就**（那是把尺子锯短）")
+    r4 = a.call("reserve_scope", {"scope": REG_SCOPE, "agent": HOLDER, "ttl_until": future()})
     arm("4 同 agent 续期成功且报 renewed",
         p_renew_same_agent(r4),
         json.dumps(r4, ensure_ascii=False)[:180])
 
     # ---- 5) 活体持有者不许被他人夺走（这一格在现状码上是绿的，防修复把它改松）----
-    s5 = "temp/f094/live.mbt"
-    a.call("reserve_scope", {"scope": s5, "agent": "xA", "ttl_until": future()})
-    r5 = b.call("reserve_scope", {"scope": s5, "agent": "xB", "ttl_until": future()})
+    r5 = b.call("reserve_scope", {"scope": REG_SCOPE, "agent": CHALLENGER, "ttl_until": future()})
     arm("5 活体持有者不被串行夺走",
-        p_live_holder_not_stolen(r5, "xA"),
+        p_live_holder_not_stolen(r5, HOLDER),
         json.dumps(r5, ensure_ascii=False)[:180])
 
     # ---- 6) TTL 过期后允许让渡（现语义不许被修复改掉）----
-    s6 = "temp/f094/expired.mbt"
-    a.call("reserve_scope", {"scope": s6, "agent": "xA", "ttl_until": past()})
-    r6 = b.call("reserve_scope", {"scope": s6, "agent": "xB", "ttl_until": future()})
+    a.call("reserve_scope", {"scope": REG_SCOPE, "agent": HOLDER, "ttl_until": past()})
+    r6 = b.call("reserve_scope", {"scope": REG_SCOPE, "agent": CHALLENGER, "ttl_until": future()})
     arm("6 过期绑定可让渡（taken_over + prev_agent）",
-        p_expired_takeover(r6, "xA"),
+        p_expired_takeover(r6, HOLDER),
         json.dumps(r6, ensure_ascii=False)[:180])
 
     a.kill(), b.kill()
@@ -449,6 +475,15 @@ def selftest() -> int:
     case("ABASE-red-空串不得等于任何 base", action_base("") == "reserved", False)
     case("G4-ok-renewed带后缀",
          p_renew_same_agent({"reserved": True, "action": "renewed+agent_self_reported"}), True)
+    # 锚点格（BUG-521）：登记的 scope 首绑必须是 reserved；退化成 unregistered ⇒ 尺子坏了（rc=3 自拒）
+    case("ANCHOR-ok-登记scope首绑reserved带后缀",
+         p_anchor_first_bind({"reserved": True,
+                              "action": "reserved+role_inferred+agent_self_reported"}), True)
+    case("ANCHOR-red-退化成unregistered（权限表不再命中）",
+         p_anchor_first_bind({"reserved": True,
+                              "action": "unregistered+role_inferred+agent_self_reported"}), False)
+    case("ANCHOR-red-conflict不算锚点通过",
+         p_anchor_first_bind({"reserved": False, "action": "conflict"}), False)
     case("G6-ok-taken_over带后缀",
          p_expired_takeover({"reserved": True, "action": "taken_over+role_inferred",
                              "prev_agent": "xA"}, "xA"), True)
