@@ -162,8 +162,13 @@ def auto_convert(v: str):
     return v
 
 
-def parse_args(argv):
-    """把 ['--ns', 'scratch', '--title', 'hi'] 转成 {'ns': 'scratch', 'title': 'hi'}。"""
+def parse_args(argv, raw=False):
+    """把 ['--ns', 'scratch', '--title', 'hi'] 转成 {'ns': 'scratch', 'title': 'hi'}。
+
+    raw=True（call 子命令的 --raw 旗标）时跳过 auto_convert，所有值逐字透传字符串——
+    服务端 inputSchema 声明 string 的参数（如 model_route 的 config_json）经网关传 JSON 文本时，
+    自动转换会把它变成对象而报 `inputSchema mismatch`，--raw 是唯一出路。
+    """
     out = {}
     i = 0
     while i < len(argv):
@@ -171,7 +176,7 @@ def parse_args(argv):
         if a.startswith("--"):
             key = a[2:].replace("-", "_")
             if i + 1 < len(argv):
-                out[key] = auto_convert(argv[i + 1])
+                out[key] = argv[i + 1] if raw else auto_convert(argv[i + 1])
                 i += 2
             else:
                 out[key] = True
@@ -308,6 +313,37 @@ def cmd_call(proc, tool_name, kwargs):
     sys.exit(exit_code)
 
 
+def _selftest():
+    """--selftest：--raw 缺陷的两向变异对照（判例-29/30 纪律）。
+
+    ① 无 --raw：对象值仍被 auto_convert（string -> dict/list/bool/number）；
+    ② 有 --raw：逐字透传 string，绝不变成对象。
+    任一向失守（例如有人把 --raw 分支删掉、或误把它只作用于单个参数）即 rc=1。
+    """
+    ok = True
+
+    def check(name, cond):
+        nonlocal ok
+        if not cond:
+            print(f"FAIL {name}")
+            ok = False
+
+    argv = ["--project_dir", ".", "--config_json", '{"route": "deepseek"}']
+    plain = parse_args(argv)
+    check("无 --raw 时对象值应转成 dict", plain["config_json"] == {"route": "deepseek"})
+    check("无 --raw 时普通值仍转 bool/数字", parse_args(["--scratch", "true", "--n", "3"]) ==
+          {"scratch": True, "n": 3})
+    rawv = parse_args(argv, raw=True)
+    check("--raw 时对象值保持 string", rawv["config_json"] == '{"route": "deepseek"}')
+    check("--raw 时其余值也逐字透传", parse_args(["--scratch", "true", "--n", "3"], raw=True) ==
+          {"scratch": "true", "n": "3"})
+    # 纪律针：--raw 必须被 call 分支摘掉、不落进 kwargs（否则撞未知入参拒绝面）
+    check("别名表 ns->namespace 不受 --raw 影响",
+          parse_args(["--ns", "scratch"], raw=True) == {"ns": "scratch"})
+    print("selftest PASS" if ok else "selftest RED")
+    sys.exit(0 if ok else 1)
+
+
 def main():
     # 与守卫族同款：cp936 控制台下中文诊断会乱码甚至 UnicodeEncodeError（崩溃的入口等于没自检）。
     try:
@@ -316,10 +352,12 @@ def main():
     except Exception:
         pass
     argv = sys.argv[1:]
+    if "--selftest" in argv:
+        _selftest()
     if not argv or argv[0] in ("-h", "--help"):
         print("用法: python scripts/fist.py <subcommand> [args...]")
         print("  list-tools          列出所有 MCP 工具名")
-        print("  call <tool> --k v   通用 MCP 工具调用")
+        print("  call <tool> --k v   通用 MCP 工具调用（--raw：全部值逐字透传字符串，跳过自动类型转换）")
         print("示例:")
         print("  python scripts/fist.py call store_open --namespace scratch --scratch true")
         print("  python scripts/fist.py call publish --project-dir . --description '测试'")
@@ -340,7 +378,14 @@ def main():
             print("用法: fist.py call <tool_name> [--arg val ...]")
             sys.exit(1)
         tool_name = rest[0]
-        kwargs = parse_args(rest[1:])
+        call_args = rest[1:]
+        # --raw：独立旗标位（不作为任何参数的前缀），出现即整轮跳过 auto_convert。
+        # 必须在 parse_args 之前摘掉，否则会被当成未知入参撞上 normalize_kwargs 的拒绝面。
+        raw = False
+        if "--raw" in call_args:
+            call_args = [a for a in call_args if a != "--raw"]
+            raw = True
+        kwargs = parse_args(call_args, raw=raw)
         proc = run_server()
         try:
             # BUG-23：出网前把旗标对齐该工具的 inputSchema，错名当场拒绝而不是静默降级。
