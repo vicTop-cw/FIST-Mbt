@@ -22,7 +22,9 @@ permissions:
   contents: write
 
 env:
-  MOON_VERSION: 'latest'
+  # BUG-513 出路①：MOON_VERSION 不再钉死在这里（曾写 'latest' ⇒ nightly 漂移，
+  # v0.3.10/v0.3.11 两发 native 臂同红）。钉版改由 meta 作业从 toolchain.json
+  # （J17 机器可读真源）读出、经 needs.meta.outputs.moonbit 下发到各 Install MoonBit 步。
   NODE_VERSION: '24'
   TAG: ${{ github.ref_name }}
 
@@ -31,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
+      moonbit: ${{ steps.toolchain.outputs.moonbit }}
     steps:
       # 这一格原来**没有 checkout**：tag push 时版本从 `GITHUB_REF_NAME` 剥出来，不读盘 ⇒ 一直没暴露；
       # 2026-10-31 首次 `workflow_dispatch` 实测红在第一步 ——
@@ -58,6 +61,11 @@ jobs:
           fi
           echo "value=${VER}" >> "$GITHUB_OUTPUT"
 
+      # BUG-513 出路①：moon 钉版读 toolchain.json（唯一机器可读真源），
+      # 不把版本数字写死在 workflow 里。
+      - id: toolchain
+        run: echo "moonbit=$(python3 -c "import json;print(json.load(open('toolchain.json'))['moonbit'])")" >> "$GITHUB_OUTPUT"
+
   build-js:
     needs: meta
     runs-on: ubuntu-latest
@@ -65,6 +73,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install MoonBit
+        env:
+          # BUG-513 出路①：钉版来自 toolchain.json（经 meta 作业读出），不再 'latest'
+          MOON_VERSION: ${{ needs.meta.outputs.moonbit }}
         run: |
           # BUG-112：这一格的 bootstrap 与 ci.yml 里**验证过的**形状不一致 —— 安装 URL 少了 `.sh`，
           # 而且没把 $HOME/.moon/bin 写进 GITHUB_PATH ⇒ 后续步骤里 `moon` 不在 PATH，
@@ -124,6 +135,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install MoonBit
+        env:
+          # BUG-513 出路①：钉版来自 toolchain.json（经 meta 作业读出），不再 'latest'
+          MOON_VERSION: ${{ needs.meta.outputs.moonbit }}
         run: |
           # 同 BUG-112：与 ci.yml 的 bootstrap 对齐（`.sh` + 导出 GITHUB_PATH），否则 `moon` 不在 PATH
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
@@ -226,12 +240,26 @@ jobs:
   build-native-windows:
     needs: meta
     runs-on: windows-latest
-    continue-on-error: true   # Windows runner 可能没有 MSVC+sqlite3.lib，允许失败不阻塞 release
+    continue-on-error: true   # 527 治本后摘除（另见 BUG-506：Windows 未知子命令 rc=0 未修）
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MoonBit
-        run: curl.exe -fsSL https://cli.moonbitlang.com/install/windows -o moonbit.zip; Expand-Archive moonbit.zip -Path .moonbit -Force; $env:PATH = "$(Resolve-Path .moonbit);$env:PATH"
+      # BUG-513：原 `curl …/install/windows -o moonbit.zip` 实测 403（BUG-513 遗留①，账本明记
+      # 「不猜 URL」）⇒ 照抄 ci.yml:510-519 已在 windows-latest runner 上跑通的形状：
+      # `irm …/install/powershell.ps1 | iex` + 显式把 moon 写进 GITHUB_PATH。
+      - name: Install MoonBit toolchain (Windows)
+        env:
+          # BUG-513 出路①：钉版来自 toolchain.json（经 meta 作业读出），不再 'latest'
+          MOON_VERSION: ${{ needs.meta.outputs.moonbit }}
+        shell: pwsh
+        run: |
+          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+
+      - name: Add moon to PATH
+        shell: pwsh
+        run: |
+          "$HOME\.moon\bin" | Out-File -Append $env:GITHUB_PATH
+          "$env:USERPROFILE\.moon\bin" | Out-File -Append $env:GITHUB_PATH
 
       - name: Load VS DevShell + sqlite
         run: |
@@ -252,8 +280,15 @@ jobs:
         shell: bash
         run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
 
+      # BUG-513 修法②：照抄 build-native-linux 臂的步骤序列 —— Reapply BUG-133 是承重件
+      # （不 reapply 的产物 `version`/`--help` 一用就崩 rc=134，见 linux 臂同步骤注释）。
+      - name: Reapply BUG-133 sqlite FFI fix
+        run: bash patches/sqlite-bug133/reapply.sh --force
+
       - name: Build native
-        run: moon build --target native
+        # 与 linux 臂对齐：scoped 只建 cmd/cli（全项目 `moon build --target native` 红在
+        # 库包带 link 被 moon 去链 ⇒ `undefined reference to 'main'`，BUG-527 治理）。
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon build --target native cmd/cli"
 
       - name: Package native artifact
         run: |
