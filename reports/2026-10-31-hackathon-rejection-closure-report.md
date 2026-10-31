@@ -746,3 +746,40 @@ FAIL 违例 2 条：
 默认连带跑 `check_slave_task_list`**（它专管「锚点 ↔ 真源」对表），别等 CI 补这一课。
 **第二条同批**：要换跟踪对象时，先把已在跑的 watcher 的**当前读数取完再停**；
 "避免噪音"不是停取证通道的理由 —— 噪音比漏一个红便宜得多。
+
+### 8.20 owner 选「①让流水线自己产出 native-linux 资产」之后挖出来的两把独立锁
+
+拒收单第 ④ 项讲的是 native，而公网 Release 从来没有过流水线产出的 native 资产。
+本轮先把「为什么从来没有」问清楚，不猜：`gh api` 逐跑读数——
+**release.yml 历史四次 run 的 `build-native-linux` 全部 failure**（`41004195773` / `41003121681` / `39110317427` / `36648312524`），
+而 v0.3.10 那枚 `fist-mbt-native-linux-x64-v0.3.10.zip`（3,793,380B）是**人工带补丁构建后上传的**
+（实测它的调用面健康：`version`/`--help`/`demo` rc=0，未知子命令 rc=2）。
+⇒ 缺口性质是**长期从未通过**，不是「最近退化了」。
+
+两把锁是独立的，一把修不掉另一把：
+
+| 单 | 真因 | 两态实测（WSL，`git archive HEAD` 快照树，moon 0.1.20261021） |
+|---|---|---|
+| **BUG-526** | release 臂**没有 `Reapply BUG-133` 那一步**（ci.yml 两条 native 臂都有） | 不 reapply ⇒ `version/--help/-h/demo/未知子命令` **每次**崩（rc=134，一次 139；`free(): invalid pointer` / `double free or corruption`）；reapply 后 ⇒ 三臂 rc=0 ×3 稳定、未知子命令 rc=2 ×3 |
+| **BUG-527** | **13 份「库却带 `options(link:{native:{…}})`」的 `moon.pkg`** 被新工具链当可执行目标去链 | `moon build --target native` ⇒ rc=255，`undefined reference to 'main'`（12 个库包名逐个点名）；`moon build --target native cmd/cli` ⇒ **rc=0**，产物 `cli.exe`（`file`：ELF 64-bit） |
+
+**本轮做的处置**（`.github/workflows/release.yml`）：
+1. native-linux 臂补 `Reapply BUG-133 sqlite FFI fix`，位置钉在 `moon update` **之后**、`Build native` **之前**
+   （`moon update` 会整目录重生成 gitignored 的 `.mooncakes`，早落等于没落）；
+2. 构建改 scoped（`cmd/cli`）⇒ 绕行 BUG-527，治本留给那一单的三条出路；
+3. 打包步从「抄一个可能不存在的文件名」改成「两把名字都找 + **交付前先真调一次**」：
+   版本首行必须逐字 `FIST-Mbt v<ver>`、未知子命令必须非零，否则 `::error::` + `exit 1` —— **宁可不发资产，
+   也不发一枚「建得出来但一用就崩」的二进制**（判例-33 第三条：判据要盯「启动后真的用一次」）；
+4. `release` 作业补「事件 + tag 前缀」门：本文件带 `workflow_dispatch`，而 `tag_name` 展开的是
+   `github.ref_name` ⇒ 手动派发时它是分支名，会顶出一条 tag 名为 `main` 的**公开假 Release**。
+   这不是 J12 禁的那种分支钉法（不写 `refs/heads/`），是「派发只出产物、不许动发布面」。
+
+⚠️ 两处自己的测量坑，都记进了账：
+① 第一版取 rc 用 `"$B" $arm 2>&1 | head -2; rc=$?` —— **`$?` 是 `head` 的**，把 SIGABRT 读成 rc=0，
+   差点把「每次都崩」记成「都正常」；
+② 打包闸自己先跑了三格演练才算数：正身 `rc=0` 产出 3,835,456B zip、**故意写错期望版本 ⇒ rc=1**、
+   **把产物改名 ⇒ rc=1**（判例-29：机制格不等于实现路径格；新门不配必然红对照就不敢用）。
+
+**BUG-526 的关闭条件 = 派发那一跑 `build-native-linux` = success 且 Actions 产物里有那枚 zip**；
+BUG-527 保持 OPEN（本轮没动那 13 份 `moon.pkg`，别把它读成「native 全项目构建已可用」）。
+`ci.yml` 的 `Test (native)` 与这两把锁同源还是另一因，**本轮未归因**，接 BUG-523 时一起判。
