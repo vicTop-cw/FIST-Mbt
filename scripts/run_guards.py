@@ -629,6 +629,16 @@ SPECIAL_CASES = [
     #      只是名字带 `_` ⇒ 正确归宿是改名 `check_*.py`，不是进白名单（R115 已做）。
     #   ⚠️ **豁免不读文件头自述**：那等于「写一句注释就绕过判据」（判例-30 同族）
     #      ⇒ 白名单必须改 NAMING.md（另一个文件）才生效，摩擦就是防线。
+    # R115 改名（`output_validate.py` → `check_output_validate.py`）的连带缺口：新名命中 `check_` 前缀
+    # ⇒ `build_cases()` 自动补了一格**裸跑**，而它是「必须带 `<project_dir> --artifacts …`」的交付物硬门 CLI，
+    # 无实参只能回 usage + rc=2。REGISTRY 里那条「在册但不自动跑」并**拦不住自动格**
+    # （`build_cases()` 的分类只看名字前缀，不看 REGISTRY）⇒ 判例-39 的同族第二面：**改名换的是前缀，
+    # 前缀决定会不会被自动跑**。这里用显式格接管，并把「裸跑必回 2」本身当成它的调用形状契约来断言
+    # （R207「参数面必须拒绝出绿」同律）；语义面仍由 server 侧白盒锁覆盖。
+    expected("check_output_validate.py", 2,
+             "诊断格：交付物硬门 CLI 的裸跑形状 = 打 usage + rc=2（无实参时它必须拒绝出绿，这不是门禁红）；"
+             "真语义由 server 侧白盒锁覆盖，跑法见 scripts/README.md 同名条目。",
+             kind="diag"),
     case("check_scripts_naming.py"),
     # 【债已还完】（R185 登记 → R55 还债）：R185 时的「判定面 5 条 > 上限 0」已清零 ——
     # 4 处 `raise SystemExit("FATAL…")`（check_badge ×1 / check_test_sync ×3）改成

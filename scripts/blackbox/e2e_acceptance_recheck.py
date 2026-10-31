@@ -467,7 +467,7 @@ record("A3_可替换 Executor", "FAIL" if a3_bad else "PASS",
 # 与拿「服务本体能跑」冒充「服务被正确接入」（判例-33）是同一个错。
 a4_detail, a4_bad, a4_skip = [], [], []
 REL = os.path.join(ROOT, "_release")
-MAGIC = {b"ELF": "linux-elf", b"MZ": "windows-pe"}
+MAGIC = {b"\x7fELF": "linux-elf", b"MZ": "windows-pe"}
 HOST = "windows-pe" if os.name == "nt" else "linux-elf"
 
 
