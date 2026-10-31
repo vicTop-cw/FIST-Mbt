@@ -13854,11 +13854,130 @@ R216 当时**只**在 `surface_probe()` 里补了合并（源码里那段注释�
   实测：`--surface-selftest` rc=0（14 支，不符 0）；`check_dead_params_py` / `check_selftest_call_face` /
   `check_py_stdout_encoding` / `check_text_control_chars` / `check_scripts_index` / `check_doc_surface`（J1–J17）
   / `check_instruction_budget --strict` 全 rc=0。
-  ⚠️ **本单的关闭条件仍是推送后 CI 第 47 步的结论原文**（与 BUG-508/512 同一口径）：本地这一支是桩 server，
-  真协议面（`resources/list` 实回 + `prompts/get` 实回 + `serverInfo` 版本）要 node + 产物，不在 CI 的这一步。
+  ✅ **本单的关闭条件已兑现**（run `41178635612` / job `124471289633`，commit `532d9b2d`）：
+  第 **47** 步 `Self-described surface guard (… · BUG-514)` **success**，紧接的第 48 步
+  `Bug-reference integrity guard` 第一次拿到结论 **success** ⇒ 接线修通后**它自己判过了**。
+  ⚠️ 仍未覆盖的那一半：真协议面（`resources/list` 实回 + `prompts/get` 实回 + `serverInfo` 版本）
+  要 node + 产物，不在 CI 这一步里（手工巡回取证面见报告 §六 与 09-28 那两份报告的调用面读数）。
   ⚠️ **未锁的缺口**：「同一条规则多份实现」本身没有普查尺——本单只把**这个文件里**的两份合成一份。
   现读（`grep -rn AGENTS-mcp-inventory scripts/*.py`）：**「AGENTS 现状面 = `AGENTS.md` +
   `docs/AGENTS-mcp-inventory.md`」这条口径有 4 份实现**（`mcp_tool_tour` 本单合并后 / `check_doc_surface` /
   `check_tools_sync` / `check_tool_add_completeness`），各自手写；而 `Resources:` 这个 pattern 只有
   `mcp_tool_tour` 一把尺在解析。建议的下一把尺：让这四处改吃同一个共享模块（`_` 前缀自动命中电池豁免），
   或普查「同一 pattern 在 scripts/ 里有 ≥2 份读取实现」并点名——**四处手写同一条搬家规则，就是四颗漂移雷**。
+
+
+## BUG-515 [2026-10-31T07:02:00Z] [medium] FIXED
+- summary: R115 那批改名把 N2（连字符名）**5 份全部还完**，却**没把棘轮上限从 4 降到 0** ⇒
+  `check_scripts_naming.py --selftest` 的第 8 格 `real-ceiling-not-looser-than-measured` 判红（实测 0 < 上限 4 ⇒
+  上限比现实松，下一份连字符件入场没人挡）；而这一格住在 **CI 第 49 步**，第 49 步自 badge 阻塞以来**一直被 fail-fast 挡成 skipped**
+  ⇒ 缺陷在场、门不开、没人看见（掩蔽链的第四例：BUG-508 → 512 → 514 → 本单）
+- detail: ## 现形原文（run `41178635612` / job `124471289633`，commit `532d9b2d`）
+
+BUG-514 把第 47 步修绿之后，第 48 步第一次判过（success），第 49 步当场红：
+
+```
+SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-measured ceiling-drift-detected）
+未通过格：real-ceiling-not-looser-than-measured
+##[error]Process completed with exit code 2.
+  50 Store-isolation probe => skipped   51 Heartbeat cross-process => skipped
+  52 Reserve cross-process => skipped   53 CLI call-site probe => skipped   54 Cleanliness => skipped
+```
+
+本机同一命令同红（不是「只有 CI 测得出」）：`python scripts/check_scripts_naming.py` 判据面
+`PASS … N1 无角色 16/16、N2 连字符 0/4`——**判据面绿、自检面红**，两者说的是同一件事的两个方向：
+对象没债了，而**上限还按着有债的年代**。
+
+## 为什么这条值得单独立账（不是「顺手把常量调小」）
+
+这一格自己写着判例-32 的口径：「判据自己的腐烂与对象的陈旧是两种结论」。
+上限 4 而实测 0 的失效形态**不是报错**，而是**放行**：明天有人新增 `fist-new_thing.py` 之外的
+`foo-bar.py`，判据面会写「N2 连字符 1/4 ⇒ PASS」——**债还在上限内**，而那 4 的额度早已全部还清。
+⇒ 烂掉的上限比没有上限更贵（它给出「有门」的错觉）。第 8 格的存在理由就是把这件事变成一次硬红。
+
+根因是**流程缝**：R115 的决策单（`reports/2026-10-29-scripts-naming-decision-sheet.md`）教人「改名还债」，
+`NAMING.md`/`README` 写的是「下降要随改名同批下调」，但**同批下调**这件事既没有 git hook、也没有一把尺钉住，
+只由第 8 格在**下一次那一步真的执行时**兜住——而那一步被更前面的门挡了整整一轮。
+
+### FIXED(2026-10-31T07:02:00Z / BUG-515)
+- evidence: `scripts/check_scripts_naming.py` 的 `N2_CEILING` 4 → **0**（`N1` 仍 16，N1 那 16 份是真债、由主路径报，不动）。
+  · **回归锁就是报红的这一格本身**（尺子咬到了 ⇒ 不需要再造一把去测它）：
+    第 8 格 `real-ceiling-not-looser-than-measured` 断言 `实测 >= 上限`，任何「还了债不降上限」都会硬红；
+    第 10 格 `ceiling-drift-detected` 钉「把上限抬高一档 ⇒ 这一格必须红」⇒ 它不是恒真；
+    第 5 格 `hyphen-in-n2` 钉词法把 `a-b.py` **计入 N2**（检测面，不是判定面）。
+  · **降到 0 没有把门焊成恒红**（用真 `judge()` 现算，不靠推断）：
+    `judge(实测N2=1, 上限=0)` ⇒ `['N2 连字符名 1 份 > 上限 0（超 1 份，名单见 --show）']` ⇒ 新入场确实顶门；
+    `judge(N1=16, N2=0, 上限 16/0)` ⇒ `[]` ⇒ 现状无违规（**顶格不算超**，所以 N1 那 16 份真债仍由主路径报、不自杀）。
+  · 实测：`--selftest` `SELFTEST OK（18 格）` rc=0；裸跑 `PASS … N1 16/16、N2 0/0` rc=0；
+    `check_registration_numbers` rc=0（它按 `现读 (\d+) 条命名判定面` 反解登记值与自己对表）。
+  · **同批同步三处现状面**（都写着旧的 4，属于「抄数」同族）：`scripts/README.md` 条目（改成「上限不在此抄，
+    现读看裸跑那行」，并把那份落后过的手写格子名单——写着「十格」、点着一条早已改名的格子——改成从 `cells` 反解）、
+    `scripts/NAMING.md`（「现存 5 份连字符文件」改为「R115 已全部改名，N2 现读 0」并保留规则本身不因归零而放宽的理由）、
+    `scripts/run_guards.py` 登记注释（把「没动任何上限常量」改成两次动作分开记：改名批不动上限是对的，
+    **还债之后由第 8 格顶下来才是合法降法**）。
+  ⚠️ **关闭条件**：推送后 CI 第 49 步的结论原文（本单只保证本机 18 格全过；CI 那一跑才算正身）。
+  ⚠️ **本单真正该记的是流程债，不是这一格**：连续四单（BUG-508/512/514/515）都是**同一道 fail-fast 掩蔽链**——
+  上游一步永久红 ⇒ 下游 N 步「看起来从未跑过」，缺陷在场而门不开。建议的下一把尺（本轮未做）：
+  在 CI 上统计「本次 run 里 skipped 的 gate 步骤数」，超过阈值就单独报一行——
+  **skipped 的守卫数量本身就是一个应当被观察的指标**，而现在它只出现在日志里、没有任何判据认领。
+
+
+## BUG-516 [2026-10-31T07:10:00Z] [medium] OPEN
+- summary: `check_selftest_hermetic.py` 的 **R 档棘轮越线**（现读 75 > 基线 74 ⇒ 电池那一格 rc=1 常红）——
+  存量债、不是本轮引入；本轮把它**降了 1**（76 → 75），仍未回到基线内
+- detail: ## 归属实测（快照树三档，不靠记忆）
+
+| 树 | R 现读 / 基线 | 结论 |
+|---|---|---|
+| tag `v0.3.11`（`5f33517e2`） | **76** / 74 | 越线 2 ⇒ **先于本轮存在** |
+| `532d9b2d`（BUG-514 那笔） | **75** / 74 | 把 `surface_probe`/`surface_fixture` 两份读取合成一份 ⇒ 少 1 处现状面读取 |
+| 工作树（含 BUG-515 的注释改动） | **75** / 74 | 与上一档同数 ⇒ 注释不影响计数（实测过才敢这么说） |
+
+取证命令：`git archive <ref> | tar -x -C temp/snap_<ref>` 后
+`python scripts/check_selftest_hermetic.py --root temp/snap_<ref>`（读数 `W=1/1 R=75/74 G=31/31`）。
+
+**R 档按脚本分布（现读，前 6 名）**：`check_release_asset_names.py` 13、`check_scripts_naming.py` 8、
+`run_guards.py` 5、`check_warning_ledger_reason.py` 5、`whisperer_patrol.py` 3、`check_push_guard.py` 3
+（共 75 处，全部是「`--selftest` 体内读仓库现状面」的调用链）。
+
+## 为什么本轮不顺手修
+
+1. 判据自己写着处置口径：「新增 selftest 的一方请**把那段移出 `--selftest` 归主面**，或改用 temp 合成夹具；
+   **不要为了变绿抬高基线**」⇒ 抬高基线到 75 是被明令禁止的那条路；而逐个把 13+8+5+… 处现状面读取挪出自检体，
+   是对十几把尺的自检语义做手术（每把都要配「挪出去之后这一格还在考东西」的反证），不是收尾动作。
+2. 这一档**不在 CI 的执行面**：`ci.yml:230-231` 跑的是 `run_guards.py --selftest` 与 `--list`（**登记与结构面**），
+   整仓电池本身没有 CI 步骤 ⇒ 本单是**本机电池的常红格**：不影响公网交付与 CI 结论，
+   但会让人习惯「电池里有一格红」——那正是别的红被读成噪音的开始（本仓最贵的病）。
+3. 有一处结构性张力要点名：`check_scripts_naming.py` 的第 8 格（BUG-515 里刚兑现它价值的那格）**天生非 hermetic**——
+   它必须读真仓现状才能判「上限不得宽于实测」。这与 R151 那条口径（「对象有债」不等于「夹具坏了」）撞在一起：
+   要么给「校准格」开一个显式豁免档（新的复杂度），要么把校准面挪到主路径、自检只留合成夹具。
+   **挪法要 owner 定**，因为它会改变「`--selftest` 绿」的含义。
+
+## 三条出路
+
+1. 逐个把自检体内的现状面读取挪到主路径（每把尺配反证格），R 一档一档降到 74 以下——正统做法，工作量大；
+2. 给「校准型格子」开显式档位（如 `C`），像 `--fresh` 那样要求**每格自述类别**，棘轮只对非校准档生效；
+3. 承认「校准格读现状面」是合法用途，把 `check_scripts_naming` 那 8 处 + 同类从 R 重分类到 DIAG——
+   ⚠️ 这条最像「为变绿改口径」，**必须先证明重分类规则不吞掉真违例**（配位移变异对照），否则等于关掉这把尺。
+
+
+## BUG-517 [2026-10-31T07:10:00Z] [low] OPEN
+- summary: `check_selftest_hermetic.py` 认自检函数只认四个名字（`SELFTEST_FUNCS`）⇒
+  叫 `surface_selftest` 的那一类**整份不在普查面里**，同族缺口当年只补了兄弟尺
+- detail: ## 实测（不是推断）
+
+- `scripts/check_selftest_hermetic.py:61`：`SELFTEST_FUNCS = ("selftest", "_selftest", "run_selftest", "self_test")`；
+- 本尺现读 117 条命中里 **`mcp_tool_tour` 出现 0 次**（`grep -c mcp_tool_tour temp/hermetic_live.txt` ⇒ 0），
+  而 `scripts/mcp_tool_tour.py` 的 `surface_selftest()` 确实在自检里往 `ROOT/temp/` 写合成 box（BUG-514 新加的 D1/D2 两支就是）；
+- 同族前案：2026-10-25 的自检变异普查记过「3 个假 NOSELF（自检函数命名不规范：`surface_selftest` / 内联分支）」，
+  当时只给 `check_selftest_call_face.py` 补了宽松命名与 `diag-inline` 退路（它现在会把这类点名成诊断），**hermetic 这把没补**。
+
+**⇒ 后果不是「多报」而是「少报」**：非标准命名的自检体可以随便读现状面、写探针，都不会进 R/G/W 三档。
+
+## 三条出路
+
+1. 白名单换成「函数名含 `selftest` / `self_test` 即算」+ 识别内联 `--selftest` 分支；
+   ⚠️ 会让 R/G/W 三档**当场跳高**（新纳面）⇒ 必须与 BUG-516 的基线一起裁决，单独做会把电池推得更红；
+2. 约定自检函数一律叫 `selftest()` 并改名 `surface_selftest`；
+   ⚠️ 改名会同时失去按名匹配的豁免面（判例-39），`check_selftest_call_face` 的白名单与本尺都得同批扫；
+3. 在这把尺的结论行里**点名「未被识别的自检体清单」**（只报不判）——最便宜，先把看不见变成看得见。

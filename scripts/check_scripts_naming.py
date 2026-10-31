@@ -47,8 +47,12 @@ SCRIPTS_DIR = os.path.join(ROOT, "scripts")
 NAMING_DOC = os.path.join(SCRIPTS_DIR, "NAMING.md")
 
 # 棘轮上限：必须 == 现状读数。下降要随改名同批下调，任何一条新债都会顶穿上限。
+# N2 于 2026-10-31 降到 0：R115 那批改名把 5 份连字符件全部换掉（`fist_gate.py` 等），
+# 但**上限没跟着降** ⇒ `--selftest` 的第 8 格 `real-ceiling-not-looser-than-measured` 判红
+# （这一格就是为此存在：上限比现实松＝下一份连字符件入场没人挡）。
+# CI 第 49 步（`Scripts naming guard`）此前一直被第 22 步 badge 的 fail-fast 挡成 skipped ⇒ 没人看见。
 N1_CEILING = 16
-N2_CEILING = 4
+N2_CEILING = 0
 
 PREFIX_ANCHOR = "naming-roles-prefix:"
 SUFFIX_ANCHOR = "naming-roles-suffix:"

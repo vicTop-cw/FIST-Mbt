@@ -297,7 +297,7 @@ owner 授权两条：**「代 lane-R115 落地后再发版」**（0.3.10 → 0.3
 | `check_dist_snapshot` / `check_host_installable` | 快照与 **DSH `package.json`** 都停在 0.3.10（后者不在 `gen_plugins` 投影里，是第五宿主手工安装面） | `refresh_dist.py` + 手改 manifest ⇒ 两格 rc=0 |
 
 **剩下的红（不粉饰）**：`check_delivery_gap`（本地未推送 ⇒ 8.6 推完即消）、
-`check_selftest_hermetic` 7 条**存量债**（命中的 `check_plugin_sync` / `check_exit_code_contract` /
+`check_selftest_hermetic` **存量债**（命中的 `check_plugin_sync` / `check_exit_code_contract` /
 `e2e_native_heap_probe` 三份自 `e0676f349` 起逐字未变，`whisperer.py` 只有 10 行改名指针
 ⇒ 不是本批引入，也不该在发版批里顺手改它的自检落盘面）。
 **第二跑 `temp/bat_r117.log`：149 格 / 失败 2 / SKIP 0 / 缺执行面 0** —— 剩下的两格正是上面那两条：
@@ -306,6 +306,12 @@ owner 授权两条：**「代 lane-R115 落地后再发版」**（0.3.10 → 0.3
 `check_badge … --fresh` PASS（快照同源 `code=95788f85f67b@…` ⇒ 文档改动不影响锚点这一条被兑现了一次）、
 `check_test_sync … --fresh-if-stale` PASS（`released=0`，共享同一份产物、不重跑全仓）、
 `check_deprecated_site_list temp/chk47.json` 由 rc=2 转 PASS（重采 dump）、`check_dist_snapshot` / `check_host_installable` 双双 rc=0。
+
+**2026-10-31 回填（这一格的读数要按现读重说）**：上面那句「7 条存量债」是当时按 DIAG 行数说的，收口时按这把尺自己的口径重读是**棘轮越线**：`W=1/1 R=75/74 G=31/31` ⇒ 越线的是 R 档 1 条。
+三档快照实测（`git archive` + `--root`）：tag `v0.3.11` 那棵树 **R=76**、BUG-514 那笔 **R=75**、工作树 **R=75**
+⇒ **不是本轮引入，且本轮顺手少了 1 处**（把 `surface_probe`/`surface_fixture` 两份现状面读取合成一份）。
+**没有抬基线**（那把尺明令「不要为了变绿抬高基线」），改立 **BUG-516**（OPEN，三条出路 + 为什么不在收尾时动手术）
+与同族 **BUG-517**（这把尺只认四个自检函数名 ⇒ `surface_selftest` 整份不在普查面里，实测 117 条命中里 0 条点名本文件）。
 
 ### 8.6 交付动作（推送 / tag / 镜像 / CI 读数）—— **本节读数为远端现取，不是计划**
 
@@ -386,5 +392,63 @@ AttributeError: 'NoneType' object has no attribute 'group'
    并顺手把 `AGENTS.md` 头部那句**已落后的字节/行数自述**改成「现读请跑 `check_instruction_budget.py`」——
    同一个教训的两种形态：**抄一个数，就是埋下一颗漂移雷**。
 
-⚠️ **仍留给远端的关闭条件**：本地这一支是桩 server，真协议面（`resources/list` 实回、`prompts/get` 实回、
-`serverInfo` 版本对表）要 node + 产物，不在 CI 这一步里；本单的正身仍是**推送后 CI 第 47 步的结论原文**。
+✅ **正身已到位**（run `41178635612` / job `124471289633`，commit `532d9b2d`）：第 **47** 步 `Self-described surface guard`
+**success**，紧接第 48 步 `Bug-reference integrity guard` **第一次拿到结论 = success**（此前一直是 skipped）。
+⚠️ 仍未覆盖的那一半：本地这一支是桩 server，真协议面（`resources/list` 实回、`prompts/get` 实回、`serverInfo` 版本对表）
+要 node + 产物，不在 CI 这一步里。
+⚠️ **门一开就露出下一格**：第 **49** 步 `Scripts naming guard` **failure**、50~54 又变 skipped ⇒ 立案并修 **BUG-515**
+（R115 把 N2 的 5 份连字符债全还完却没把上限从 4 降到 0；第 8 格 `real-ceiling-not-looser-than-measured` 硬红，
+本机同命令同红）。这是**同一条掩蔽链的第四例**：BUG-508 → 512 → 514 → 515。
+
+### 8.9 第 47 步转绿之后立刻露出的第 49 步：BUG-515（**上限比现实松，比没上限更贵**）
+
+BUG-514 修好之后 CI 第 47 步 **success**、第 48 步第一次拿到结论 **success**，紧接着第 49 步当场红
+（run `41178635612` / job `124471289633`，原文留盘 `temp/ci_920_js.log`）：
+
+```
+SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-measured ceiling-drift-detected）
+未通过格：real-ceiling-not-looser-than-measured
+##[error]Process completed with exit code 2.
+  49 Scripts naming guard => failure     50~54 => skipped
+```
+
+**同一命令本机同红**（不是「只有 CI 测得出」）：判据面 `PASS … N1 无角色 16/16、N2 连字符 0/4` 绿，
+自检面红——两句说的是同一件事的两个方向：**对象没债了，上限还按着有债的年代**。
+R115 那一批还了 N2 的 5 份连字符债却没同批把上限从 4 降到 0；`NAMING.md`/`README` 都写着「下降要随改名同批下调」，
+但**同批下调**既没有 hook 也没有尺，只由第 8 格在**下一次那一步真的执行时**兜住——而那一步被上游 fail-fast 挡了一整轮。
+
+处置与证据（都用真函数现算，不靠推断）：
+
+- `scripts/check_scripts_naming.py`：`N2_CEILING` 4 → **0**（`N1_CEILING` 保持 16：那 16 份是真债，由主路径报）；
+- `judge(N2 实测=1, 上限=0)` ⇒ `['N2 连字符名 1 份 > 上限 0（超 1 份，名单见 --show）']` ⇒ 新入场确实顶门；
+  `judge(N1=16, N2=0)` ⇒ `[]` ⇒ **顶格不算超**，现状 rc=0，没有把门焊成恒红；
+- 实测 `--selftest` `SELFTEST OK（18 格）` rc=0、裸跑 `PASS … N2 连字符 0/0` rc=0、`check_registration_numbers` rc=0；
+- **同批同步三处现状面**（都抄着旧的 4）：`scripts/README.md` 条目（改成「上限不在此抄，现读看裸跑那行」，
+  并把它那份落后过的手写格子名单——写着「十格」、还点着一条早已改名的格子——改成从 `cells` 反解）、
+  `scripts/NAMING.md`（「现存 5 份连字符文件」改为「R115 已全部改名，N2 现读 0」，规则本身不因归零而放宽）、
+  `scripts/run_guards.py` 登记注释（「没动任何上限常量」改成两次动作分开记：**改名批不动上限是对的，
+  还债之后由第 8 格顶下来才是合法降法**）。
+- ⚠️ **本单关闭条件**：推送后 CI 第 49 步的结论原文（本机只保证 18 格全过）。
+
+### 8.10 掩蔽链的四连号（这一轮真正该沉淀的东西）
+
+| 单 | 上游挡着它的那一步 | 结果 |
+|---|---|---|
+| BUG-508 | `check_badge` 永久 rc=2（结构错，不是内容错） | 下游 8 步 fail-fast 成 skipped |
+| BUG-512 | 同一条链解除后第 43 步第一次执行 | 干净树上「关键清单点了 gitignored 文件」⇒ **该步从未产出过结论** |
+| BUG-514 | 同上，第 47 步第一次执行 | 夹具 `AttributeError` ⇒ **整套对照一支都没跑** |
+| BUG-515 | 同上，第 49 步第一次执行 | 上限烂掉（实测 0 < 上限 4）⇒ **门形同虚设** |
+
+四单同一个形状：**上游一步永久红 ⇒ 下游 N 步「看起来从未跑过」，缺陷在场、门不开、无人看见**。
+⇒ 建议的下一把尺（本轮未做，已写进 BUG-515 小记）：把「本次 run 里 skipped 的 gate 步骤数」本身做成一个被观察的读数——
+skipped 不是「没事」，是「没测」。
+
+### 8.11 收口终读（本机三面，逐条给原件）
+
+| 面 | 读数 | 原件 |
+|---|---|---|
+| 仓内电池（第一跑，BUG-514 修完） | 149 格 / 失败 1 / SKIP 0 / 缺执行面 0（`check_delivery_gap` 已随推送转绿，兑现 §8.5 的预言） | `temp/battery_b514.log` |
+| 仓内电池（第二跑，BUG-515 修完） | 149 格 / 失败 1 / SKIP 0（剩的那格 = `check_selftest_hermetic`，已立案 **BUG-516**，非本轮引入） | `temp/battery_b515.log` |
+| 拒收六项活体探针（重跑，产物身份当场核过） | **6 格 = 5 PASS / 0 FAIL / 1 SKIP，rc=0**；被测产物 = `_build/js/release/build/cmd/cli/cli.js`（`sha8=0456b470`、`tools=182`、构建于 14:03，晚于最后一笔 `.mbt` 提交 13:47；`node cli.js version` 自报 **FIST-Mbt v0.3.11**）；唯一 SKIP 是 A4 的 native 臂，理由逐字披露：本机无 Windows native 产物、已发布 native 资产仅 linux-x64（⇒ BUG-513 那一格） | `temp/acc_final_0311.log` + `temp/acceptance-recheck/*` |
+| 账本 | 抬头 503 条 / OPEN 5（BUG-506、510、513、516、517）；形态判据干净 | `memory/bugs.md` |
+| 文档面 | `check_doc_surface`（J1–J17）/ `check_doc_paths` / `check_scripts_index` / `check_doc_dup` / `check_plugin_sync` / `check_tool_add_completeness` / `check_registration_numbers` 全 rc=0 | 各尺裸跑 |

@@ -9,10 +9,11 @@
    （`*_verify.py` 一眼是验证件）。既无前缀又无后缀的名字，看文件名猜不出它是门禁、工具还是补丁 —— 这是债。
 2. **分隔符只有 `_`**：文件名里出现 `-` 的模块不可 `import`，在 shell 里与在 Python 里被切成的词还不一样
    （`fist_gate.py` 在 bash 里是一个词、在 Python 里是 `fist` 减 `gate`）。
-   ⚠️ **这条防的是「可能性」，不是「当前用法」**（R67 实测澄清）：现存 5 份连字符文件
-   （`fist_gate.py` / `run_fist_mbt_http.py` / `run_fist_mbt_web.py` / `fist_pr_automator.py` / `run_fist_task_pool.py`）
-   **当前 0 次被 import**（全部由 `subprocess` 调用，活面共 95 处），
-   所以「不可 `import`」这一半理由**对它们当下不适用** —— 但规则仍然成立：
+   ⚠️ **这条防的是「可能性」，不是「当前用法」**（R67 实测澄清；2026-10-31 补现状）：
+   R67 那时**现存 5 份连字符文件**、全部只由 `subprocess` 调用、当前 0 次被 import ⇒
+   「不可 `import`」那一半理由对它们当下不适用。这 5 份后来在 R115 那一批里全部改名，
+   **N2 现读 0**（`--show` 可查），棘轮上限随之降到 0 ⇒ 从此任何一份新连字符件入场都顶门。
+   规则本身不因归零而放宽：
    ① `"fist-gate".isidentifier()` = **False**（永远不可能被 import，哪怕将来想 import）；
    ② bash 把 `fist-gate` 切 **1** 个词、Python 切 **2** 个（`['fist','gate']`）⇒ 两侧语义不一致。
    **⇒ 判据不因为「现在没人 import」就放宽**：那等于「因为还没出事所以不用防」。
