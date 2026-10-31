@@ -13451,3 +13451,62 @@ for k in ["TEMP", "TMPDIR", "TMP"] { match @env.get_env_var(k) { … } }  // 三
   与 WSL 实测 `TMPDIR=[] TEMP=[] TMP=[]`；接口面由 `moon info` 落 `src/server/pkg.generated.mbti`。
   ⚠️ **本单的关闭条件不在本机**：跨平台主张要由 CI 的 JS/ubuntu 臂 `Test (js)` 由红转绿来判，
   本地绿不作数（判例-33/37 同族）——见整改报告 §四.8 与账本 detail 末段。
+
+### FIXED(2026-10-31T05:11:30Z / BUG-507) 追记：关闭条件已兑现（Linux 实测）
+
+推送 `a7080f728` 触发 CI run `41171466812`，取 `actions/jobs/124450135277` 步骤表与原文
+（`gh api --allow-escape-sequences …/logs`，留盘 `temp/ci_after_push.log`）：
+
+```
+步骤 21 Test (js)                 → success（此前是 failure）
+  原文 temp/ci_after_push.log:1877  Total tests: 2002, passed: 2002, failed: 0.
+步骤 22 Badge consistency guard   → failure，但**与本单无关**，另立 BUG-508
+```
+
+⇒ 判绿口径兑现：这条跨平台主张不是拿本机绿抵的，是 ubuntu runner 上同一条命令的汇总行。
+CI 读数与本机读数**逐字相同（2002/2002）** ⇒ 「脏树读数会不会失真」这一顾虑在这里也没有兑现。
+
+## BUG-508 [2026-10-31T05:20:00Z] [medium] OPEN
+- summary: CI 的 `Badge consistency guard` 那一步**结构上不可能通过**——它把 `Test (js)` 用 `tee`
+  落下的日志原样喂给 `check_badge.py`，而该判据要求同目录存在源码面锚点 `<log>.src` 才认这份快照；
+  CI 从来没人写这个锚点 ⇒ 每次都是 `REJECT SNAPSHOT-STALE … rc=2`
+- detail: ## 实测（不是推理）
+
+`origin/main` 推送 `a7080f728` 后，run `41171466812` / job `124450135277`：
+
+```
+步骤 21 Test (js)                    success   Total tests: 2002, passed: 2002, failed: 0.
+步骤 22 Badge consistency guard      failure   Process completed with exit code 2.
+  正文（temp/ci_after_push.log:1882）：
+  REJECT SNAPSHOT-STALE: 快照 /tmp/moon_test.log 没有源码面锚点（缺 moon_test.log.src）
+    ⇒ 无从证明它与现在的代码同源。用 `--fresh` 重跑一次生成锚点；rc=2，不冒用违例红
+步骤 23~30 …                         skipped   ← 一路 fail-fast，测试总数守卫(24)根本没跑到
+```
+
+接线就错在命令行：`.github/workflows/ci.yml:185` 是
+`set -o pipefail; moon test --target js 2>&1 | tee /tmp/moon_test.log`（产日志的人不写锚点），
+`:189` 是 `python3 scripts/check_badge.py /tmp/moon_test.log README.md`（**裸跑**）。
+锚点唯一写入口 = `scripts/check_badge.py:318 write_anchor`，只有带 `--fresh` / `--fresh-if-stale`
+才会调用（`scripts/_badge_anchor.py` 是格式真源，`ANCHOR_PREFIX="code="`）。
+
+⇒ **这不是"徽章数字错了"**：rc=2 是判据主动"诚实沉默"（它拒绝把无法自证的读数报成 PASS，也拒绝报成违例红），
+而 CI 把 rc=2 当红 ⇒ 权威门上永远挂一格与产品无关的红，且它一红，后面 8 步全 skipped ⇒
+**把 `check_test_sync`（第 24 步）真实要报的那格也一起挡掉了**。同族判例-33：
+尺子本体能工作（它 `--selftest` 里就有 SNAPSHOT-STALE 那一格），**尺子被接错了**。
+
+## 修法（一行，但要与 BUG-507 的"别拿旧快照冒充现实"同批想清楚）
+
+`ci.yml:189` 改为 `python3 scripts/check_badge.py --fresh-if-stale /tmp/moon_test.log README.md`。
+选它而不是 `--fresh`：`--fresh-if-stale` 的语义正是「同源就不重跑」（BUG-498 为电池里两把 `--fresh`
+尺共享一次全仓而加），CI 上这份快照刚产出、锚点缺席 ⇒ 它会真跑一次全仓再比；
+实测 ubuntu 上全量 2002 只花 **41 秒**（`05:10:13.9 → 05:10:54.5`）⇒ 代价可忽略，
+而收益是「判据拿到的是它认得的那份现实」。
+
+## 为什么本轮没直接改（结转理由）
+
+1. **改完这一格照旧红**：README 徽章写的是 `1983/1983`，实测 2002 ⇒ 换成有意义红之后仍然红，
+   真正的阻塞是测试总数现状面（BUG-507 同轮的报告 §四.2），而 `README.md`/`AGENTS.md`/`USAGE.md`/
+   `BACKLOG.md`/`CHANGELOG.md` 此刻全是 lane-R115 的未提交 WIP（每份 1~3 行改名指针对齐）；
+2. `ci.yml` 里门禁步骤的位置/命令受 `check_ci_step_position`(TASK-003) 与 J12 约束，
+   应当与「数字同步」同一笔落地并当场复跑那两把尺，而不是拆成两笔各红一次。
+- reported_by: Qoder 主会话（读 `a7080f728` 触发的 CI 步骤表时发现）
