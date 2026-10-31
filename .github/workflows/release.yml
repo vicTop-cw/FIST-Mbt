@@ -137,6 +137,14 @@ jobs:
       - name: Install sqlite3 dev
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev sqlite3
 
+      - name: Migrate mooncakes dep manifests (先解包：native check 触发依赖落地)
+        # ⚠️ 顺序是**硬前置**，不是排版偏好。本仓 BUG-488 早记过，我第一版又踩了一遍，CI 当场红：
+        # `moon update` 只刷新注册表索引，`.mooncakes` 是**惰性解包** —— update 之后那目录根本不存在，
+        # 直接 reapply 只得到 `##[error]找不到目标 stub.c：…/.mooncakes/daqing/sqlite/stub.c`。
+        # 先跑一次能触发解包的构建。这里用 `moon check --target native`：它只做类型检查、不链可执行文件，
+        # 因此不受 BUG-527（库包带 link ⇒ 全项目**构建**必崩）影响 —— ci.yml 的 `Check (native)` 今天仍 success。
+        run: bash scripts/migrate_mooncakes_modjson.sh "moon check --target native"
+
       - name: Reapply BUG-133 sqlite FFI fix
         # ⚠️ 这一步是**承重件**，不是「顺手对齐 ci.yml」（ci.yml 两条 native 臂都有它，release 这条从来没有）：
         # 2026-10-31 WSL 实测同一棵树、同一枚产物，两态对照——
@@ -144,7 +152,7 @@ jobs:
         #               或 `double free or corruption` ⇒ rc=134（一次 SIGSEGV rc=139）
         #   reapply 后：三臂稳定 rc=0，未知子命令 rc=2
         # ⇒ 过去这条作业即便建出产物，交付的也是一枚「能启动、一用就崩」的二进制（判例-33 第三条）。
-        # `moon update` 会整目录重生成 `.mooncakes`（gitignored），所以必须在 update 之后、build 之前落补丁。
+        # 必须落在「解包之后、build 之前」：`.mooncakes` 在 .gitignore 里，任何一次 `moon update`/`moon add` 都会整目录重生成。
         run: bash patches/sqlite-bug133/reapply.sh --force
 
       - name: Build native
