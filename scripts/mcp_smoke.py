@@ -8,10 +8,13 @@ scripts/mcp_smoke.py — FIST-Mbt 一键自检（评审/自驱 10 秒验证 MCP 
 
 行为：
     1) 拉起 `node _build/js/.../cmd/cli/cli.js`（MCP server, STDIO）
-    2) tools/list            → 断言含 publish 等 79 个工具
+    2) tools/list            → 与**真源注册表**逐个对表（数量不写在这里，见 registry_tool_names()），
+                               并断言入口工具 publish 在场
+    2b) issue_scan           → 往沙箱注入一条高危模式，断言扫描命中（Step 1b）
     3) publish_parallel      → 发布一个任务，断言拿到 task_id
     4) get                   → 按 task_id 查回，断言命中且状态为待领取
     全部通过打印 `MCP-SMOKE PASS`，退出码 0；任一步失败打印 FAIL，退出码 1。
+    写入面：不带 FIST_DB_PATH 时默认改道 temp/mcp_smoke.db（BUG-122），不落根台账。
 """
 
 # BUG-138 残余面：Windows 默认 cp936 控制台下，中文结论一红就崩在 print 里，

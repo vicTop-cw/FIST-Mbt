@@ -141,7 +141,8 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（本机 `tools/list` 实测：**140+ 个 MCP 工具**）
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-10-31 本机实测：**182 个工具**；
+   这个数**不写死在文档里当契约** —— 唯一真源是 server 注册表，`scripts/mcp_smoke.py` 逐次与之对表）
 
 **Step 2 · 发布一个根任务**
 ```json
@@ -160,13 +161,23 @@ def rpc(method, **payload):
 
 三步跑通即 MCP server 端到端可用、环境就绪。
 
-> 本机实测：`python scripts/mcp_smoke.py` 一键自检输出
-> `PASS tools/list → 130 个工具` / `PASS publish → T?` / `PASS get → T? [待领取]` / `MCP-SMOKE PASS`。
-> 三步 = 该脚本的内部逻辑，二者完全一致。
+> 本机实测（2026-10-31，rc=0）：`python scripts/mcp_smoke.py` 输出**四行 `PASS` + 末行 `MCP-SMOKE PASS`** ——
+> `PASS tools/list → 182 个工具（含 publish/selfdrive_publish_next 等）` /
+> `PASS issue_scan → 扫描 1 文件，命中 2 条` / `PASS publish → T0r16` / `PASS get → T0r16 [待领取]`。
+> ⚠️ 本节标题曾写「三步 = 该脚本的内部逻辑，二者完全一致」——**不成立**：脚本在 `tools/list` 与 `publish`
+> 之间还有一步 `issue_scan`（源码 Step 1b），所以是四行不是三行。文档给的三步是**评委手工复现的最小面**，
+> 不是脚本的逐步镜像；「两者完全一致」那句是旧口径，已删。
+> 写入面：该自检默认改道到 `temp/` 沙箱库（BUG-122），**不动根台账** —— 2026-10-31 跑完后
+> `find . -maxdepth 3 -name '*.db' -mmin -12` 只命中 `./temp/mcp_smoke.db`，根 `fist-mbt.db` 不在结果里。
 
 ---
 
-## 6. 140+ 个 MCP 工具手册
+## 6. MCP 工具手册（**手册，不是清单**）
+
+> 本节按组给「怎么调 + 踩坑点」，**不承诺覆盖全量工具**；逐项权威表在
+> [`docs/AGENTS-mcp-inventory.md`](docs/AGENTS-mcp-inventory.md)（与 README「功能全景」的分组同源，
+> 真源是 server 注册表本身，`scripts/mcp_smoke.py` 每次跑都与之对表）。
+> 标题里原来那个「140+ 个」既不是实测数也不是上限，已去掉 —— 写一个含糊的数，等于给下一次漂移留位置。
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
 
