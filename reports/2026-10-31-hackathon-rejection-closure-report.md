@@ -501,3 +501,28 @@ RSV-XPROC REFUSED: 预热都没跑通：{… "reserved": true,
 「实现面能给出 rc=3，承诺面没写」的点名随之消掉。
 ⚠️ 六格本机跑不了（要两个真 node 进程 + 20 轮并发）⇒ **关闭条件 = 推送后第 52 步的结论原文**，
 并顺带第一次解除第 53/54 步的掩蔽。
+
+### 8.14 第 52 步的后半：BUG-521（字面锁打在一条按设计不出现该字面的分支上）
+
+run `41182053982`（commit `1d4b0a28`）第 52 步从 rc=3 变成 **rc=1 / 4格过** —— BUG-520 修的是后缀那半，
+剩下两格红的地方不同：
+
+```
+4 同 agent 续期…  FAIL | {"scope":"temp/f094/renew.mbt","reserved":true,
+                          "action":"unregistered+role_inferred+agent_self_reported+identity_self_r…
+6 过期绑定可让渡…  FAIL | {"scope":"temp/f094/expired.mbt","reserved":true,"action":"unregistered+…
+```
+
+**续期与让渡其实都成功了**（`reserved: true`、TTL 被推到未来），红只在「自述面没写成 `renewed`」。
+这里有两条候选结论，必须分开：① 产品把 outcome 与 advisory 挤进同一个前导词（表达力缺口）；
+② 探针把字面锁打在一条**按设计不会出现该字面**的分支上（夹具选错面）。
+判别靠换面实测，不靠读注释：同一支 `reserve_scope` 换成权限表里登记的 `moon.mod`
+（`allowed_roles=["HumanSteward"]`，身份取 `human_steward` / `human` 两个不同字符串、都推断成 HumanSteward），
+首绑 `reserved+…`、再绑 `renewed+…`、过期夺回 `taken_over+…` 且 `prev_agent` 点名 ⇒ **②成立，①不成立**。
+
+处置：格 1~3 留在未登记 scope（它们要的是并发裁决，与角色无关，逐字不动）；格 4/5/6 改打登记 scope；
+并新增**反脱锚格** `p_anchor_first_bind()`——锚点 scope 一旦不再被权限表命中（首绑报出 `unregistered`）
+⇒ **rc=3 自拒并写明「尺子坏了，不是产品没续期」**，出路点名去 `scope_permissions` 换 scope，
+且明令「别改判定式去迁就」。`--selftest` 32 → **35 格 rc=0**；六格实跑
+（本机用与交付面同一枚 release 产物，`sha8=0456b470`、`tools=182`）**6/6 全绿**，原件 `temp/rsv_local_run.log`。
+⚠️ 本单关闭条件仍是**推送后 CI 第 52 步的结论原文**；顺带第一次解除第 53/54 步的掩蔽。

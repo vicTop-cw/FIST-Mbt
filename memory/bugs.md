@@ -14081,3 +14081,46 @@ RSV-XPROC REFUSED: 预热都没跑通：{"scope":"warmup","agent":"w",…,"reser
     `S/U：实现面能给出 rc=3，承诺面没写`，现在承诺面写了（该尺现读不再点名本文件）。
   ⚠️ **本机不跑六格**（要起两个真 node 进程 + 20 轮并发），本机只核自证面；
   **本单关闭条件 = 推送后 CI 第 52 步的结论原文**（顺带第 53/54 步第一次拿到结论）。
+
+
+## BUG-521 [2026-10-31T08:58:00Z] [medium] FIXED
+- summary: 预订探针的格 4/5/6 打在**未登记的 scope**（`temp/f094/*.mbt`）上，而产品对未登记 scope 会把
+  成功获取的 `action` 一律标成 `unregistered`（`engine_rsv.mbt:826-837`，前导词逐字不变是刻意的——上游
+  `lock_perm_wbtest.mbt:104` 一类有**精确相等**断言）⇒ `renewed` / `taken_over` 这两个字面在那条分支上
+  **根本不出现** ⇒ CI 第 52 步 4/6 红（BUG-520 修完后缀那半之后露出的另一半）
+- detail: ## 现形与判别（两件事分开，别混）
+
+run `41182053982` / job `124481294783`（commit `1d4b0a28`）第 52 步：格 1/2/3/5 **PASS**、格 4/6 **FAIL**，
+回执逐字是——
+
+```
+4 同 agent 续期…  FAIL | {"scope":"temp/f094/renew.mbt","reserved":true,
+                          "action":"unregistered+role_inferred+agent_self_reported+identity_self_r…
+6 过期绑定可让渡…  FAIL | {"scope":"temp/f094/expired.mbt","reserved":true,"action":"unregistered+…
+=== RSV-XPROC: FAIL（4/6）===   ⇒ rc=1
+```
+
+**续期与让渡其实都成功了**（`reserved: true`、TTL 被推到未来），失败的只是「自述面没写成 renewed」。
+所以这里有两个候选结论，必须分开判：① 产品把 outcome 与 advisory 挤进同一个前导词（表达力缺口）；
+② 探针把「字面锁」打在一条**按设计不会出现该字面**的分支上（夹具选错面）。
+判别实测（`_build/js/release/…/cli.js`，sha8=`0456b470`，与 HEAD 同源）：同一个 `reserve_scope` 换成
+**权限表里登记的 scope** `moon.mod`（`allowed_roles=["HumanSteward"]`，身份用 `human_steward` / `human`
+两个不同字符串、都推断成 HumanSteward），首绑 `reserved+…`、再绑 `renewed+…`、过期后夺回
+`taken_over+…` 且 `prev_agent` 点名 ⇒ **字面一直都在，是探针打错了分支**（结论 ②，①不成立）。
+
+### FIXED(2026-10-31T08:58:00Z / BUG-521)
+- evidence: **回归锁 = 新的锚点格 + 3 格自证 + 六格全绿实测**：
+  · 格 1~3 留在未登记 scope（要的是并发裁决本身，与角色无关，逐字不动）；
+  · 格 4/5/6 改打 `REG_SCOPE="moon.mod"`，并新增**反脱锚格** `p_anchor_first_bind()`：
+    锚点 scope 的首绑必须是 base=`reserved`，一旦退化成 `unregistered`（权限表改了、这条 scope 不再命中）
+    ⇒ **rc=3 自拒并写明「尺子坏了，不是产品没续期」**，出路点名去 `engine_scope_perm.mbt` 的
+    `scope_permissions` 换 scope，**并明令「别改判定式去迁就」**（判例-32：尺子的腐烂与对象的陈旧是两种结论）；
+  · 自证面新增 `ANCHOR-ok-登记scope首绑reserved带后缀` / `ANCHOR-red-退化成unregistered` /
+    `ANCHOR-red-conflict不算锚点通过` 三格 ⇒ `--selftest` 32 → **35 格 rc=0**；
+  · 六格实跑（本机用与交付面同一枚 release 产物，`sha8=0456b470`、`tools=182`）：
+    `1..6` 全 PASS、`=== RSV-XPROC PASS：6 格全绿（预订的跨进程互斥已锁）===`，原件 `temp/rsv_local_run.log`；
+  · 模块 docstring 的六格说明补写「1~3 用未登记 / 4~6 用登记 scope，以及为什么」——
+    这一格的红本来就是「读者以为 action 在任何 scope 都会写 renewed」，把口径写进自述面才是修完。
+  ⚠️ 本机那一跑用的是 **release 产物**（探针默认钉 `_build/js/debug/…`，那枚在本机是昨天的旧构建，
+  判例-32 的同一课）⇒ 本机读数只在「产物身份当场打印」的前提下成立；
+  **本单关闭条件 = 推送后 CI 第 52 步的结论原文**（CI 自己 `moon build` 出干净产物）。
