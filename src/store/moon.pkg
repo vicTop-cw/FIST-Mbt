@@ -7,8 +7,8 @@ import {
   "moonbitlang/core/json",
   "moonbitlang/core/debug",
   // 替换 "".to_bytes() 时为 @utf8.encode 补的导入。
-  // ⚠️ 必须显式别名：本包已用 @encoding 指 moonbitlang/x/encoding（:4），
-  //    core 的 encoding/utf8 默认别名也是 @encoding ⇒ 冲突 ⇒ [4020] not found。
+  // R115 实测：默认别名就是 `@utf8`（取路径末段），与上面 `x/encoding` 的 `@encoding` 不冲突
+  // ⇒ 旧注释「必须显式别名」的前提不成立，显式 `@utf8` 已去掉；store_sqlite.mbt 的 @utf8.encode 照常解析。
   "moonbitlang/core/encoding/utf8",
 }
 
