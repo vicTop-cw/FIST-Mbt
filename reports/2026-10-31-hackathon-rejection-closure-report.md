@@ -948,3 +948,41 @@ Windows 上它仍按边界声明回 SKIP，那一半记在 BUG-513（缺资产�
 
 账：**OPEN 7 → 6**。⚠️ 本单关闭只覆盖「前置现实的新鲜度」，不覆盖 CI `Test (native)` 那一格（BUG-523）
 与全项目 native 构建（BUG-527）——两者仍 OPEN。
+
+### 8.27 最后一跑：把探针指向**公网资产本体**，在 Linux 上拿到 9 PASS / 0 FAIL / 0 SKIP
+
+A4 那一格在 Windows 上一直回 `SKIP`——那是它自己的边界声明（不拿别的平台的读数冒充本平台交付物）。
+今天 native-linux 资产上了公开面之后，这一格第一次有条件**真跑**。做法就是 README 里新加的那一段配方，
+而且我按本仓自己的规矩**把配方从 README 反解出来原样执行**（不是照着记忆手写一遍）：
+
+复跑法（README 那一段原样执行，**不从记忆手抄**）：把 `### 拒收项复验入口` 里第二个 bash 块整段
+存成一个 .sh（本仓的反解件是一次性内联件，不在跟踪面），再
+```bash
+wsl -e bash -lc 'cd /mnt/e/IDEProjects/AI/FIST-Mbt && bash /mnt/e/…/那个.sh'
+PK                                              ← head -c 2 验的是「200 不等于拿到文件」那一手
+server = dist/fist-mbt.js (sha8=0456b470) tools=182 sandbox=temp/acceptance-recheck/20261031T120547Z-8a3e35/box
+...
+native version ⇒ rc=0 命中「FIST-Mbt v」=True
+native demo    ⇒ rc=0 命中「七态闭环」=True
+native serve   ⇒ rc=0 命中「serve」=True
+native 未知子命令 ⇒ rc=2（js 轨是 rc=2）
+结论：9 格（拒收项 6 + 尺子自检 3）= 9 PASS / 0 FAIL / 0 SKIP
+```
+
+跑之前**先把 `_release/` 里那两件删掉**（只删我自己放的 `fist-mbt-native-linux-x64-v0.3.11.zip` 与
+解出的 `native/fist-mbt`；别人的 `fist-mbt.exe`、`*.db` 一个没动），这样这一跑证明的是
+**「README 那几行自己就能把公网资产取回来并验掉」**，不是「上一轮的残留还在盘上」。
+
+三处诚实边界（都不遮）：
+1. **`_release/` 是 gitignored 的本机取件/构建目录，不是交付面**。探针只把两件事当判据：
+   zip 内文件魔数 ↔ 资产名声明的平台；本平台可执行产物真跑一次。它对 `native/fist-mbt.exe`
+   （linux-elf 却叫 .exe 的**本机残留**）只登记提示、不判红——拿残留判 FAIL 等于看上一位构建者留在盘上的影子。
+2. **README 里那条 curl 一开始写坏了**：我把续行反斜杠写成两字符 `\`+`n` 落进 md（这台机器上的转义通道
+   吃掉一根反斜杠，同一族第二次），第一次执行就红在自己身上——**这正是「写完立刻原样跑一遍」的价值**。
+   现改成一行写完，`head -c 2` 那一步把「拿到的是 zip 不是 HTML」钉在配方里。
+3. **A4 的 PASS 回执 `why` 是空的**（六项里只有它 PASS 时不写理由，SKIP/FAIL 都写）。
+   这是可诊断性的小缺口，不是判据错，本轮不改（改一支刚被评审用过的探针去补文案，风险大于收益）；
+   留给下一轮与 BUG-513 的「资产集合尺」同批做。
+
+⇒ 至此拒收单第 ④ 项的证据链是三段同一枚字节：**源码 → CI 产物 → 公网资产 → 探针在真平台上跑过一遍**，
+而入口是 README 里那一段可复跑配方，不是本报告的读数。

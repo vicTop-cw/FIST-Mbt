@@ -147,7 +147,8 @@ DAG 环依赖、Omega 验收门——都由一支活体探针复验（跨进程�
 # 先有一枚**打过 ESM shim** 的产物（探针不代劳；缺 shim 的失效形态是「server 起不来」而不是「少跑一步」）
 moon build --target js --release && python scripts/patch_esm_main.py _build/js/release/build/cmd/cli/cli.js
 python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
-#   期望末行：结论：7 格（拒收项 6 + 尺子自检 1）= 6 PASS / 0 FAIL / 1 SKIP
+#   期望末行：结论：9 格（拒收项 6 + 尺子自检 3）；Windows 本机 = 8 PASS / 0 FAIL / 1 SKIP，
+#                 Linux（含 WSL）= 9 PASS / 0 FAIL / 0 SKIP。格数一律从 CELLS 反解，不在这里抄数
 #   第 1 行 `server = …(sha8=…) tools=182` 是**产物身份**：复验结论只对那一枚成立
 ```
 
@@ -156,10 +157,25 @@ python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
 ```bash
 gh release download v0.3.11 -R vicTop-cw/FIST-Mbt -p fist-mbt-js-v0.3.11.zip
 python -c "import zipfile;open('fist-mbt.js','wb').write(zipfile.ZipFile('fist-mbt-js-v0.3.11.zip').read('fist-mbt.js'))"
-FIST_ACCEPT_JS="$(pwd)/fist-mbt.js" python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json   # 必须绝对路径，见 BUG-524
+FIST_ACCEPT_JS=fist-mbt.js python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json   # 相对/绝对都可，见 BUG-524（本日修）
 ```
 
-A4 那一格在 Windows 本机回 `SKIP` 而不是 `PASS`：探针拒绝拿 WSL 读数冒充 Windows 交付物（判例-33）。
+A4 那一格在 Windows 本机回 `SKIP` 而不是 `PASS`：探针拒绝拿「别的平台的读数」冒充本平台交付物（判例-33）。
+想在 Linux 上把那一格**真跑**（也就是复验公网 Release 里那枚 native 资产本体），把资产放进 `_release/` 再跑同一条探针：
+
+```bash
+mkdir -p _release/native
+curl -sSL -o _release/fist-mbt-native-linux-x64-v0.3.11.zip https://github.com/vicTop-cw/FIST-Mbt/releases/download/v0.3.11/fist-mbt-native-linux-x64-v0.3.11.zip
+head -c 2 _release/fist-mbt-native-linux-x64-v0.3.11.zip   # 必须是 PK（200 不等于拿到文件）
+python3 -c "import zipfile;z=zipfile.ZipFile('_release/fist-mbt-native-linux-x64-v0.3.11.zip');z.extract('fist-mbt','_release/native')"  # 解出的件名就叫 fist-mbt
+chmod +x _release/native/fist-mbt
+FIST_ACCEPT_JS=dist/fist-mbt.js python3 scripts/blackbox/e2e_acceptance_recheck.py --selftest   # 需 Node ≥ 24
+```
+
+⇒ 那一跑读数 **9 格 = 9 PASS / 0 FAIL / 0 SKIP**（`native version|demo|serve` 各 rc=0 且命中自己的内容、
+   未知子命令 rc=2 与 js 轨同档）。`_release/` 在 `.gitignore` 面，是**本机构建/取件目录**，不是交付面；
+   探针只把「zip 内文件魔数 ↔ 资产名声明的平台」和「本平台可执行产物真跑一次」当判据。
+
 逐条整改过程、远端 CI 读数与遗留缺陷见 [`reports/2026-10-31-hackathon-rejection-closure-report.md`](reports/2026-10-31-hackathon-rejection-closure-report.md)。
 
 ### 在 DeepSeek Harness 里安装（插件态）
