@@ -13709,3 +13709,94 @@ check-windows-js                  success   （同一 commit，Windows 那一臂
   判据用 `os.environ` 的全局状态做分支、而自检没把它纳进夹具——**没有一把普查尺**在扫
   （`check_selftest_hermetic` 扫的是「selftest 不许写真实仓库」，口径不同、抓不到这条）。
   要钉这一类得另立一把「自检的环境依赖普查」尺，本轮未做，留给下一轮裁决。
+
+## BUG-512 [2026-10-31T06:40:00Z] [medium] FIXED
+- summary: `check_host_installable.py` 把**本机渲染件** `.dsh/fist-mbt-plugin/cordis.patch.yml` 列进「关键清单」
+  并按「不存在 ⇒ 记 problem」处理 ⇒ 在干净 checkout（CI / 副机）上这一格**从来没有产出过结论**
+  （BUG-358 同一条律的第二例，只是换了个文件）
+- detail: ## 怎么现形的（不是本机测得出）
+
+BUG-508 把 CI 第 22 步的接线修通之后，第 26~43 步**十几天来第一次真的跑起来**，第 43 步当场报：
+
+```
+run 41176543619 / job 124465166015（ubuntu, commit c49e9ba31）
+  43 Host-installable guard   failure
+     SELFTEST FAIL 判据自身有问题：
+       - T5b 真实现状面缺关键文件：.dsh/fist-mbt-plugin/cordis.patch.yml → 判据将自拒 exit 2（当前不可判）
+       - T7 找不到现状 DSH patch → 判据扫描面选错了
+```
+
+本机为什么永远看不见：这台机跑过 `render_dsh_patch.py`，那个文件**在** ⇒ T5b/T7 都是绿的。
+`git check-ignore -v` 实测：`.gitignore:221 /.dsh/fist-mbt-plugin/cordis.patch.yml` ⇒ 它**按设计不进 git**。
+⇒ 与 BUG-358（根 `.mcp.json` 塞进关键清单）逐字同形：**把本机件当跟踪真源，判据就在干净树上永不判定**。
+同族判例-33（服务本体 ≠ 服务接入）：这一格配了 `--selftest`、也有 CI 步骤，看起来两层都有——
+缺的是第三层「**自检不许假设自己跑在哪台机器上**」。
+
+### FIXED(2026-10-31T06:40:00Z / BUG-512)
+- evidence: 回归锁 = `check_host_installable.py --selftest` 新增/重写的四格（旧的 7 条 T 档逐字保留）：
+  · **T5d**（改）：合成「干净 checkout」root 只放**跟踪真源** ⇒ `missing_key_files()` 必须为空；
+  · **T5f**（新，防「SKIP 一路咽掉」）：把**跟踪**的渲染模板 `cordis.patch.yml.tpl` 也拿掉 ⇒
+    关键清单必须还能报缺失。没有这一格，「把文件移出清单」可能等于把整面扫空而没人发现；
+  · **T7a/T7b/T7c**（重写，走新的纯函数 `dsh_patch_face()` 两档）：文件在 ⇒ 逐字判；文件不在 ⇒
+    `skipped=True` 且 problems 为空（点名 SKIP，不 exit 2）；**T7c 是变异对照**——把渲染件造出来，
+    同一函数必须**换档**去判，否则就成了「恒 SKIP = 恒绿」；
+  · SKIP 文案本身是被断言的对象（`D1b SKIP（本机未渲染 cordis.patch.yml ⇒ 严格档未判，跟踪面已判）`）。
+  实测：`--selftest` rc=0、真实现状面 rc=0、`check_selftest_inventory_doc.py` rc=0（判定族 59 条逐一对表）、
+  `check_doc_surface.py` rc=0（J1–J17）。
+  ⚠️ **未锁的缺口**：干净树那一档要靠 `git archive` 等价树才能真复现，本机常驻测不到；
+  CI 第 43 步是它的正身判面——**本单的关闭条件仍是推送后 CI 该步骤的结论原文**（与 BUG-508 同一口径）。
+  ⚠️ **建议的下一把尺**（本轮未做）：普查「关键清单/扫描面里点了 gitignored 文件」的判据——
+  `git check-ignore` 对着各把尺自己声明的面跑一遍，两秒就能抓完这一族（本仓已为它返工两次：BUG-358、本单）。
+
+
+## BUG-513 [2026-10-31T06:42:00Z] [medium] OPEN
+- summary: `release.yml` 两条 native 臂（linux / windows）在 v0.3.11 这一发**双双失败** ⇒ 公网 Release 只剩
+  **1 枚资产**（`fist-mbt-js-v0.3.11.zip` 794,603B），而 v0.3.10 那发有 2 枚（js + native-linux-x64）。
+  因为两臂都带 `continue-on-error`，**这个缩水没有任何一把尺会红**
+- detail: ## 实测（A/B 在同一台机器、同一个 moon 上跑，不是猜）
+
+CI 侧（run `41175938777`，job `124463412162` = build-native-linux）：
+
+```
+Run bash scripts/migrate_mooncakes_modjson.sh "moon build --target native"
+  Failed with 11 warnings, 0 errors.
+  Error: failed to run build for target Native
+  Caused by: failed when building project
+  （build-native-windows 同红；meta / build-js / release 全绿 ⇒ Release 照常出，只出 js 一枚）
+```
+
+本机 WSL 复现（`moon 0.1.20261021`，对 **`git archive` 出来的干净快照树**跑，A/B 只差 ref）：
+
+| 树 | `moon build --target native` | `undefined reference to 'main'` 行数 | 依赖 |
+|---|---|---|---|
+| tag `v0.3.10` | **rc=255** | 10 | `Using cached daqing/sqlite@0.4.0` |
+| HEAD（v0.3.11） | **rc=255** | 10 | 同上 |
+
+真正的错误在链接那一步（moon 把「0 errors」报给上层，`failed when building project` 是它的包装）：
+
+```
+Error: failed to make executable vicTop-cw/fist-mbt/src/store (native):
+  /usr/bin/cc -o …/_build/native/debug/build/src/store/store.exe … -lm -lsqlite3 …
+collect2: (…): undefined reference to `main'
+```
+点名的是 **库包**（`src/store` / `src/router` / `src/omega` / `src/executor` / `tests/external_executor` …），
+它们本来就没有 `main` ⇒ **moon 在 native 目标下把每个包都当可执行文件去链**。
+
+⇒ **结论：这不是本轮改动引入的回归**（v0.3.10 那一棵同样的树、同一个 moon 一样红）。
+v0.3.10 在 2026-10-30 能出 native-linux 资产，而今天同一条命令在两个 ref 上都失败 ⇒
+差异在**环境**（`MOON_VERSION: latest` 的 nightly 漂移，或注册表侧 `daqing/sqlite` 的解析结果），
+不在本仓源码。这正是本仓把工具链地板写进 `toolchain.json`（J17）却在**分发轨上仍用 `latest`** 的代价。
+
+## 三条出路（择一，都要配反证格）
+
+1. **分发轨钉版**：`release.yml` 的 `MOON_VERSION` 从 `latest` 改成 `toolchain.json` 里的钉版，
+   与文档地板同源（J17 已经在管文档面与 CI 的 `node-version`，把 moon 也纳进来才是闭环）。
+2. **native 臂补 `reapply.sh`**：`ci.yml` 两条 native 臂在 `moon update` 之后有
+   `bash patches/sqlite-bug133/reapply.sh --force`，**`release.yml` 的 native 臂没有** ⇒ 依赖一更新就把
+   BUG-133 的修复丢掉（本轮未必是它，但这道缝确实存在，改哪条都要先把它补平再说话）。
+3. **给资产集合加尺**：新增一把判据读 GitHub Release 的资产清单，与 `release.yml` 里声明的臂**对表**，
+   少了哪一枚就红（今天这发「少一枚」是**我查 API 才发现的**，判据面里没人看这一格；
+   `check_release_asset_names` 只校「名字/版本三处同源」，不校「实际出了几枚」）。
+
+⚠️ 本轮**没有**动 `release.yml`：发版动作已经执行完（tag 已推、Release 已出、JS 资产可装），
+在没有第二台可比环境的情况下改分发轨配置＝拿公网资产当试验品。**owner 裁决后再动**。

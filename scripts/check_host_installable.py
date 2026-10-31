@@ -54,8 +54,11 @@
        DSH = `initialDelayMs/maxDelayMs/maxAttempts`；Claude = `intervalMs/maxRetries/delayMs`；
        默认模板只能选一个主形状（Claude Code 形状）。判据按宿主分档认这个事实。
 
-扫描面（缺关键文件 → 自拒 exit 2）：
-  `.dsh/fist-mbt-plugin/{package.json, cordis.patch.yml}`（D1）
+扫描面（缺**跟踪真源** → 自拒 exit 2；本机渲染件缺 → 点名 SKIP，见下）：
+  `.dsh/fist-mbt-plugin/package.json` + `cordis.patch.yml.tpl`（D1 的关键清单）
+  ⚠️ `cordis.patch.yml` 本体由 `scripts/render_dsh_patch.py` 在本机渲染、被 `.gitignore:221` 忽略
+  ⇒ 它**不在**关键清单里（BUG-358 第二例：列进去就等于让 CI 每次 exit 2、这格永不产出结论）。
+  它在时逐字判严格档；它不在时打 `D1b SKIP（本机未渲染…）` 并继续判跟踪面。
   `.mcp.json` / `.mcp.dev.json` / `plugins/**/.mcp.json`（D2）
   `default-fist.mcp.json`（D3）
   `moon.mod`（D1 的版本基线）
@@ -89,6 +92,17 @@ ROOT = Path(__file__).resolve().parent.parent
 DSH_DIR = ".dsh/fist-mbt-plugin"
 DSH_MANIFEST = DSH_DIR + "/package.json"
 DSH_PATCH = DSH_DIR + "/cordis.patch.yml"
+# BUG-358 的**第二例**（2026-10-31 CI 第 43 步实测）：`cordis.patch.yml` 由 `scripts/render_dsh_patch.py`
+# 在**本机**渲染，被 `.gitignore:221` 的 `/.dsh/fist-mbt-plugin/cordis.patch.yml` 显式忽略
+# ⇒ 干净 checkout（CI、副机）上它**必然不存在**。旧实现把它列进关键清单、又在 D1 里「不存在就记 problem」
+# ⇒ 这一格在 CI 上**从来没有产出过结论**（它一直躲在 fail-fast 后面；BUG-508 把 badge 那一步接通、
+# 第 26~43 步第一次跑起来，它才当场现形）。
+# ⇒ 现在的口径分开两档：**跟踪真源缺 = 输入面退化（rc=2）**；**本机渲染件缺 = 点名 SKIP，照常产出结论**
+#   （判例-33：不带说明的 SKIP 会被读成「这格没问题」，所以 SKIP 必须写出「跳过了哪一面的什么证明」）。
+DSH_PATCH_SKIP_MARK = "D1b SKIP（本机未渲染 cordis.patch.yml ⇒ 严格档未判，跟踪面已判）"
+# 渲染**模板**是跟踪件（干净 checkout 上一定在）⇒ 它替 DSH_PATCH 进关键清单，
+# 让「DSH 目录整个丢了」这种真退化仍然报得出 rc=2，而不是被 SKIP 一路咽掉。
+DSH_PATCH_TPL = DSH_DIR + "/cordis.patch.yml.tpl"
 LENIENT_JSON = [".mcp.json", ".mcp.dev.json"]
 # BUG-358：只有「跟踪真源」才允许进关键清单。根 `.mcp.json` 被 .gitignore `/.mcp.json`
 # 显式忽略（本机 MCP 连接器在读、与跟踪真源 .mcp.dev.json 逐字节相同但不进 git，见 BUG-131）。
@@ -329,11 +343,32 @@ def read_moon_version() -> str | None:
 
 
 # ── 关键文件缺失 → 自拒 ─────────────────────────────────────────────────────
+def dsh_patch_face(root: Path = ROOT):
+    """DSH patch 面：返回 `(problems, skipped)`。
+
+    分开两档是刻意的（BUG-358 第二例）：`cordis.patch.yml` 是**本机渲染件**（gitignored），
+    干净 checkout 上必然没有 ⇒ 那**不是**输入面退化，而是「这一面这台机器上没有可判的东西」
+    ⇒ 给点名 SKIP 并继续产出结论，而不是 exit 2 让整格永不判定。
+    """
+    p = root / DSH_PATCH
+    if not p.exists():
+        return [], True
+    probs, parsed_ok = dsh_patch_problems(p.read_text(encoding="utf-8"))
+    if not parsed_ok and not _HAS_YAML:
+        # PyYAML 缺失时只做退化检查，无法给出严格结论 → 但不算输入面退化
+        pass
+    return probs, False
+
+
 def missing_key_files(root: Path = ROOT) -> list[str]:
     """跟踪真源齐不齐。BUG-358：关键清单只收 REQUIRED_MCP_JSON（跟踪件），
     不收被 gitignore 的根 .mcp.json——否则任何干净 checkout（CI、副机 clone）都会
-    因缺这个本机件而自拒 exit 2，判据形同虚设。root 供 --selftest 注入合成树。"""
-    crit = [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
+    因缺这个本机件而自拒 exit 2，判据形同虚设。root 供 --selftest 注入合成树。
+
+    ⚠️ 同一条律的**第二例**（2026-10-31）：`DSH_PATCH` 也是本机渲染件（`.gitignore:221`），
+    旧清单里留着它 ⇒ CI 上每次「输入面退化」，这一格从未产出过结论。现按同法移出，
+    由 `dsh_patch_face()` 以「点名 SKIP」的形式继续覆盖它存在的那一档。"""
+    crit = [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD] + REQUIRED_MCP_JSON
     return [c for c in crit if not (root / c).exists()]
 
 
@@ -486,7 +521,7 @@ def selftest() -> list[str]:
     with tempfile.TemporaryDirectory() as td:
         fake = Path(td)
         (fake / DSH_MANIFEST).parent.mkdir(parents=True, exist_ok=True)
-        for rel in [DSH_MANIFEST, DSH_PATCH, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
+        for rel in [DSH_MANIFEST, DSH_PATCH_TPL, DEFAULT_TEMPLATE, MOON_MOD, ".mcp.dev.json"]:
             (fake / rel).parent.mkdir(parents=True, exist_ok=True)
             (fake / rel).write_text("{}", encoding="utf-8")
         # 故意【不】创建 .mcp.json —— 模拟干净 CI checkout
@@ -494,6 +529,14 @@ def selftest() -> list[str]:
         if absent_local:
             fails.append("T5d BUG-358：干净 checkout（无本机 .mcp.json）被误判输入面退化：%s"
                          % ", ".join(absent_local))
+        # T5f（**防「SKIP 一路咽掉」**，判例-33）：把**跟踪**的渲染模板也拿掉 ⇒ 关键清单必须还能报缺失。
+        # 没有这一格，「把 DSH_PATCH 移出关键清单」就可能是把整面扫空而不被发现。
+        (fake / DSH_PATCH_TPL).unlink()
+        tpl_missing = missing_key_files(fake)
+        if DSH_PATCH_TPL not in tpl_missing:
+            fails.append("T5f DSH 目录整个丢了却不报缺失（关键清单被削空 = 新的假绿）：%s"
+                         % ", ".join(tpl_missing))
+        (fake / DSH_PATCH_TPL).write_text("{}", encoding="utf-8")
         # T5e：跟踪真源真缺时仍须自拒（防修复把判据削成「什么都不缺」的另一端假绿）
         (fake / MOON_MOD).unlink()
         real_missing = missing_key_files(fake)
@@ -504,14 +547,26 @@ def selftest() -> list[str]:
     if read_moon_version() is None:
         fails.append("T6 读不到 moon.mod 版本 → D1 的 version==moon.mod 无法判定")
 
-    # T7 现状 DSH 面不红（尺子自证：当前 cordis.patch.yml 是「真正可用」样本）
-    real = ROOT / DSH_PATCH
-    if real.exists():
-        rp, _ = dsh_patch_problems(real.read_text(encoding="utf-8"))
-        if rp:
-            fails.append("T7 现状 DSH patch 红了（应为绿）：" + rp[0])
-    else:
-        fails.append("T7 找不到现状 DSH patch → 判据扫描面选错了")
+    # T7 现状 DSH patch 面：**两档都要有断言**（旧写法只在文件存在时判，干净树直接判「选错扫描面」）
+    rp, rskipped = dsh_patch_face(ROOT)
+    if not rskipped and rp:
+        fails.append("T7a 现状 DSH patch 红了（应为绿）：" + rp[0])
+    if rskipped:
+        # 本机没有渲染件 = CI/副机那一档：这一面必须是**点名 SKIP**，而且尺子整体仍要能出结论
+        # （不是 exit 2、也不是悄悄少判一面 ⇒ SKIP 文案本身就是被断言的对象）
+        if not DSH_PATCH_SKIP_MARK.startswith("D1b SKIP"):
+            fails.append("T7b 干净树档的 SKIP 标记不合规（必须自带「跳过了哪一面的什么证明」）")
+        with tempfile.TemporaryDirectory() as td2:
+            fake2 = Path(td2)
+            (fake2 / DSH_DIR).mkdir(parents=True, exist_ok=True)
+            p2, sk2 = dsh_patch_face(fake2)
+            if not sk2 or p2:
+                fails.append("T7b 干净树合成面没有走 SKIP 档（skipped=%r problems=%r）" % (sk2, p2))
+            # 变异对照（判例-30）：把渲染件造出来 ⇒ 同一函数必须**换档**去逐字判，不许继续报 SKIP
+            (fake2 / DSH_PATCH).write_text("- insert:\n  - id: fist-mbt-mcp\n", encoding="utf-8")
+            _p3, sk3 = dsh_patch_face(fake2)
+            if sk3:
+                fails.append("T7c 文件造出来后仍报 SKIP ⇒ 这一档永远不会判（恒 SKIP = 恒绿）")
 
     # T8 字段白名单反解：必须真的能从 src 反解到 toolCallTimeoutMs（防硬编码漂移）
     fields = read_form_field_whitelist()
@@ -569,16 +624,11 @@ def main(argv: list[str]) -> int:
     except Exception as e:
         problems.append("DSH manifest 无法 JSON 解析：%s" % e)
 
-    # D1 · patch（严格档）
-    pp = ROOT / DSH_PATCH
-    if pp.exists():
-        patch_problems, parsed_ok = dsh_patch_problems(pp.read_text(encoding="utf-8"))
-        problems.extend(patch_problems)
-        if not parsed_ok and not _HAS_YAML:
-            # PyYAML 缺失时只做退化检查，无法给出严格结论 → 但不算输入面退化
-            pass
-    else:
-        problems.append("DSH patch %s 不存在（真安装面缺失）" % DSH_PATCH)
+    # D1 · patch（严格档）—— 本机渲染件在就逐字判；不在就点名 SKIP，**不**当输入面退化
+    patch_problems, patch_skipped = dsh_patch_face(ROOT)
+    problems.extend(patch_problems)
+    if patch_skipped:
+        warns.append(DSH_PATCH_SKIP_MARK)
 
     # D2 · 宽松档
     for rel in LENIENT_JSON:
