@@ -1247,46 +1247,67 @@ def selftest() -> int:
 
     # ---- BUG-425：advisory 三闸（读數面/原文面同源）----
     def _bug425():
-        # 锁 1：干净工作树 ⇒ 不降级
-        if advisories([]) != []:
-            return "bug425-clean-no-advisory"
-        # 锁 2：脏工作树 ⇒ 降级且**点名全部脏文件**
-        _d = ["src/a.mbt", "src/b.mbt"]
-        if advisories(_d) != _d:
-            return "bug425-dirty-advisory-lists-files"
-        # 锁 3：**被检文档自身脏 ⇒ 不降级**（第三闸，防「脏」盖掉真信号）
-        if advisories(["docs/ARCHITECTURE.md"]) != []:
-            return "bug425-dirty-doc-not-degraded"
-        # 锁 4（变异对照 / 判例-29）：CI 环境下**必须不降级**
-        os.environ[STRICT_ENV] = "true"
+        # ⚠️ **这一格必须先自己管住环境**（BUG-511，CI 实测形状）：`STRICT_ENV` 的名字就叫 `CI`，
+        # 在 GitHub Actions 上**进函数时它已经是 true** ⇒ 闸 2 把锁 1–3 的输入直接吞掉，
+        # `bug425-dirty-advisory-lists-files` 必红；本机 Windows 没有这个变量 ⇒ 同一格全绿。
+        # 也就是说旧写法测的是「我这台机器没设那个变量」，不是三闸本身（判例-33/35 同族：
+        # 探针在不同环境给不同答案，先怀疑探针）。
+        # 第二个坑更隐蔽：旧锁 4 用 `del os.environ[STRICT_ENV]` 收尾 ⇒ 在 CI 上它**把 runner 的 CI 变量删了**，
+        # 后面每一格都跑在被这一格改过的环境里，还会传染给它 spawn 的子进程。⇒ 现在：存原值、按格设值、按原值还原，
+        # 并加一格「还原有没有真的发生」。
+        _saved = os.environ.get(STRICT_ENV)
         try:
+            os.environ.pop(STRICT_ENV, None)
+            # 锁 1：干净工作树 ⇒ 不降级
+            if advisories([]) != []:
+                return "bug425-clean-no-advisory"
+            # 锁 2：脏工作树 ⇒ 降级且**点名全部脏文件**
+            _d = ["src/a.mbt", "src/b.mbt"]
+            if advisories(_d) != _d:
+                return "bug425-dirty-advisory-lists-files"
+            # 锁 3：**被检文档自身脏 ⇒ 不降级**（第三闸，防「脏」盖掉真信号）
+            if advisories(["docs/ARCHITECTURE.md"]) != []:
+                return "bug425-dirty-doc-not-degraded"
+            # 锁 4（变异对照 / 判例-29）：CI 环境下**必须不降级**
+            os.environ[STRICT_ENV] = "true"
             if advisories(_d) != []:
                 return "bug425-ci-never-degrades"
+            # 锁 4b（实现路径格）：闸 2 也必须真的作用到 rc 上——只测纯函数的话，
+            # 把 run() 里那段降级改掉，锁 4 照样绿（判例-29 的原始形状）。
+            if advisory_verdict(_d).rc != 1:
+                return "bug425-ci-must-keep-rc1"
+            os.environ.pop(STRICT_ENV, None)
+            # 锁 5：--strict 环境下**必须不降级**
+            if advisories(_d, strict=True) != []:
+                return "bug425-strict-never-degrades"
+            # 锁 6：**注入面**只认 *.mbt（不把 .md/.py 算进来）
+            #   —— 用假 porcelain 文本，避免「干净 CI 上返回空列表 ⇒ all() 恒 True」的假绿
+            _fake = "\n".join([" M src/a.mbt", " M docs/x.md", "?? scripts/y.py"]) + "\n"
+            _got = dirty_mbt_files(porcelain_text=_fake)
+            if _got != ["src/a.mbt"]:
+                return "bug425-only-mbt-got-%r" % (_got,)
+            # 锁 7（**变异对照·实现路径格**，判例-29）：降级**动作**必须真的落在 rc 上。
+            #   前 6 格测的都是纯函数 advisories()——把 run() 里那段降级整段删掉，它们**照样全绿**
+            #   （判例-29 的原始形状：机制格 ≠ 实现路径格）。本格直接断言 advisory_verdict().rc：
+            #     · 脏 ⇒ rc **必须**是 0（降级生效）
+            #     · 干净/闸生效 ⇒ rc **必须**是 1（违例照常红）
+            #   删掉降级那段（让脏也回 1）⇒ 本格必红。
+            if advisory_verdict(_d).rc != 0:
+                return "bug425-dirty-must-degrade-rc0"
+            if advisory_verdict(_d).warn_paths != _d:
+                return "bug425-dirty-must-name-files"
+            if advisory_verdict([]).rc != 1:
+                return "bug425-clean-must-keep-rc1"
+            if advisory_verdict(_d, strict=True).rc != 1:
+                return "bug425-strict-must-keep-rc1"
         finally:
-            del os.environ[STRICT_ENV]
-        # 锁 5：--strict 环境下**必须不降级**
-        if advisories(_d, strict=True) != []:
-            return "bug425-strict-never-degrades"
-        # 锁 6：**注入面**只认 *.mbt（不把 .md/.py 算进来）
-        #   —— 用假 porcelain 文本，避免「干净 CI 上返回空列表 ⇒ all() 恒 True」的假绿
-        _fake = "\n".join([" M src/a.mbt", " M docs/x.md", "?? scripts/y.py"]) + "\n"
-        _got = dirty_mbt_files(porcelain_text=_fake)
-        if _got != ["src/a.mbt"]:
-            return "bug425-only-mbt-got-%r" % (_got,)
-        # 锁 7（**变异对照·实现路径格**，判例-29）：降级**动作**必须真的落在 rc 上。
-        #   前 6 格测的都是纯函数 advisories()——把 run() 里那段降级整段删掉，它们**照样全绿**
-        #   （判例-29 的原始形状：机制格 ≠ 实现路径格）。本格直接断言 advisory_verdict().rc：
-        #     · 脏 ⇒ rc **必须**是 0（降级生效）
-        #     · 干净/闸生效 ⇒ rc **必须**是 1（违例照常红）
-        #   删掉降级那段（让脏也回 1）⇒ 本格必红。
-        if advisory_verdict(_d).rc != 0:
-            return "bug425-dirty-must-degrade-rc0"
-        if advisory_verdict(_d).warn_paths != _d:
-            return "bug425-dirty-must-name-files"
-        if advisory_verdict([]).rc != 1:
-            return "bug425-clean-must-keep-rc1"
-        if advisory_verdict(_d, strict=True).rc != 1:
-            return "bug425-strict-must-keep-rc1"
+            if _saved is None:
+                os.environ.pop(STRICT_ENV, None)
+            else:
+                os.environ[STRICT_ENV] = _saved
+        # 锁 8（还原自证）：改过环境就得按原值改回去——`del` 不是「还原」，是「删掉宿主的东西」
+        if os.environ.get(STRICT_ENV) != _saved:
+            return "bug425-env-not-restored"
         return None
     _bad = _bug425()
     if _bad:

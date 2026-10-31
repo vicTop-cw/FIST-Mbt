@@ -13661,3 +13661,51 @@ FAIL rc=2  exp=0  check_deprecated_site_list.py temp/chk47.json
 
 ⚠️ 无论选哪条，都要按判例-28/30 配**变异对照**：造一份「行号整体位移」的合成 dump，断言那一格不再给出
 「列切片为空」而是「陈旧 ⇒ 重采/SKIP」——否则新逻辑本身又是一把恒绿的尺。
+
+## BUG-511 [2026-10-31T06:24:00Z] [medium] FIXED
+- summary: `check_test_sync.py --selftest` 的 BUG-425 那一格里，**锁 1–3 没有管住自己依赖的环境变量**
+  （`STRICT_ENV` 的名字就叫 `CI`）⇒ 在 GitHub Actions 上「脏工作树必降级」那两闸被闸 2 吞掉，
+  `bug425-dirty-advisory-lists-files` 恒红；本机 Windows 没有这个变量 ⇒ 同一格恒绿。
+  第二半更糟：旧锁 4 用 `del os.environ[STRICT_ENV]` 收尾 ⇒ **把 runner 的 `CI` 变量删掉了**，
+  后面每一格都跑在被这一格改过的环境里，还会传染给它 spawn 的子进程
+- detail: ## 实测（两个环境同一条命令，逐字对照）
+
+BUG-508 修完接线之后，CI 第 22/24 步都转绿，第 25 步接手红：
+
+```
+run 41175926000 / job 124463352492（ubuntu）
+  22 Badge consistency guard      success   ← BUG-508 的关闭条件就此完全兑现
+  24 Test-count single-source     success   ← 现状面 2002 同步在**干净树**上被证明
+  25 Test-count guard selftest    failure   SELFTEST FAIL [bug425-dirty-advisory-lists-files] BUG-425 advisory 三闸失守
+  26~40 …                          skipped   ← 又一路 fail-fast
+check-windows-js                  success   （同一 commit，Windows 那一臂这格是绿的）
+```
+
+本机对表（`temp/`，同一份代码、只差一个变量）：
+
+| 环境 | `advisories(["src/a.mbt","src/b.mbt"])` | `advisory_verdict(… ).rc` |
+|---|---|---|
+| `CI=true` | `[]`（闸 2 生效 ⇒ 不降级） | **1** |
+| 无 `CI` | `['src/a.mbt','src/b.mbt']` | **0**（降级生效） |
+
+⇒ 判据本体没有错（两档都是它**声明过**的行为，闸 2 的注释写着「CI 上工作树应干净，脏即异常」），
+错的是**自检夹具假设了自己的运行环境**：它拿「这台机器没设 CI」当成了「三闸成立」的证据。
+同族三连击（同一会话内第三次）：BUG-509 是 `endswith(".exe")` 的平台盲夹具、BUG-508 是尺子接错、
+本单是**变量盲夹具**——判例-33/35 的第三种形状：**「探针在不同环境给出不同答案」时，先怀疑探针。**
+
+### FIXED(2026-10-31T06:24:00Z / BUG-511)
+- evidence: 回归锁 = `check_test_sync.py --selftest` 里 BUG-425 那一格重写后的**锁 4b 与锁 8**
+  （原 7 条锁逐字保留，只把它们搬进「pop 掉 `CI` 的作用域」里，保证测的是三闸而不是本机变量）：
+  · **锁 4b**（实现路径格，判例-29）：`CI=true` 时 `advisory_verdict(_d).rc` 必须是 **1**——
+    只断言纯函数 `advisories()` 的话，把 `run()` 里那段降级改掉，锁 4 照样绿；
+  · **锁 8**（还原自证）：整格跑完 `os.environ.get(STRICT_ENV)` 必须**等于进入时的原值**——
+    `del` 不是「还原」，是「把宿主的东西删了」；
+  · 作用域用 `try/finally` 按原值恢复（原来只在锁 4 内部 `try/finally del`）。
+  **A/B 实测**：`python scripts/check_test_sync.py --selftest` rc=0（无 `CI`）；
+  `CI=true python scripts/check_test_sync.py --selftest` rc=0（改前这发必红，就是 CI 第 25 步那一条原文）；
+  两种环境下 `SELFTEST PASS 36 个变体`，计数仍由 `run_case` 实测累加（不手写）。
+  连带复跑 `check_py_stdout_encoding.py` rc=0（本文件仍是带闸那 48 份之一）。
+  ⚠️ **未锁的缺口（如实）**：本单修的是「这一格不许假设环境」。同一族在别处的形状——
+  判据用 `os.environ` 的全局状态做分支、而自检没把它纳进夹具——**没有一把普查尺**在扫
+  （`check_selftest_hermetic` 扫的是「selftest 不许写真实仓库」，口径不同、抓不到这条）。
+  要钉这一类得另立一把「自检的环境依赖普查」尺，本轮未做，留给下一轮裁决。
