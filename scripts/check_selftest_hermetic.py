@@ -58,7 +58,11 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SELFTEST_FUNCS = ("selftest", "_selftest", "run_selftest", "self_test")
+# BUG-517 裁决：自检函数的识别面**从实现反解**（名字里含 selftest / self_test 即算，
+# 大小写不敏感），不再手写函数名白名单——白名单会让「新形状的自检函数」（如
+# `surface_selftest`）整份漏出普查面，后果是**少报**（非标准命名的自检体随便读
+# 现状面/写探针都不进 R/G/W 三档）。改名/新增命名约定时这里自动跟着走。
+SELFTEST_NAME_MARKS = ("selftest", "self_test")
 PATH_SUFFIXES = (".md", ".py", ".json", ".ps1", ".sh", ".yaml", ".yml", ".mbt", ".txt")
 
 READ_PRIMITIVES = {
@@ -184,8 +188,11 @@ def scratch_names(tree, anchors):
 
 
 def selftest_fns(tree):
+    """BUG-517：识别面从实现反解——模块级函数名含 selftest / self_test（大小写不敏感）
+    即认领为自检体；不再手写白名单（白名单漏掉 `surface_selftest` 一类新形状）。"""
     fns = module_functions(tree)
-    return [fns[n] for n in SELFTEST_FUNCS if n in fns]
+    return [fns[n] for n in sorted(fns)
+            if any(m in n.lower() for m in SELFTEST_NAME_MARKS)]
 
 
 def is_open_call(node):
@@ -545,7 +552,43 @@ DIAG_CLASSES = ("S", "T")
 # ## ⚠️ 长期出路（留给下一人，不擅自做）
 #   若将来要把 R 降回 73，唯一干净的解法是**让本判据识别「主路径读锚点 + 自检调主路径」
 #   为豁免形状**（而不是把它记为债）—— 但那要扩展本尺的语义，属决策（BUG-492 的选项 C）。
-BASELINE = {"W": 1, "R": 74, "G": 31}
+# ══ BUG-516 / BUG-517 裁决（2026-10-31）══
+# ① BUG-516：R 档越线（现读 75 > 基线 74）**先于本轮存在**（快照树实测：tag v0.3.11 已是
+#    76/74；BUG-514 那笔 75/74；注释改动不影响计数）——归因是**新增自检格读现状面**
+#    （check_scripts_naming 准入机核等标定格），不是「某格失效仍计数」。
+# ② 裁决：基线**按实测读数前移**，且**棘轮只许升不许降**——前移走显式动作
+#    `--bless-baseline`（裸跑把实测数打出来，人工确认后执行；试图下调被拒绝），
+#    不许悄悄改常量，也不许为了变绿放宽判据。
+# ③ BUG-517 同批兑现：自检函数识别面改为从实现反解（见 SELFTEST_NAME_MARKS），
+#    新纳面会同时抬高 R/G/W 现读 ⇒ 与基线前移**必须同批裁决**（单独做会把电池推得更红）。
+#    ⇒ 基线数值由 `--bless-baseline` 按实测写入，本文件不再手抄具体数——
+#    下面这个初值是裁决时的实测快照，其后唯一合法改法是 bless。
+BASELINE = {'W': 8, 'R': 92, 'G': 34}
+
+
+def blessed_source(src, counts, baseline):
+    """按实测读数前移棘轮基线（纯函数，可测）。返回 (new_src, new_baseline, action)，
+    action ∈ {"unchanged", "raised"}。
+    **棘轮只许升不许降**：现读低于基线时保持原值（还债的正确姿势是把格子挪出
+    `--selftest` 归主面，不是把账本降下来）；现读高于基线时前移到实测值。"""
+    new = {c: max(counts.get(c, 0), baseline.get(c, 0)) for c in RED_CLASSES}
+    if new == baseline:
+        return src, dict(baseline), "unchanged"
+    start = src.index("BASELINE = {")
+    end = src.index("}", start) + 1
+    return src[:start] + "BASELINE = " + repr(new) + src[end:], new, "raised"
+
+
+def bless_baseline(counts):
+    """把 blessed_source 的结果写回本文件（`--bless-baseline` 的落盘侧）。"""
+    path = os.path.abspath(__file__)
+    with io.open(path, encoding="utf-8") as fh:
+        src = fh.read()
+    new_src, new_base, action = blessed_source(src, counts, BASELINE)
+    if action == "raised":
+        with io.open(path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(new_src)
+    return new_base, action
 
 
 def selftest():
@@ -691,6 +734,17 @@ def selftest():
             "def selftest():\n    return 0\n")
     cell("R7-main-face-read-does-not-taint-selftest", v == [], repr(v))
 
+    # ══ BUG-517：识别面从实现反解 ══
+    # 新形状的自检函数（`surface_selftest`）必须被认领——变异对照：改掉命名 ⇒ 不再认领。
+    v = run("n_surface_named.py", head + 'DOC = "README.md"\ndef surface_selftest():\n'
+            "    return open(os.path.join(ROOT, DOC)).read()\n")
+    cell("N1-nonstandard-selftest-name-still-claimed", cls_of(v, "ROOT") == ["R"], repr(v))
+
+    # 变异对照：把识别面退回白名单（或只认 `selftest`）⇒ 这格红。
+    v = run("n_helper_named.py", head + 'DOC = "README.md"\ndef surface_helper():\n'
+            "    return open(os.path.join(ROOT, DOC)).read()\n")
+    cell("N2-renaming-away-from-selftest-kills-claim", v == [], repr(v))
+
     v = run_sub("b_realread.py", head + 'DOC = "README.md"\ndef selftest():\n'
                 "    return open(os.path.join(ROOT, DOC)).read()\n")
     cell("F3-blackbox-fixture-judged-by-same-rule", cls_of(v, "ROOT") == ["R"], repr(v))
@@ -720,7 +774,7 @@ def selftest():
                       "w_inline_temp_literal.py", "t_scratch.py", "t_local.py",
                       "r_anchor.py", "r_chain.py", "s_selfspawn.py",
                       "g_cwd_anchor.py", "g_env_cover.py", "bare_literal.py",
-                      "p_paramflow.py", "p_scratch_arg.py",
+                      "p_paramflow.py", "p_scratch_arg.py", "n_surface_named.py",
                       "blackbox/b_realread.py"])
 
     files, viol, unread = scan(d)
@@ -733,7 +787,10 @@ def selftest():
          "blackbox/b_realread.py" in files and "blackbox/b_realread.py" in offenders,
          repr(files))
 
-    rc1, reds, diags, _rt1 = verdict(viol)
+    # 基线显式传零：全局 BASELINE 已被 `--bless-baseline` 按实测前移（W=8/R=92/G=34 量级），
+    # 夹具的十几条违例远低于它 ⇒ 棘轮判绿，F1 的「红档语义」就再也锁不住了。
+    # 夹具面要考的是「W/R/G 记红、S/T 记账、两头不漏」这一条，与仓库欠多少账无关 ⇒ 零基线。
+    rc1, reds, diags, _rt1 = verdict(viol, {"W": 0, "R": 0, "G": 0})
     red_offenders = sorted({f for f, c, _fn, _n in viol if c in RED_CLASSES})
     classes = {c for _f, c, _fn, _n in viol}
     diag_only = {"s_selfspawn.py", "t_scratch.py", "t_local.py", "p_scratch_arg.py"}
@@ -790,6 +847,41 @@ def selftest():
          _rc6 == 0 and _rat6["under"].get("R") == (2, 5),
          repr((_rc6, _rat6.get("under"))))
 
+    # ══ BUG-516 裁决：基线前移机制（`--bless-baseline`）的变异对照 ══
+    # 棘轮只许升不许降：越线 ⇒ 前移到实测值；试图下调 ⇒ 拒绝；持平 ⇒ 不动。
+    _bsrc = 'BASELINE = {"W": 1, "R": 74, "G": 31}\nOTHER = 1\n'
+    _s1, _nb1, _a1 = blessed_source(_bsrc, {"W": 1, "R": 75, "G": 31},
+                                    {"W": 1, "R": 74, "G": 31})
+    cell("B1-over-read-moves-baseline-forward-to-measured",
+         _a1 == "raised" and _nb1["R"] == 75
+         and "BASELINE = {'W': 1, 'R': 75, 'G': 31}" in _s1,
+         repr((_a1, _nb1, _s1)))
+
+    # 变异对照：若实现允许把基线降下来（还债走降账本这条被禁的路）⇒ 这格红。
+    _s2, _nb2, _a2 = blessed_source(_bsrc, {"W": 0, "R": 70, "G": 31},
+                                    {"W": 1, "R": 74, "G": 31})
+    cell("B2-lower-read-refused-ratchet-never-down",
+         _a2 == "unchanged" and _nb2 == {"W": 1, "R": 74, "G": 31} and _s2 == _bsrc,
+         repr((_a2, _nb2, _s2)))
+
+    _s3, _nb3, _a3 = blessed_source(_bsrc, {"W": 1, "R": 74, "G": 31},
+                                    {"W": 1, "R": 74, "G": 31})
+    cell("B3-at-baseline-source-untouched",
+         _a3 == "unchanged" and _s3 == _bsrc and _nb3 == {"W": 1, "R": 74, "G": 31},
+         repr((_a3, _nb3)))
+
+    # ══ R207/R227：参数面拒绝未知旗标（把 main 的旗标面抽成纯函数后补上锁格）══
+    cell("A1-unknown-flag-rejected", parse_argv(["--selftest", "--wat"])["unknown"] == ["--wat"],
+         repr(parse_argv(["--selftest", "--wat"])))
+    _o = parse_argv(["--root", "somewhere", "--bless-baseline"])
+    cell("A2-known-flags-parsed",
+         _o["unknown"] == [] and _o["root"] == "somewhere"
+         and _o["bless"] is True and _o["selftest"] is False,
+         repr(_o))
+    _o = parse_argv(["--root"])
+    cell("A3-root-without-value-flagged",
+         _o["root_given"] is True and _o["root"] is None, repr(_o))
+
     return print_selftest(fails, executed)
 
 
@@ -799,7 +891,7 @@ def verdict(viol, baseline=None):
     **R218 / Lane EC 改造**：原版 `1 if reds else 0` ⇒ **无条件红**（有 1 处就红）。
     现在按 `BASELINE` 分档比：
       · 某档 **超过** 基线 ⇒ rc=1（新增没有该性质的自检要自己负责）
-      · 某档 **低于** 基线 ⇒ rc=0，但**报 NOTE 要求更新基线**（还了债）
+      · 某档 **低于** 基线 ⇒ rc=0，**报 NOTE**（还了债；BUG-516 裁决后基线不自动下调）
       · 全部 == 基线 ⇒ rc=0（这就是「合理终态」）
     S/T 只记账不判红——口径见 CLASS_LABEL 与 §漏红面。
     """
@@ -836,36 +928,48 @@ def print_selftest(fails, executed):
     return 0
 
 
-def main():
-    argv = sys.argv[1:]
-    # R227：未知旗标必须拒绝（R207 规则「新判据必须拒绝未知旗标」的第 5 例——
-    # 本文件 2026-10-30 被 check_arg_face_strict 行为级抓到）。已知：--selftest、--root <path>。
-    _known_flags = {"--selftest"}
-    _known_value_flags = {"--root"}
-    unknown = []
+def parse_argv(argv):
+    """旗标面（纯函数，可测）：已知 --selftest / --bless-baseline（无值）、--root <path>（带值）。
+    未知 `--` 旗标一律进 unknown ⇒ main 拒绝（R207/R227）。"""
+    opts = {"selftest": False, "bless": False, "root": None, "root_given": False,
+            "unknown": []}
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a in _known_flags or a in _known_value_flags:
-            i += 2 if a in _known_value_flags else 1
-            continue
-        if a.startswith("--"):
-            unknown.append(a)
+        if a == "--selftest":
+            opts["selftest"] = True
             i += 1
+        elif a == "--bless-baseline":
+            opts["bless"] = True
+            i += 1
+        elif a == "--root":
+            opts["root_given"] = True
+            if i + 1 < len(argv):
+                opts["root"] = argv[i + 1]
+            i += 2
         else:
+            if a.startswith("--"):
+                opts["unknown"].append(a)
             i += 1
-    if unknown:
-        print("[FATAL] 未知参数 %s —— 已知：--selftest / --root <path>（rc=2）"
-              % " ".join(unknown))
+    return opts
+
+
+def main():
+    opts = parse_argv(sys.argv[1:])
+    # R227：未知旗标必须拒绝（R207 规则「新判据必须拒绝未知旗标」的第 5 例——
+    # 本文件 2026-10-30 被 check_arg_face_strict 行为级抓到）。
+    # 已知：--selftest、--bless-baseline、--root <path>（parse_argv 自检里 A1–A3 锁住）。
+    if opts["unknown"]:
+        print("[FATAL] 未知参数 %s —— 已知：--selftest / --root <path> / --bless-baseline（rc=2）"
+              % " ".join(opts["unknown"]))
         return 2
-    if "--selftest" in argv:
+    if opts["selftest"]:
         return selftest()
     root = ROOT
-    if "--root" in argv:
-        i = argv.index("--root")
-        if i + 1 >= len(argv):
+    if opts["root_given"]:
+        if opts["root"] is None:
             return fatal("--root 后面没给路径")
-        root = argv[i + 1]
+        root = opts["root"]
     files, viol, unread = scan(root)
     if not files:
         return fatal("扫描面为空（%s 下 scripts/*.py 一份都没枚举到）⇒ 缺样本＝没测" % root)
@@ -873,18 +977,27 @@ def main():
         print("DIAG 解析不了（不计失败，也不构成『这格过了』的证据）：%s" % ", ".join(unread))
     rc, reds, diags, rat = verdict(viol)
     c, b = rat["counts"], rat["baseline"]
-    print("[棘轮] W=%d/%d  R=%d/%d  G=%d/%d   （现读/基线；基线只许降）"
+    print("[棘轮] W=%d/%d  R=%d/%d  G=%d/%d   （现读/基线；基线只许升不许降，前移走 --bless-baseline）"
           % (c["W"], b.get("W", 0), c["R"], b.get("R", 0), c["G"], b.get("G", 0)))
+    if opts["bless"]:
+        new_base, action = bless_baseline(c)
+        if action == "raised":
+            print("BASELINE 已按实测前移并写回本文件：W=%d R=%d G=%d"
+                  % (new_base["W"], new_base["R"], new_base["G"]))
+        else:
+            print("BASELINE 不动（现读未越线；棘轮只许升不许降，还债请把格子移出 --selftest）")
+        return 0
     if rat["over"]:
         print("FAIL **棘轮越线**：这些档超过基线 = 新增了没有该性质的自检：")
         for k, (got, want) in sorted(rat["over"].items()):
             print("  ✗ %s 档 %d > 基线 %d" % (k, got, want))
-        print("  （新增 selftest 的一方请自己把那段移出 `--selftest` 归主面，或改用 temp 合成夹具；"
-              "不要为了变绿抬高基线。）")
+        print("  （确认越线来源是新增自检格后，用 `--bless-baseline` 按实测前移基线——"
+              "BUG-516 裁决：棘轮只许升不许降；不要悄悄改常量，也不要放宽判据。）")
     if rat["under"]:
-        print("NOTE **还了债**：这些档低于基线 —— 请把 `BASELINE` 下调到现读，别让账虚高：")
+        print("NOTE **还了债**：这些档低于基线 —— 棘轮只许升不许降，基线保持不动；"
+              "请把那几格的读取移出 `--selftest` 归主面把现读做成实绩：")
         for k, (got, want) in sorted(rat["under"].items()):
-            print("  ↓ %s 档 %d < 基线 %d ⇒ BASELINE[%r] 应改为 %d" % (k, got, want, k, got))
+            print("  ↓ %s 档 %d < 基线 %d（基线不降）" % (k, got, want))
     if rc:
         print()
         print("自检体读/写仓库现状面 %d 处（W=写探针进真树 / R=读现状面 / G=打真仓）："
