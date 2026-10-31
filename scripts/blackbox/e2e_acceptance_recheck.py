@@ -26,7 +26,8 @@
     python scripts/blackbox/e2e_acceptance_recheck.py --selftest  # 再加一格合成违例
     python scripts/blackbox/e2e_acceptance_recheck.py --json      # 另存机器可读证据
 环境变量：
-    FIST_ACCEPT_JS  指定要验的 server 产物（默认按 _build → dist → LOCALAPPDATA 顺序找）
+    FIST_ACCEPT_JS  指定要验的 server 产物（默认按 _build → dist → LOCALAPPDATA 顺序找）。
+                  相对路径按**调用方 cwd**归一；指不到文件即 rc=2 自拒，不静默回落默认候选。
     NODE            指定 node 可执行文件（默认 `node`）
 退出码（契约，勿改档）：
     0 = 六格全部 PASS（SKIP 不算 PASS，也不阻塞）
@@ -56,7 +57,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 RUN_ID = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex[:6]
 SANDBOX = os.path.join(ROOT, "temp", "acceptance-recheck", RUN_ID, "box")
 ERRLOG = os.path.join(ROOT, "temp", "acceptance-recheck", RUN_ID + ".err")
-os.makedirs(SANDBOX, exist_ok=True)
 
 KNOWN_FLAGS = ("--selftest", "--json", "--help", "-h")
 unknown = [a for a in sys.argv[1:] if a.startswith("-") and a not in KNOWN_FLAGS]
@@ -66,14 +66,41 @@ if unknown:
           % (" ".join(unknown), " / ".join(KNOWN_FLAGS)))
     sys.exit(2)
 
+if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
+    # BUG-524②（R207 的另一半）：旗标**在白名单里但没有处理分支**，比未知旗标更阴——
+    # `--help` 会被收下、然后落进真检查分支，把「起 server 跑全量」那 40 秒当帮助跑了。
+    # 顺序也是承重的：必须排在 `os.makedirs(SANDBOX)` 之前，否则每问一次帮助留一个空沙箱。
+    print(__doc__.strip())
+    sys.exit(0)
+
+os.makedirs(SANDBOX, exist_ok=True)
+
 META = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",
     "io.modelcontextprotocol/clientCapabilities": {},
     "io.modelcontextprotocol/clientInfo": {"name": "acceptance-recheck", "version": "1"},
 }
 
+def resolve_env_js(raw):
+    """把 `FIST_ACCEPT_JS` 归一成绝对路径（BUG-524①）。
+
+    存在性判在脚本 cwd、spawn 跑在沙箱 cwd —— 相对路径在这两副面罩下结论相反，
+    失效形态是「明明存在的产品报 Cannot find module」，而报错指向 server 起不来。
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    return raw if os.path.isabs(raw) else os.path.abspath(raw)
+
+
+JS_PIN = resolve_env_js(os.environ.get("FIST_ACCEPT_JS", ""))
+if JS_PIN and not os.path.isfile(JS_PIN):
+    # 显式指名却不落空到默认候选：那等于「旗标被承认但不生效」（R207 同族）。
+    print("[FATAL] FIST_ACCEPT_JS 指向的文件不存在：%s（已按调用方 cwd 归一，不回落默认候选，rc=2）" % JS_PIN)
+    sys.exit(2)
+
 JS_CANDIDATES = [
-    os.environ.get("FIST_ACCEPT_JS", ""),
+    JS_PIN,
     os.path.join(ROOT, "_build", "js", "release", "build", "cmd", "cli", "cli.js"),
     os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js"),
     os.path.join(ROOT, "target", "js", "release", "build", "cmd", "cli", "cli.js"),
@@ -620,6 +647,48 @@ if "--selftest" in sys.argv[1:]:
         print("[FATAL] 合成违例没被抓到 ⇒ 探针恒绿")
         for k, v in CELLS.items():
             print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+        sys.exit(3)
+
+    # ── ST2 `FIST_ACCEPT_JS` 相对路径归一（BUG-524①，变异对照内建）──────────
+    # 真跑一次 spawn 用的那副面罩：把 cwd 切到沙箱再判存在性。不做归一 ⇒ 这一格必红
+    # （naive 形态是「原样交给 os.path.isfile」，在沙箱 cwd 下就是 False）。
+    rel_target = os.path.join("temp", "acceptance-recheck", RUN_ID, "b524_probe.js")
+    abs_target = os.path.join(ROOT, rel_target)
+    io.open(abs_target, "w", encoding="utf-8").write("// 合成产物，只用于路径归一自检\n")
+    _cwd0 = os.getcwd()
+    try:
+        os.chdir(SANDBOX)                      # 与 Server(...) 的 cwd 同一副面罩
+        naive_ok = os.path.isfile(rel_target)  # 不归一的读法
+        os.chdir(_cwd0)                        # 归一发生在调用方 cwd
+        resolved = resolve_env_js(rel_target)
+        resolved_ok = os.path.isfile(resolved)
+    finally:
+        os.chdir(_cwd0)
+    st2_ok = resolved_ok and os.path.isabs(resolved) and resolved == abs_target
+    record("ST2_相对路径归一(BUG-524)", "PASS" if st2_ok else "FAIL",
+           "FIST_ACCEPT_JS 给相对路径时必须按**调用方 cwd**归一；不归一则沙箱 cwd 下读成不存在"
+           "（naive 读数=%s ⇒ 未归一会在这里红）" % naive_ok,
+           ["raw=%s" % rel_target,
+            "resolved=%s isfile=%s" % (resolved, resolved_ok),
+            "naive_isfile_in_sandbox=%s" % naive_ok])
+    if not st2_ok:
+        print("[FATAL] ST2：路径归一失灵 ⇒ FIST_ACCEPT_JS 是个被承认但不生效的旗标")
+        sys.exit(3)
+
+    # ── ST3 `--help` 必须真的只出帮助（BUG-524②）──────────────────────────
+    # 行为级：起子进程跑 `--help`，要求 rc=0、回了用法段、**且没进真检查分支**
+    # （真检查会打 `server = ` 那行横幅）。摘掉处理分支 ⇒ 落进真检查 ⇒ 这一格红。
+    hp = subprocess.run([sys.executable, os.path.abspath(__file__), "--help"],
+                        capture_output=True, timeout=120)
+    htxt = hp.stdout.decode("utf-8", "replace")
+    st3_ok = (hp.returncode == 0 and "用法：" in htxt and "server = " not in htxt)
+    record("ST3_帮助旗标(BUG-524)", "PASS" if st3_ok else "FAIL",
+           "--help/-h 在白名单里就必须有处理分支；否则 40 秒全量复验会被当帮助跑掉",
+           ["rc=%d 有用法=%s 落了真检查=%s" % (hp.returncode, "用法：" in htxt,
+                                               "server = " in htxt)])
+    if not st3_ok:
+        print("[FATAL] ST3：--help 没被处理（rc=%d）⇒ 白名单里有旗标没人认领"
+              % hp.returncode)
         sys.exit(3)
 
 srv.close()
