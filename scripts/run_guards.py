@@ -608,7 +608,11 @@ SPECIAL_CASES = [
     #   batch 2 还 N1 6 份（_new_script_hygiene→check_new_script_hygiene、_run_check_t0r21→check_t0r21、
     #   calibrate_goal_drift→run_calibrate_goal_drift、mcp_bug_loop→run_mcp_bug_loop、
     #   output_validate→check_output_validate，并**删除** gitignored 孤儿 fix_esm_require.py）
-    #   ⇒ 现读 `N1=16（上限 16）/ N2=0（上限 4）` ⇒ **rc=0**。
+    #   ⇒ 现读 0 条命名判定面（拆开看：`N1=16（上限 16）/ N2=0（上限 4）`）⇒ **rc=0**。
+    #   ⚠️ 「现读 0 条命名判定面」这个**形状**是给 `check_registration_numbers.py` 反解用的：
+    #   它按 `现读 (\d+) 条命名判定面` 从本文件正文取登记值，与它自己跑出来的实测对表
+    #   ⇒ 数字与「条命名判定面」之间不许插 `**`（正则吃不下），也别只写 `N1=/N2=` 的形状。
+    #   R115 改名那批正是换成后一种 ⇒ 尺子解析不到登记 ⇒ 当场红（不是判据坏，是登记漂移）。
     #   **没动任何上限常量**（N1_CEILING 仍是 16、N2_CEILING 仍是 4）——「改名还债」不是「为变绿改常量」。
     #   判例-39（入 AGENTS.md）：改名会**同时**失去按名/按前缀匹配的豁免（如 check_hardcoded_paths
     #   的 `scripts/_*.py` 豁免③），也会让 REGISTRY/EXEMPT_RULES 的前缀规则失配 ⇒ 改名必须同批扫豁免面。

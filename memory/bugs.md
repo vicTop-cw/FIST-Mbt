@@ -13528,7 +13528,7 @@ CI 读数与本机读数**逐字相同（2002/2002）** ⇒ 「脏树读数会�
 建议落点：`check_ci_step_position.py` 里加一格（它的 `analyze()` 已经在解析 `- name:`/`run:` 行，
 与「CI 里那行命令也是配置面」同族），并同批过 `check_battery_count_doc` 的登记面。
 
-### FIXED(2026-10-31T06:05:00Z / BUG-508)
+### FIXED(2026-10-31T05:58:00Z / BUG-508)
 - evidence: **关闭条件兑现**（推送 `5ad8edd59` 后的 run `41172747085` / job `124453995469`，正文
   `temp/ci_b509_js.log:1871-1874`）：第 22 步不再回 `REJECT SNAPSHOT-STALE rc=2`，而是给出**真判据读数**
   ——`FRESH 真跑全仓：成功` / `汇总：Total tests 2002 / passed 2002 / failed 0` /
