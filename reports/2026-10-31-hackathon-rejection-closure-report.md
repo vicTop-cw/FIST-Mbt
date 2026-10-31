@@ -730,8 +730,14 @@ FAIL 违例 2 条：
    `CLAIM_MISMATCH = 失配\s*(\d+)` 把我自己这句话读成了**新的主张** ⇒ 当场 `D1 文首写「失配 1」，尺实算 0`。
    改成不带数字的措辞后 `PASS`。**这条是本仓「勘误段不许留被勘误的值」的又一次实测**，只是这次踩的人是我。
 
-终读：`python scripts/check_slave_task_list.py` rc=0
-（`PASS 认领入口自证通过：锚点全部可解析、内容级记号逐行命中、已落地全部带据、文首自述与尺实算逐键一致`）。
+终读（两半，都现取）：**本机** `python scripts/check_slave_task_list.py` rc=0
+（`PASS 认领入口自证通过：锚点全部可解析、内容级记号逐行命中、已落地全部带据、文首自述与尺实算逐键一致`），
+且**在 `git archive HEAD` 的干净快照树上同一条命令也 rc=0** —— 排除「本机绿是因为工作树里有别人的 WIP」这一形；
+**远端** `f1416f8b0` 那一跑：`check + test (js, ubuntu)` ×2 **success**，其中 ci.yml 那一跑的第 13 步
+`Slave-task-list self-proof guard` 逐步结论 **success**（另一跑属于 `FIST CI — Build + Test`，
+它一共 13 步、**没有**这一格 —— 所以"那一格没打印"要先证它是「不在该 workflow」而不是「跳过」）；
+`check + test (js, windows)` success。native 两臂照旧（观测臂，见 BUG-513/523）。
+复核配方：`gh api repos/vicTop-cw/FIST-Mbt/commits/<sha>/check-runs --jq '.check_runs[]|[.name,.conclusion] | @tsv'`。
 
 **这一节留在这里的价值**：它说明第 13 步那把尺是**真的在看**（本机与 CI 同一组违例、改完同一组键转绿），
 也说明**文档插行不是零风险动作** —— 我本可以在推送前跑一遍全电池避免这一发，
