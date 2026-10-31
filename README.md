@@ -144,6 +144,8 @@ python scripts/fist.py call output_validate --project-dir . --artifacts '[{"path
 DAG 环依赖、Omega 验收门——都由一支活体探针复验（跨进程起真 server、真读 sqlite，不靠静态扫）：
 
 ```bash
+# 先有一枚**打过 ESM shim** 的产物（探针不代劳；缺 shim 的失效形态是「server 起不来」而不是「少跑一步」）
+moon build --target js --release && python scripts/patch_esm_main.py _build/js/release/build/cmd/cli/cli.js
 python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
 #   期望末行：结论：7 格（拒收项 6 + 尺子自检 1）= 6 PASS / 0 FAIL / 1 SKIP
 #   第 1 行 `server = …(sha8=…) tools=182` 是**产物身份**：复验结论只对那一枚成立
