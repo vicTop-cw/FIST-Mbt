@@ -14032,6 +14032,52 @@ A heartbeat 回执   {"_error": "task not found: T0"}
   而今天的 ns 路由改动在其后——现证：本机 heal 回执仍打 `scope="all-namespaces"`，而 HEAD 的源码给的是
   `"main-db/all-ns-rows"`/`"namespace"` ⇒ **产物落后于源码**。工作树另有 39 份别人的在途 `.mbt`，
   本机重建会把半套改动打进被测面 ⇒ **正身只在 CI（干净树 + HEAD 构建）**：关闭条件 = 推送后第 51 步的结论原文。
+  ✅ **关闭条件已兑现**（run `41181118025` / job `124478540520`，commit `6f96520ba`）：第 51 步
+  `Heartbeat cross-process guard` **success**，读数 `基数门（臂集合==声明的 8 格） 8/8 通过` +
+  `=== E2E-HEARTBEAT-XPROC PASS：8 格全绿（跨进程看护语义已锁） ===` ⇒ 五处成因在干净产物上全部对齐。
   ⚠️ 若 CI 仍红在 B/D/D2（干净产物、且 setup 四笔都已确认放行），那才是**产品缺陷**：
   `heal`/`watchdog_tick` 在 ns 物理路由下扫不到本应扫到的 ns 库（`list`/`get` 同 ns 却读得到）——
-  这一格现在**没有锁**，因为本机测不了；不许在此之前把它写成结论（无论绿红）。
+  ✅ **那条怀疑被这条读数否证**：ns 路由下 `heal`/`watchdog_tick` 在**干净构建**上扫得到 ns 库
+  （8/8 里就含 B「跨进程心跳可见」与 D/D2「超时确被回滚」）⇒ 不是产品缺陷，全部是探针侧的五处。
+  留这条是为了记方法：**不写成结论**这件事真的躲过了一个错判——当时手上有反差的只有本机那个 14 小时前的旧产物。
+
+
+## BUG-520 [2026-10-31T08:12:00Z] [medium] FIXED
+- summary: 预订跨进程探针 `e2e_reserve_xproc.py` 拿**整串相等**判 `action`（`== "renewed"` / `== "taken_over"` /
+  预热 `in ("reserved","renewed")`），而产品的 `action` 早已扩展成 `<base>[+role_inferred][+agent_self_reported][+challenge_verified]`
+  （真源 `src/engine/engine_rsv.mbt:785-786`）⇒ 预热那一笔拿到 `reserved=true` 却因
+  `action="unregistered+role_inferred+agent_self_reported"` 被判成失败 ⇒ **rc=3「探针不可用」**，六格一格都没跑
+- detail: ## 现形（run `41181118025` / job `124478540520`，commit `6f96520ba`，第 52 步第一次执行）
+
+掩蔽链的第六例（508→512→514→515→519→本单）。同一次 CI 里第 51 步已经 **8/8 PASS**（BUG-519 的正身到位，
+也顺带否证了我给它写的那条「可能是产品缺陷」的怀疑——`heal`/`watchdog_tick` 的 ns 路由在新产物上是好的），
+接着第 52 步红在**自己人**身上：
+
+```
+产物 sha256   4539bab0    HEAD 6f96520
+RSV-XPROC REFUSED: 预热都没跑通：{"scope":"warmup","agent":"w",…,"reserved": true,
+  "action":"unregistered+role_inferred+agent_self_reported+identity_self_reported", …}
+##[error]Process completed with exit code 3.
+```
+
+**盘上事实与探针结论相反**：`"reserved": true` —— 预订真拿到了。坏的是判定式：它比的是整串。
+`action` 的后缀是 S3 身份面（BUG-430/436 那一族）加上去的**provenance**，本来就与成败无关；
+文档里 `Unregistered` 明确写着「advisory：正常抢锁，拿到时把 action 标 unregistered（不参与授权裁决）」
+⇒ **按整串判相等，等于把「成功但没登记」这一档合法读数读成失败**。
+同一形状还埋在格 4（`renewed`）与格 6（`taken_over`）里，只是被预热的 rc=3 挡在后面没轮到红
+（判例-33 的老话：一道门挡住下一道门时，缺陷不留痕迹）。
+
+### FIXED(2026-10-31T08:12:00Z / BUG-520)
+- evidence: 回归锁 = **新增 8 格自证 + 一次变异实测**（`--selftest` 从 24 格变 32 格，rc=0）：
+  · 新纯函数 `action_base(action)`（拆 `+` 取 base）与 `p_warmup_ok(recv)`（**outcome 只看 `reserved` 布尔**）；
+  · `WARM-ok-reserved真+带后缀action`：`{"reserved":true,"action":"unregistered+role_inferred+agent_self_reported"}`
+    ⇒ 判**通过**（就是 CI 那一发的真实回执）；
+  · `WARM-red-conflict` / `WARM-red-回执缺 reserved 字段（不许把缺字段当成功）`：反向两格钉住「不许恒绿」；
+  · `ABASE-*` 三格钉拆分本身（旧整串形状照样认、空串不得等于任何 base）；
+  · `G4-ok-renewed带后缀` / `G6-ok-taken_over带后缀`：把两处产品合法后缀喂进真判定函数；
+  · **变异对照**：把 `p_renew_same_agent` 改回整串相等 ⇒ `SELFTEST FAIL … G4-ok-renewed带后缀：got=False want=True`、rc=1；
+    按字节还原后 rc=0（`restored-identical=True`，留底 `temp/rsv.b520.orig`）⇒ 这一组不是恒绿格。
+  · 同批补 `退出码（契约）` 块（0/1/3 三档互斥）——`check_exit_code_contract.py` 原来给它记着
+    `S/U：实现面能给出 rc=3，承诺面没写`，现在承诺面写了（该尺现读不再点名本文件）。
+  ⚠️ **本机不跑六格**（要起两个真 node 进程 + 20 轮并发），本机只核自证面；
+  **本单关闭条件 = 推送后 CI 第 52 步的结论原文**（顺带第 53/54 步第一次拿到结论）。

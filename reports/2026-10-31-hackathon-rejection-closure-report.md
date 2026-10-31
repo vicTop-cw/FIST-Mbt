@@ -475,4 +475,29 @@ heal 回执还打着旧文案 `scope="all-namespaces"`，而 HEAD 源码给的�
 ⇒ 产物落后于源码；工作树又带着 39 份别人的在途 `.mbt`，本机重建会把半套改动打进被测面。
 ⇒ **正身只在 CI（干净树 + HEAD 构建）**：本单关闭条件 = 推送后第 51 步的结论原文；
 若 CI 在 setup 四笔全部放行之后仍红 B/D/D2，那才是产品缺陷（`heal`/`watchdog_tick` 在 ns 路由下扫不到本应扫到的 ns 库，
-而 `list`/`get` 同 ns 读得到）——**这一格现在没有锁，因为本机测不了，所以不许提前写成任何一种结论**。
+而 `list`/`get` 同 ns 读得到）——**当时不许写成任何一种结论**。
+✅ **后来的读数是：那条怀疑不成立**。run `41181118025`（commit `6f96520ba`）第 51 步 **success**，
+`基数门 8/8 通过` + `E2E-HEARTBEAT-XPROC PASS：8 格全绿` ⇒ B/D/D2 全在干净产物上转绿，五处成因都在探针侧。
+「不提前写结论」这一条在这里真的躲过一个错判——当时反差的唯一证据是那个 14 小时前的旧产物。
+
+### 8.13 第六格：第 52 步红在判定式身上（BUG-520，`action` 的复合形状）
+
+同一次 run 里第 52 步 `Reserve cross-process guard` 第一次执行，当场 rc=3：
+
+```
+RSV-XPROC REFUSED: 预热都没跑通：{… "reserved": true,
+  "action": "unregistered+role_inferred+agent_self_reported+identity_self_reported" …}
+```
+
+**盘上事实与探针结论相反**：`reserved: true`（预订真拿到了）。坏的是判定式拿**整串相等**比 `action`，
+而产品的 `action` 早已是 `<base>[+role_inferred][+agent_self_reported][+challenge_verified]`
+（`engine_rsv.mbt:785-786`；文档还明写 `Unregistered` 是 advisory、不参与授权裁决）。
+同一形状埋在格 4（`renewed`）与格 6（`taken_over`）里，只是被预热的 rc=3 挡在后面——又是「一道门挡住下一道门」。
+
+修法与锁：新增 `action_base()`（拆 `+` 取 base）与 `p_warmup_ok()`（**outcome 只看 `reserved` 布尔**），
+`--selftest` 从 24 格加到 **32 格 rc=0**；**变异实测**：把 `p_renew_same_agent` 改回整串相等 ⇒
+`G4-ok-renewed带后缀：got=False want=True`、rc=1，按字节还原后 rc=0 ⇒ 这组锁会咬。
+同批补 `退出码（契约）` 块（0/1/3 三档互斥），`check_exit_code_contract` 那条
+「实现面能给出 rc=3，承诺面没写」的点名随之消掉。
+⚠️ 六格本机跑不了（要两个真 node 进程 + 20 轮并发）⇒ **关闭条件 = 推送后第 52 步的结论原文**，
+并顺带第一次解除第 53/54 步的掩蔽。

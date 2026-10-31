@@ -20,6 +20,13 @@
   moon build --target js cmd/cli
   python scripts/patch_esm_main.py <该产物>
   python scripts/blackbox/e2e_reserve_xproc.py
+
+退出码（契约，勿改档；三档互斥，绝不互相冒用）：
+  0 = 六格全 PASS 且格子集合与声明逐字相等
+  1 = 任一格 FAIL —— **被测对象**的结论
+  3 = 探针不可用（产物缺失 / 进程 B 起不来 / 预热没跑通 / 回执读不到字段）
+      ⇒ 「接入没通」不冒充「缺陷在场」；BUG-520 正是预热被判成 rc=3 的那一条。
+自检面（`--selftest`）另给 0/1：不起真进程、不碰库，只考纯判定函数会不会红。
 """
 import hashlib
 import json
@@ -76,6 +83,22 @@ EXPECTED = [
 # 抽成纯函数的理由（BUG-50 / J10：「判据必须先证明自己会红」）：判定若埋在 main() 的实时
 # 回执里，`--selftest` 就只能靠"起两个真进程跑 20 轮"来验 —— 真进程一起不来判据自己先崩，
 # 自检就退化成"链通不通"，**验不出"某支判据会不会红"**。纯函数让每格都能喂合成回执。
+def action_base(action):
+    """`action` 的合法形状是 `<base>[+role_inferred][+agent_self_reported][+challenge_verified]`
+    （真源 `src/engine/engine_rsv.mbt` 的 BUG-430 那一段注释）。
+    判 base，**不许判整串**（BUG-520：本探针原先用整串相等，产品把 provenance 后缀加上之后
+    预热与格 4/6 集体误判，CI 直接 rc=3「探针不可用」）。
+    """
+    return str(action or "").split("+")[0]
+
+
+def p_warmup_ok(rsv):
+    """预热格（夹具面）：A 单进程要真拿到一次预订，schema 才算建完。
+     outcome 只看 `reserved` 布尔——`action=unregistered+…` 带后缀时同样算拿到（advisory 不参与裁决）。
+    """
+    return rsv.get("reserved") is True
+
+
 def p_rounds_no_double_success(both_ok, rounds):
     """格 1：并发双绑 0 轮双成功（每轮恰一成一拒才合格）。"""
     return both_ok == 0
@@ -92,8 +115,8 @@ def p_exactly_one_row(n_rows, rounds):
 
 
 def p_renew_same_agent(r4):
-    """格 4：同 agent 续期成功且报 renewed（不许把正常路径误拒）。"""
-    return r4.get("reserved") is True and r4.get("action") == "renewed"
+    """格 4：同 agent 续期成功且报 renewed（不许把正常路径误拒）。判 base，见 `action_base`。"""
+    return r4.get("reserved") is True and action_base(r4.get("action")) == "renewed"
 
 
 def p_live_holder_not_stolen(r5, holder):
@@ -102,9 +125,9 @@ def p_live_holder_not_stolen(r5, holder):
 
 
 def p_expired_takeover(r6, prev_agent):
-    """格 6：过期绑定可让渡且报 taken_over + prev_agent。"""
+    """格 6：过期绑定可让渡且报 taken_over + prev_agent。判 base，见 `action_base`。"""
     return (r6.get("reserved") is True
-            and r6.get("action") == "taken_over"
+            and action_base(r6.get("action")) == "taken_over"
             and r6.get("prev_agent") == prev_agent)
 
 
@@ -280,7 +303,7 @@ def main():
     a = Sess("A")
     # 预热：让 A 单进程把 schema 建完，再放 B 进来——两进程同时 CREATE TABLE 不是本判据要测的东西
     warm = a.call("reserve_scope", {"scope": "warmup", "agent": "w", "ttl_until": past()})
-    if warm.get("action") not in ("reserved", "renewed"):
+    if not p_warmup_ok(warm):
         die("预热都没跑通：%s" % json.dumps(warm, ensure_ascii=False)[:200])
     b = Sess("B")
     if b.p.poll() is not None:
@@ -411,6 +434,24 @@ def selftest() -> int:
         {"reserved": True, "action": "taken_over", "prev_agent": "xZ"}, "xA"), False)
     case("G6-red-未让渡", p_expired_takeover(
         {"reserved": False, "action": "taken_over", "prev_agent": "xA"}, "xA"), False)
+    # ---- BUG-520：预热与 action 的**复合形状**（真源 `engine_rsv.mbt`：`<base>[+role_inferred]`
+    #      `[+agent_self_reported][+challenge_verified]`）。旧判据拿整串相等 ⇒ 产品加上后缀后
+    #      预热先自拒（rc=3），格 4/6 也在同一条路上——这三格是这把尺子的锁。
+    case("WARM-ok-reserved真+带后缀action",
+         p_warmup_ok({"reserved": True,
+                      "action": "unregistered+role_inferred+agent_self_reported"}), True)
+    case("WARM-red-conflict", p_warmup_ok({"reserved": False, "action": "conflict"}), False)
+    case("WARM-red-回执缺 reserved 字段（不许把缺字段当成功）",
+         p_warmup_ok({"action": "reserved"}), False)
+    case("ABASE-ok-拆掉 provenance 后缀",
+         action_base("renewed+role_inferred+agent_self_reported") == "renewed", True)
+    case("ABASE-ok-旧整串形状照样认", action_base("taken_over") == "taken_over", True)
+    case("ABASE-red-空串不得等于任何 base", action_base("") == "reserved", False)
+    case("G4-ok-renewed带后缀",
+         p_renew_same_agent({"reserved": True, "action": "renewed+agent_self_reported"}), True)
+    case("G6-ok-taken_over带后缀",
+         p_expired_takeover({"reserved": True, "action": "taken_over+role_inferred",
+                             "prev_agent": "xA"}, "xA"), True)
     # 格子集合一致（判据坏了那一档）
     case("ARM-ok-逐字一致", arms_consistent(list(EXPECTED), EXPECTED), True)
     case("ARM-red-少一格", arms_consistent(EXPECTED[:-1], EXPECTED), False)

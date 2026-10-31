@@ -19,6 +19,13 @@
   moon build --target js cmd/cli
   python scripts/patch_esm_main.py
   python scripts/blackbox/e2e_heartbeat_xproc.py
+
+退出码（契约，勿改档；BUG-519 把「夹具坏了」与「被测有缺陷」分成两档，此前两者都是 1）：
+  0 = 八格全 PASS（基数门要求 臂集合==声明的 8 格，缺格不算绿）
+  1 = 任一格 FAIL —— **被测对象**的结论
+  2 = 探针不可用（产物缺失 / ns 物理库不存在 / setup 那一笔被服务端拒：ns 路由、ACL、身份）
+      ⇒ 绝不让「接入没通」冒充「缺陷在场」；拒绝行原文转述服务端回执，不自拟出路。
+自检面（`--selftest`）另给 0/1：它不起真进程、不碰库，只考纯判定函数会不会红。
 """
 import hashlib
 import json
