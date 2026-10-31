@@ -215,10 +215,14 @@ A4 回 SKIP 的理由写在回执里：本机是 Windows 而公网只发 `fist-m
 - 账本：`memory/bugs.md` BUG-501～BUG-507（含每条的 FIXED 小记与回归锁点名；BUG-506 仍 OPEN）。
 - 判据与纪律依据：`AGENTS.md` 判例-29 / -30 / -32 / -33 / -36 / -37、R207（未知旗标必须拒）、判例-11（提交带明确路径）。
 
+- **§8.6 / §8.8 的远端读数来源**（2026-10-31 现取，不抄上一轮的日志）：`gh api …/actions/runs/41177368424/jobs` → `actions/jobs/124467587787` 步骤表（21/22/43=success、47=failure、48~54=skipped）→ 同 job 的 `…/logs` 原文（留盘 `temp/ci_918_jsubuntu.log`）；`gh api …/actions/jobs/124467587854` 步骤表（9=success、10=failure）；`gh api repos/vicTop-cw/FIST-Mbt/releases/tags/v0.3.11`；`git ls-remote origin|gitcode refs/heads/main refs/tags/v0.3.11`。
+- **BUG-514 面**：`scripts/mcp_tool_tour.py`（新增 `agents_face_sources` / `agents_face_text` / `surface_decl`，`surface_probe` 与 `surface_fixture` 改吃同一份口径；`surface_selftest` 的 D1/D2 两支直接断言格 + FATAL 自拒支）、变异前字节底 `temp/mcp_tool_tour.b514.orig`、现状面三处（`.github/workflows/ci.yml` 步名 / `AGENTS.md` 自述段 / `scripts/README.md` 登记条目）、账本 `memory/bugs.md` BUG-514。
+- **勘正（本节正文写于发版之前，以下几句现已过期，按 §八 为准）**：① 「`scripts/blackbox/e2e_acceptance_recheck.py` 未入库」——自 `b4c2dd53` 起已在跟踪面且与 `REGISTRY` 同批；② 「BUG-506 仍 OPEN」——OPEN 到收口时是 **506 / 510 / 513** 三条（507~509、511、512、514 已 FIXED）；③ §五.1 的「发版做不到」——已做到（`v0.3.11` / `2026-10-31T06:17:41Z` / js 一枚），缺口转移到 BUG-513。
+
 
 ---
 
-## 八、收口补记（14:00–15:30）：§四.2 / §四.6 / §四.7 / §四.9 与 §五.1–5.3 全部兑现
+## 八、收口补记（14:00–15:30 起，含发版与推送后的远端读数）：§四.2 / §四.6 / §四.7 / §四.9 与 §五.1–5.3 全部兑现
 
 owner 授权两条：**「代 lane-R115 落地后再发版」**（0.3.10 → 0.3.11 + tag + 出资产）与**「同步推 gitcode」**。
 下面每一条都给 commit 与当场复跑的读数；**没有一条是「改了配置就算生效」**。
@@ -303,17 +307,31 @@ owner 授权两条：**「代 lane-R115 落地后再发版」**（0.3.10 → 0.3
 `check_test_sync … --fresh-if-stale` PASS（`released=0`，共享同一份产物、不重跑全仓）、
 `check_deprecated_site_list temp/chk47.json` 由 rc=2 转 PASS（重采 dump）、`check_dist_snapshot` / `check_host_installable` 双双 rc=0。
 
-### 8.6 交付动作（推送 / tag / 镜像 / CI 读数）
+### 8.6 交付动作（推送 / tag / 镜像 / CI 读数）—— **本节读数为远端现取，不是计划**
 
-执行顺序（本笔之后立即做；**这一节的读数由下一笔回填**，此刻写「已完成」就是拿计划冒充事实）：
+顺序照原文执行完，逐格给正身（推送落盘 06:39:59Z / 14:39:59+08:00，远端回读 06:54Z；命令都写在证据列里）：
 
-1. `git push origin main`（把 §8.1–8.5 那 8 笔推上去）；
-2. `git tag -a v0.3.11 -F <标签正文>` 打在含本报告的最后一笔上，再 `git push origin v0.3.11` ⇒ 触发 `release.yml`
-   （上一次 v0.3.10 那一发实测 43 秒出资产，见 run `41004195773`）；
-3. `git push gitcode main` + `git push gitcode v0.3.11` ⇒ **fast-forward 已当场核过**：
-   `git merge-base --is-ancestor <gitcode/main=ee72c5e1> HEAD` 返回 YES ⇒ 不是 force、不覆写别人历史；
-4. 读 CI：`ci.yml` 的第 22 步应从「真违例红」转绿（现状面已同步），且第 23~30 步不再被 fail-fast skip；
-   `release.yml` 出资产后把 `<!-- release-fact: v0.3.11 github-published=… -->` 补进 `BACKLOG.md`（J13 的口径：先有事实再落标记）。
+| # | 动作 | 正身读数 | 取证命令 |
+|---|---|---|---|
+| 1 | `git push origin main`（§8.1–8.5 那批 + 后续三笔） | `bc26b4e44..a1dd65adb main -> main`；此前依次 `5ad8edd59..5f33517e2`、`5f33517e2..c49e9ba31`、`c49e9ba31..bc26b4e4` | `git ls-remote origin refs/heads/main` ⇒ `a1dd65adb…` |
+| 2 | `git tag -a v0.3.11` 打在 §8.2 数字同步之后、只改判据/文档那两笔之前 | 标签对象 `9eaadb53` → 提交 `5f33517e2`；`git push origin v0.3.11` ⇒ 触发 `release.yml` | `git rev-parse v0.3.11^{commit}` |
+| 3 | GitHub Release 出资产 | `published_at=2026-10-31T06:17:41Z`，资产 `fist-mbt-js-v0.3.11.zip` **794,603B，只有 js 一枚**（native 两臂同红 ⇒ **BUG-513**，OPEN，等 owner 裁） | `gh api repos/vicTop-cw/FIST-Mbt/releases/tags/v0.3.11` |
+| 4 | `git push gitcode main` + tag（镜像同步，owner 已点头） | 两个远端**同一枚提交** `a1dd65adb`，同一枚标签对象 `9eaadb53`；全程 fast-forward，无 force | `git ls-remote gitcode refs/heads/main refs/tags/v0.3.11` |
+| 5 | `BACKLOG.md` 补 `release-fact: v0.3.11`、`CHANGELOG.md` 的「发布状态」由将来时改回填事实 | `a1dd65adb`（只含这两份文档，`+9/−2`） | `git show --stat a1dd65adb` |
+
+CI 侧（run `41177368424` = commit `bc26b4e4`，job `124467587787` = `check + test (js, ubuntu)`，56 步）：
+
+- **第 21 步 `Test (js)` success** ⇒ §五.1 那句「CI 的 Test (js) 已由红转绿」在远端成立（BUG-507 的正身）。
+- **第 22 步 `Badge consistency guard` success** ⇒ **BUG-508 关闭**：`--fresh-if-stale` 那条路在 ubuntu runner 上
+  真的重跑并写出源码锚点，不再「结构上永远 rc=2」。
+- 第 23~46 步**十几来第一次真的执行**（此前被第 22 步 fail-fast 挡成 skipped），逐条 success，
+  其中**第 43 步 `Host-installable guard` success ⇒ BUG-512 的关闭条件到位**。
+- **第 47 步 `Self-described surface guard` failure**，48~54 又变回 skipped ⇒ 露出的第三格见下面 §8.8（**BUG-514**）。
+- native 臂（job `124467587854`）：第 9 步 `Native heap gate` success、第 10 步 `Test (native)` failure
+  ⇒ 与 AGENTS「门绿 ≠ 已修」那条口径一致，是 **BUG-133 系**的既有状态，本轮没动它。
+
+tag 之后的两笔（`c49e9ba31` / `bc26b4e4` / `a1dd65adb`）**只动判据与文档面、零产品行为** ⇒
+已发布的 `v0.3.11` 没有被挪动，公网那枚 zip 与本仓 tag 仍然逐字对得上。
 
 ### 8.7 本轮沉淀（写进判例/账本的那几条）
 
@@ -327,3 +345,46 @@ owner 授权两条：**「代 lane-R115 落地后再发版」**（0.3.10 → 0.3
    ⚠️ **这条在本报告里原地复发了**：我写「8.7 第 4 条教训」的时候，同一个机制把**报告正文**里的
    `\x7f` 也落成了裸 DEL（2 处）与日志里 1 处 ⇒ 是 `check_text_control_chars` 在修完探针之后**又一次**报红抓到的。
    「写清教训」不防教训复发，只有那把尺防。⇒ 任何写转义的动作都先写完再跑一次控制字符普查，别靠肉眼。
+
+### 8.8 接线修通后露出的第三格：BUG-514（**尺子自己崩了，对照一支都没跑**）
+
+第 47 步的失败原文（留盘 `temp/ci_918_jsubuntu.log`）不是「自述面漂移」，是一行 `AttributeError`：
+
+```
+File ".../scripts/mcp_tool_tour.py", line 567, in surface_fixture
+AttributeError: 'NoneType' object has no attribute 'group'
+##[error]Process completed with exit code 1.
+```
+
+**病因**：R212 把 MCP 工具清单整块搬出 `AGENTS.md`（指令字节预算），`Resources:` 那一行跟着搬家到
+`docs/AGENTS-mcp-inventory.md`；R216 当时**只**在 `surface_probe()` 里补了「两面合并再反解」，
+**同文件里第二个读取点 `surface_fixture()` 没跟上** ⇒ 一条规则两份实现，其中一份腐烂。
+
+**为什么本机测不出、CI 也测不出**：它本机一条命令就复现（`python -X utf8 scripts/mcp_tool_tour.py --surface-selftest`
+同 traceback、rc=1）——真实原因不是「测不出」，是**没人跑过**：这支判据不在仓内电池里（登记面写着
+`CI=CI 电池=-`），而 CI 那一步在 BUG-508 之前被更前面的 fail-fast 挡着、从来没有执行机会。
+⇒ 与 BUG-512 逐字同形：**一道门被另一道门挡住时，它自己的坏不会留下任何痕迹**。
+
+**危险形态是「红得没有信息」**：崩在半路 ⇒ 十四支对照一支都没执行，读数只有 `exit 1`。
+下一轮的人只会以为「自述面又漂移了」，而真缺口是尺子坏了（判例-35「探针的结果 ≠ 探针在工作」；
+判例-37「文本命中 ≠ 行为覆盖」——这里是「有一步 ≠ 那一步真判过」）。
+
+**修法与锁**（判例-29/30 两头都考过）：
+
+1. 读取面收成**一份实现**：新增 `agents_face_sources()` / `agents_face_text()` / `surface_decl()`，
+   `surface_probe` 与 `surface_fixture` 都改吃它（R216 那段就地合并的代码删掉）；
+2. 读不到声明行 ⇒ 夹具回 `None`、`surface_selftest` 起手打 `FATAL … 读取面=AGENTS.md + …` 再 `rc=2`
+   ——**同一病因，从「traceback + exit 1」变成「自拒 + 点名读了哪几份文件」**
+3. 新增两支**直接断言格**（不经过桩 server，专门考「判据自己的读取面」）：
+   D2 把声明行只放进 `docs/AGENTS-mcp-inventory.md` ⇒ 夹具仍必须解析到；D1 两面都无声明 ⇒ 夹具必须回 None；
+4. **变异双向实测**：把 `agents_face_sources` 改成只留 `AGENTS.md`（复刻病因）⇒ rc=2 走 FATAL 自拒；
+   把 `surface_decl(root)` 改成 `surface_decl(ROOT)`（夹具无视传入 root）⇒
+   `SURFACE-SELFTEST: FAIL … 不符 2 支` rc=2，且点名的正是 D1/D2 两支 ⇒ 这两支不是恒绿格；
+   两次变异都按字节还原（`bytes-identical=True`）。
+5. **格子数不再抄**：`--surface-selftest` 的汇总行从已执行格子反解；同批把三处现状面的「12 支」字面量删掉
+   （`ci.yml` 步名、`AGENTS.md` 自述段、`scripts/README.md` 登记条目），
+   并顺手把 `AGENTS.md` 头部那句**已落后的字节/行数自述**改成「现读请跑 `check_instruction_budget.py`」——
+   同一个教训的两种形态：**抄一个数，就是埋下一颗漂移雷**。
+
+⚠️ **仍留给远端的关闭条件**：本地这一支是桩 server，真协议面（`resources/list` 实回、`prompts/get` 实回、
+`serverInfo` 版本对表）要 node + 产物，不在 CI 这一步里；本单的正身仍是**推送后 CI 第 47 步的结论原文**。

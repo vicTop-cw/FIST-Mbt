@@ -360,7 +360,9 @@ jobs:
           python3 scripts/check_upgrade_installer.py --selftest
           python3 scripts/check_upgrade_installer.py
 
-      - name: Self-described surface guard (BUG-104：resources/prompts/版本 自述面判据的 12 支对照)
+      # BUG-104 立的是「自述面没人认领」这一格；BUG-514 补的是「认领它的那把尺自己崩了」。
+      # 支数写进步名 = 抄数（J10 同型）⇒ 这里只写判据名，格子数由运行读数自己报。
+      - name: Self-described surface guard (BUG-104：resources/prompts/版本 自述面对照 · BUG-514)
         shell: bash
         run: |
           python3 scripts/mcp_tool_tour.py --surface-selftest

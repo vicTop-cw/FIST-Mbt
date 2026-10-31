@@ -13800,3 +13800,65 @@ v0.3.10 在 2026-10-30 能出 native-linux 资产，而今天同一条命令在�
 
 ⚠️ 本轮**没有**动 `release.yml`：发版动作已经执行完（tag 已推、Release 已出、JS 资产可装），
 在没有第二台可比环境的情况下改分发轨配置＝拿公网资产当试验品。**owner 裁决后再动**。
+
+
+## BUG-514 [2026-10-31T06:50:00Z] [medium] FIXED
+- summary: `mcp_tool_tour.py` 的自述面**夹具** `surface_fixture()` 只读 `AGENTS.md`，而 `Resources:` 那一行
+  早已随 R212 搬到 `docs/AGENTS-mcp-inventory.md` ⇒ `re.search(...)` 回 None、`.group(1)` 当场
+  `AttributeError` ⇒ **CI 第 47 步整套对照一支都没执行**（判据崩在半路，只留一个 exit 1）
+- detail: ## 怎么现形的（BUG-508 把接线修通之后才露出来的第二格）
+
+run `41177368424` / job `124467587787`（ubuntu js，commit `bc26b4e4`）步骤表：43 `Host-installable guard`
+**success**（BUG-512 的正身关闭条件到位），47 `Self-described surface guard` **failure**，48 起 skipped。
+日志原文（留盘 `temp/ci_918_jsubuntu.log`）：
+
+```
+##[group]Run python3 scripts/mcp_tool_tour.py --surface-selftest
+  File ".../scripts/mcp_tool_tour.py", line 567, in surface_fixture
+    "resources/list": {"resources": [{"uri": u} for u in re.findall(r"`(fist://[\w./-]+)`", res.group(1))]},
+AttributeError: 'NoneType' object has no attribute 'group'
+##[error]Process completed with exit code 1.
+```
+
+本机一条命令即可复现（`python -X utf8 scripts/mcp_tool_tour.py --surface-selftest` ⇒ 同 traceback、rc=1），
+所以「只有 CI 才看得见」在这里不成立——**成立的是「没人跑过它」**：它不在仓内电池里（CI 独有一步），
+而 CI 那一步在 BUG-508 之前被 fail-fast 挡在更前面，从来没有执行机会。
+
+## 根因是「同一条规则写了两份实现」，不是「读错了文件」
+
+R212 把 MCP 工具清单整块搬出 `AGENTS.md`（指令字节预算），`Resources:` / `Prompts:` 两行跟着搬家。
+R216 当时**只**在 `surface_probe()` 里补了合并（源码里那段注释自己写着「本判据的第 4 个拆分副作用」），
+**同文件的第二个读取点 `surface_fixture()` 没跟上** ⇒ 一条规则两份实现，其中一份腐烂。
+判例-33/35 的同族第三面：`surface_probe` 那一份确实会自拒（「反解不出条目 ⇒ rc=2 并点名」），
+而崩的那一份是**给它供数的夹具**——夹具崩了，判据的自拒面根本没机会说话。
+
+⇒ 危险形态不是「红」，是**「红得没有信息」**：14 支对照一支没跑，读数只有 `exit 1`，
+下一轮的人只会以为「自述面判据又漂移了」，而真实缺口是**尺子自己坏了**（判例-35「探针的结果 ≠ 探针在工作」）。
+
+### FIXED(2026-10-31T06:50:00Z / BUG-514)
+- evidence: **回归锁 = `--surface-selftest` 新增的两支直接断言格（`direct`）+ 一次双向变异实测**：
+  · **D2**（本单的锁）：合成 box 的 `AGENTS.md` **不写**声明行、只把 `Resources:`/`Prompts:` 放进
+    `docs/AGENTS-mcp-inventory.md` ⇒ `surface_fixture(root=box)` 必须解析到那 2+2 条。
+    变异实测（把 `surface_decl(root)` 改成 `surface_decl(ROOT)`，即「无视传入 root、回到只认仓库根」）：
+    `SURFACE-SELFTEST: FAIL … 不符 2 支`、rc=2 ⇒ 这一条**不是**恒绿格；
+  · **D1**：现状面一份声明都没有 ⇒ 夹具返回 **None**（不自证），而不是拿空集去跑对照；
+    配合 `surface_selftest()` 起手的 FATAL 支（读不到就打印「读取面=AGENTS.md + …」再 `sys.exit(2)`）；
+  · **变异 A**（复刻真实病因：`agents_face_sources` 只留 `"AGENTS.md"`）⇒ rc=2 且打印
+    `SURFACE-SELFTEST: FATAL … 读取面=AGENTS.md` ——**同一病因，从「traceback + exit 1」变成「自拒 + 点名读了哪几份」**；
+  · **单一实现**：新增 `agents_face_sources()` / `agents_face_text()` / `surface_decl()`，
+    `surface_probe` 与 `surface_fixture` 都改走它（R216 那段就地合并的代码删掉，不留第二份口径）；
+    自拒文案改为点名读取面，`version_from_moon_mod(root)` 一并接 root（box 不再撞仓库根）。
+  · **格子数不再抄**：`SURFACE-SELFTEST: 14 支（10 违例必红 + 2 必绿 + 2 必自拒）` 从 `cases` 与 `direct` 反解；
+    同批改掉三处现状面的「12 支」字面量（`ci.yml` 步名、`AGENTS.md` 自述段、`scripts/README.md` 登记条目），
+    顺手把 `AGENTS.md` 头部那句**已落后的字节/行数自述**改成「现读请跑 `check_instruction_budget.py`」。
+  实测：`--surface-selftest` rc=0（14 支，不符 0）；`check_dead_params_py` / `check_selftest_call_face` /
+  `check_py_stdout_encoding` / `check_text_control_chars` / `check_scripts_index` / `check_doc_surface`（J1–J17）
+  / `check_instruction_budget --strict` 全 rc=0。
+  ⚠️ **本单的关闭条件仍是推送后 CI 第 47 步的结论原文**（与 BUG-508/512 同一口径）：本地这一支是桩 server，
+  真协议面（`resources/list` 实回 + `prompts/get` 实回 + `serverInfo` 版本）要 node + 产物，不在 CI 的这一步。
+  ⚠️ **未锁的缺口**：「同一条规则多份实现」本身没有普查尺——本单只把**这个文件里**的两份合成一份。
+  现读（`grep -rn AGENTS-mcp-inventory scripts/*.py`）：**「AGENTS 现状面 = `AGENTS.md` +
+  `docs/AGENTS-mcp-inventory.md`」这条口径有 4 份实现**（`mcp_tool_tour` 本单合并后 / `check_doc_surface` /
+  `check_tools_sync` / `check_tool_add_completeness`），各自手写；而 `Resources:` 这个 pattern 只有
+  `mcp_tool_tour` 一把尺在解析。建议的下一把尺：让这四处改吃同一个共享模块（`_` 前缀自动命中电池豁免），
+  或普查「同一 pattern 在 scripts/ 里有 ≥2 份读取实现」并点名——**四处手写同一条搬家规则，就是四颗漂移雷**。

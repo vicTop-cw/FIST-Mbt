@@ -455,30 +455,53 @@ def seed(srv, ctx):
     return out
 
 
+INVENTORY_REL = os.path.join("docs", "AGENTS-mcp-inventory.md")
+
+
+def agents_face_sources(root=None):
+    """AGENTS 现状面里**实际读到**的文件（相对路径）。判据自拒时必须点名读了哪几份，否则下一个人只能猜。"""
+    root = root or ROOT
+    return [rel for rel in ("AGENTS.md", INVENTORY_REL) if os.path.isfile(os.path.join(root, rel))]
+
+
+def agents_face_text(root=None):
+    """AGENTS 现状面正文 = `AGENTS.md` + 同树的 `docs/AGENTS-mcp-inventory.md`（存在则并入）。
+
+    R212 因 harness 指令字节预算把 MCP 工具清单整块搬出 AGENTS.md，`Resources:` / `Prompts:` 两行
+    跟着搬家 ⇒ 只读 `AGENTS.md` 的那份实现读到的是「没有声明行」。**这条规则只许有一份实现**：
+    R216 在 `surface_probe` 里补过合并，但同文件的 `surface_fixture` 没跟上 ⇒ CI 第 47 步
+    AttributeError 崩在解析行、对照一支都没跑（BUG-514；「同一规则多份实现必漂移」的又一次实测）。
+    """
+    root = root or ROOT
+    return "\n".join(io.open(os.path.join(root, rel), encoding="utf-8", errors="replace").read()
+                     for rel in agents_face_sources(root))
+
+
+def surface_decl(root=None):
+    """从 AGENTS 现状面反解声明的 resources / prompts 条目；任一面缺声明行 ⇒ 交回空集（不猜）。"""
+    text = agents_face_text(root)
+    m_res = re.search(r"^Resources:(.*)$", text, re.M)
+    m_pr = re.search(r"^Prompts:(.*)$", text, re.M)
+    want_res = set(re.findall(r"`(fist://[\w./-]+)`", m_res.group(1))) if m_res else set()
+    want_pr = set(re.findall(r"`(fist:[\w./-]+)`", m_pr.group(1))) if m_pr else set()
+    return want_res, want_pr
+
+
 def surface_probe(srv, root=None):
     """自述面巡回：文档写着「3 resources + 2 prompts」，这里就把这两面打到调用面并双向对表。
 
     为什么不只数工具：`check_doc_surface`/`check_tools_sync` 钉的是 tools 面，resources/prompts
     两个面此前没有任何判据认领——文档说 3+2，服务端实际给几个、能不能读、读回来是不是空，
     全靠人偶尔试一次（J10 型缺口：自述有人写、判据没人认领）。
-    期望值从 AGENTS.md 的 `Resources:` / `Prompts:` 两行反解，不在此处手抄常量。
+    期望值从 AGENTS 现状面反解（见 `agents_face_text`，它才是「现状面包含哪几份文件」的唯一口径），
+    不在此处手抄常量。
     """
     problems = []
     root = root or ROOT
-    agents = io.open(os.path.join(root, "AGENTS.md"), encoding="utf-8", errors="replace").read()
-    # R216：**AGENTS 面可能被拆开**（R212 把 MCP 工具清单整块搬到 `docs/AGENTS-mcp-inventory.md`，
-    # 那一块里带着 `Resources:` / `Prompts:` 两行）⇒ 合并后再反解，否则这里会报
-    # 「自述面反解失败」（本判据的**第 4 个**拆分副作用：三把 check_* 各修一次，这是第四面）。
-    _inv = os.path.join(root, "docs", "AGENTS-mcp-inventory.md")
-    if os.path.isfile(_inv):
-        agents = agents + "\n" + io.open(_inv, encoding="utf-8", errors="replace").read()
-    m_res = re.search(r"^Resources:(.*)$", agents, re.M)
-    m_pr = re.search("^Prompts:(.*)$", agents, re.M)
-    want_res = set(re.findall(r"`(fist://[\w./-]+)`", m_res.group(1))) if m_res else set()
-    want_pr = set(re.findall(r"`(fist:[\w./-]+)`", m_pr.group(1))) if m_pr else set()
+    want_res, want_pr = surface_decl(root)
     if not want_res or not want_pr:
-        return ["自述面反解失败：AGENTS.md 的 Resources:/Prompts: 行里没解析出条目"
-                "（判据无法自证，绝不报绿）"], ""
+        return ["自述面反解失败：AGENTS 现状面（读到 %s）的 Resources:/Prompts: 行里没解析出条目"
+                " ⇒ 判据无法自证，绝不报绿" % (" + ".join(agents_face_sources(root)) or "无")], ""
     rr = srv.raw("resources/list", {})
     if "error" in rr:
         problems.append("resources/list 被拒：%s" % json.dumps(rr["error"], ensure_ascii=False)[:120])
@@ -557,24 +580,29 @@ class FakeSrv(object):
         return {"result": v}
 
 
-def surface_fixture():
-    """与 AGENTS.md 当前声明同集的干净回执（干净支的"零 problem"因此不是自证）。"""
-    res = re.search(r"^Resources:(.*)$", io.open(os.path.join(ROOT, "AGENTS.md"),
-                                                 encoding="utf-8").read(), re.M)
-    pr = re.search(r"^Prompts:(.*)$", io.open(os.path.join(ROOT, "AGENTS.md"),
-                                               encoding="utf-8").read(), re.M)
+def surface_fixture(root=None):
+    """与 AGENTS 现状面声明同集的干净回执（干净支的"零 problem"因此不是自证）。
+
+    读不到声明行返回 **None**：夹具没有声明集＝无法自证，调用方必须自拒（rc=2）。
+    原来这里对 `res.group(1)` 裸取 ⇒ R212 拆分面之后 CI 第 47 步 `AttributeError` 崩在解析行，
+    整套对照一支都没执行（BUG-514）——崩与自拒的差别是：自拒会说出读了哪几份文件，崩只留一个 exit 1。
+    """
+    root = root or ROOT
+    want_res, want_pr = surface_decl(root)
+    if not want_res or not want_pr:
+        return None
     return {
-        "resources/list": {"resources": [{"uri": u} for u in re.findall(r"`(fist://[\w./-]+)`", res.group(1))]},
+        "resources/list": {"resources": [{"uri": u} for u in sorted(want_res)]},
         "resources/read": {"contents": [{"text": "夹具正文，非空"}]},
-        "prompts/list": {"prompts": [{"name": n} for n in re.findall(r"`(fist:[\w./-]+)`", pr.group(1))]},
+        "prompts/list": {"prompts": [{"name": n} for n in sorted(want_pr)]},
         "prompts/get": {"messages": [{"role": "user", "content": "x"}]},
         "tools/list": {"_meta": {"io.modelcontextprotocol/serverInfo": {
-            "name": "fist-mbt", "version": version_from_moon_mod()}}},
+            "name": "fist-mbt", "version": version_from_moon_mod(root)}}},
     }
 
 
-def version_from_moon_mod():
-    mm = io.open(os.path.join(ROOT, "moon.mod"), encoding="utf-8", errors="replace").read()
+def version_from_moon_mod(root=None):
+    mm = io.open(os.path.join(root or ROOT, "moon.mod"), encoding="utf-8", errors="replace").read()
     m = re.search(r'version\s*=\s*"([^"]+)"', mm)
     return m.group(1) if m else ""
 
@@ -602,15 +630,23 @@ def artifact_version_gate(srv):
 
 
 def surface_selftest():
-    """`--surface-selftest`：自述面判据的 12 支对照（10 支违例必红 + 1 支干净必绿 + 1 支自拒）。
+    """`--surface-selftest`：自述面判据的对照（违例必红 + 必绿 + 读不到声明必自拒）。
 
     为什么单独跑：判据只在巡回里跑，而巡回要 node + 产物 + 数分钟——CI 轨执行不了；
     没有可独立执行的对照，它就只是一段"本轮绿过一次"的叙述（本仓踩过的同型坑：
     `--selftest` 没被 CI 那一步执行，自检本身崩了也报绿）。这里用桩 server 把每类违例
     都造一遍，不起 node、不碰库，CI 可直接跑。
+
+    **支数不写死**（BUG-514 顺带的账面）：下面那行读数从 `cases` 与 `direct` 反解，
+    「12 支」这种数字抄进三份现状面时，格子一变就没人知道——那是 J10 型缺口的另一种形状。
     """
+    if surface_fixture() is None:
+        print("SURFACE-SELFTEST: FATAL —— AGENTS 现状面反解不到 Resources:/Prompts: ⇒ 夹具无法自证，"
+              "对照既不判绿也不判红（rc=2）；读取面=%s"
+              % (" + ".join(agents_face_sources()) or "一份都没读到"))
+        sys.exit(2)
     cases = []
-    cases.append(("干净：夹具与 AGENTS.md 同集 ⇒ 零 problem", lambda s: None, False))
+    cases.append(("干净：夹具与 AGENTS 现状面同集 ⇒ 零 problem", lambda s: None, False))
 
     def drop_res(s):
         s["resources/list"]["resources"].pop(0)
@@ -663,20 +699,55 @@ def surface_selftest():
                                           (probs[0][:78] if probs else summ[:78])))
         if bool(probs) != expect_red:
             fails.append(name + ("（该红没红）" if expect_red else "（该绿没绿）"))
-    # 第 12 支：文档没有声明行 ⇒ 判据必须自拒，不能静默零 problem
+    # —— 直接断言型格子（`direct`）：判据自己的读取面与自拒面，不经过桩 server ——
+    # 判例-29「机制格 ≠ 实现路径格」：上面 11 支全用真根的夹具，读不到拆分面时它们只会跟着崩，
+    # 证明不了「合并 docs/AGENTS-mcp-inventory.md」这条规则还在。下面两支才是 BUG-514 的锁。
+    direct = []
+
     box = os.path.join(ROOT, "temp", "surf-selftest-%s" % RUN_ID)
     os.makedirs(box, exist_ok=True)
     io.open(os.path.join(box, "AGENTS.md"), "w", encoding="utf-8", newline="\n").write(
         "# 假文档：没有 Resources:/Prompts: 两行\n")
     io.open(os.path.join(box, "moon.mod"), "w", encoding="utf-8", newline="\n").write(
         'version = "0.0.0"\n')
+    # D1：现状面一份声明都没有 ⇒ 夹具回 None（不自证），巡回判据自拒，都不能拿空集当"零 problem"
+    direct.append(("refuse", "现状面无声明 ⇒ 夹具回 None（不自证）",
+                   surface_fixture(root=box) is None))
     probs, summ = surface_probe(FakeSrv(surface_fixture()), root=box)
     print("  %-38s problems=%d %s" % ("文档无声明行 ⇒ 判据自拒", len(probs),
                                       (probs[0][:78] if probs else "(空)")))
-    if not (len(probs) == 1 and "反解失败" in probs[0]):
-        fails.append("反解失败支未自拒")
-    print("SURFACE-SELFTEST: %s —— %d 支（%d 违例 + 1 干净 + 1 自拒），不符 %d 支" % (
-        "OK" if not fails else "FAIL", len(cases) + 1, len(cases) - 1, len(fails)))
+    direct.append(("refuse", "无声明行 ⇒ surface_probe 自拒（不静默零 problem）",
+                   len(probs) == 1 and "反解失败" in probs[0]))
+
+    # D2（BUG-514 回归锁）：声明行只在 `docs/AGENTS-mcp-inventory.md` 里 ⇒ 现状面仍必须解析得到。
+    # 把它改回「只读 AGENTS.md」，这一支立刻红（夹具回 None ⇒ 解析不到条目），不再靠 CI 崩才知道。
+    box_split = os.path.join(ROOT, "temp", "surf-split-%s" % RUN_ID)
+    os.makedirs(os.path.join(box_split, "docs"), exist_ok=True)
+    io.open(os.path.join(box_split, "AGENTS.md"), "w", encoding="utf-8", newline="\n").write(
+        "# 假 AGENTS：清单已按 R212 搬出，本文件没有 Resources:/Prompts: 两行\n")
+    io.open(os.path.join(box_split, "moon.mod"), "w", encoding="utf-8", newline="\n").write(
+        'version = "0.0.0"\n')
+    io.open(os.path.join(box_split, INVENTORY_REL), "w", encoding="utf-8", newline="\n").write(
+        "Resources: `fist://map`, `fist://split`\n\nPrompts: `fist:check_in`, `fist:verify`\n")
+    sp = surface_fixture(root=box_split)
+    got_res = sorted(r["uri"] for r in (sp or {}).get("resources/list", {}).get("resources", []))
+    got_pr = sorted(p["name"] for p in (sp or {}).get("prompts/list", {}).get("prompts", []))
+    print("  %-38s 拆分面解析 resources=%s prompts=%s" % ("声明只在 inventory 里也解析得到",
+                                                          ",".join(got_res) or "(空)",
+                                                          ",".join(got_pr) or "(空)"))
+    direct.append(("green", "声明只在 docs/AGENTS-mcp-inventory.md 里也解析得到（BUG-514 锁）",
+                   got_res == ["fist://map", "fist://split"] and
+                   got_pr == ["fist:check_in", "fist:verify"]))
+
+    for kind, name, ok in direct:
+        if not ok:
+            fails.append(name + ("（该自拒没自拒）" if kind == "refuse" else "（该绿没绿）"))
+    n_red = sum(1 for _n, _m, exp in cases if exp)
+    n_green = len(cases) - n_red + sum(1 for k, _n, _o in direct if k == "green")
+    n_refuse = sum(1 for k, _n, _o in direct if k == "refuse")
+    print("SURFACE-SELFTEST: %s —— %d 支（%d 违例必红 + %d 必绿 + %d 必自拒，支数从已执行格子反解），"
+          "不符 %d 支" % ("OK" if not fails else "FAIL",
+                          len(cases) + len(direct), n_red, n_green, n_refuse, len(fails)))
     for f in fails:
         print("  FAIL " + f)
     # 判据 `check_selftest_call_face` J2：自检函数的调用图必须**到得了调用面**
