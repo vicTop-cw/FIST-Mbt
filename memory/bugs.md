@@ -14288,7 +14288,7 @@ scripts/mcp_smoke.py 头注释      →  「断言含 publish 等 79 个工具�
 按判例-36 的口径，这条修复**没有回归锁**，所以它以「未关闭」记在本单里，而不是记成已修。
 
 
-## BUG-526 [2026-10-31T10:33:00Z] [high] OPEN
+## BUG-526 [2026-10-31T10:33:00Z] [high] FIXED
 - summary: `release.yml` 的 `build-native-linux` **从来没有 `reapply BUG-133` 那一步**（ci.yml 两条 native 臂都有）
   ⇒ 即便产物建得出来，交付出去的也是一枚「能启动、一用就崩」的二进制；同批发现打包步抄的文件名在本工具链下不存在
 - detail: ## 两态对照（2026-10-31 WSL ubuntu-22.04，moon `0.1.20261021`，同一棵树同一枚产物）
@@ -14382,7 +14382,7 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
 ⇒ 本单保持 OPEN，别把它读成「native 全项目构建已可用」。
 
 
-## BUG-528 [2026-10-31T10:42:00Z] [medium] OPEN
+## BUG-528 [2026-10-31T10:42:00Z] [medium] FIXED
 - summary: `release.yml` 的 `meta` 作业**没有 `actions/checkout`** ⇒ `workflow_dispatch` 那条
   「ref 剥不出版本就退回真源 moon.mod」的出路**从来没跑通过**：实测第一步就
   `FileNotFoundError: No such file or directory: 'moon.mod'`，rc=1，并**连带把四个下游作业全 skip**
@@ -14402,3 +14402,35 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
 - 同批另记一条公开面风险（已在本轮修）：`release` 作业的 `tag_name` 展开的是 `github.ref_name`，
   手动派发时它是分支名 ⇒ 若不设门，本单修好后派发那一跑会**创建一条 tag 名为 `main` 的公开 Release**。
   所以门（事件 + tag 前缀）必须先于 meta 修好落地，两半同批。
+
+### FIXED(2026-10-31T10:51:00Z / BUG-526)
+- evidence: **CI 读数原文**（run `41194094357`，event `workflow_dispatch`，commit `02a59de66`，job `124516667802`）：
+  `build-native-linux` = **success**，逐步 `#6 Migrate(先解包)` / `#7 Reapply BUG-133` / `#8 Build native`
+  / `#9 Package native artifact` / `#10 upload-artifact` **全 success**；
+  该 run 产物清单 = `fist-mbt-native-linux 3,723,458B` + `fist-mbt-js 791,503B`。
+  ⇒ 本仓**第一次由流水线产出 native 资产**（历史四次 release run 的这条臂全 failure，见本单抬头下的读数）。
+- 交付物本体复验（不是只看 job 绿）：`gh run download -n fist-mbt-native-linux` 取出
+  `fist-mbt-native-linux-x64-v0.3.11.zip`（3,835,963B），解出的 `fist-mbt` 是 `ELF 64-bit LSB pie executable`，
+  调用面四臂实测 `version` rc=0 首行 `FIST-Mbt v0.3.11`、`--help` rc=0、`demo` rc=0、未知子命令 rc=2。
+- **回归锁（点名）**：同一作业内的调用面闸 —— `Package native artifact` 会先 `fist-mbt version`
+  并要求首行**逐字**等于 `FIST-Mbt v<ver>`，再要求未知子命令非零，两条不过就 `::error::` + `exit 1`。
+  它锁住的正是本单的失效形态：**有人删掉/挪走 `Reapply BUG-133` 那一步 ⇒ 产物每次调用 `free(): invalid pointer`
+  ⇒ 版本闸拿不到期望首行 ⇒ 作业当场红**（本机两态实测已把这条因果跑出：不 reapply rc=134，reapply rc=0）。
+  辅助锁：`check_release_asset_names` R1–R13（rc=0）核 `needs: meta`／native 臂 `continue-on-error`／资产名三处同源。
+- 闸自身的变异对照（上岗前跑，同一套 shell 语义 `bash -e`）：`VER=0.3.11` → rc=0 并产出 zip；
+  `VER=9.9.9` → **rc=1** 且打印 `::error::native 产物调用面不回显版本`；把产物改名 → rc=1「产物没建出来」。
+- 遗留（**不在本单关闭条件里**，别混判）：① `build-native-windows` 仍红在 `Install MoonBit`
+  （`curl …/install/windows` 返回 403，本轮未能用实测确定正确的 Windows 安装线 ⇒ 不猜 URL），
+  ② 公网 Release `v0.3.11` **目前仍只有 js 一枚资产** —— 派发被发布门挡住（有意为之），
+  要把这枚 zip 放上发布面需 owner 选路（`gh release upload` 或新版本 tag）⇒ **BUG-513 保持 OPEN**。
+  ③ 全项目 native 构建那一半在 **BUG-527**（本轮只 scoped 绕行）。
+
+### FIXED(2026-10-31T10:51:00Z / BUG-528)
+- evidence: 同一 run `41194094357`：`meta` = **success**（补 `actions/checkout@v4` 之前，
+  派发那一跑 `41193539256` 的 `meta` 红在第一步 `FileNotFoundError: 'moon.mod'` 并把四个下游全 skip）。
+  `release` = **skipped** ⇒ 「事件 + tag 前缀」门按设计生效：**没有**创建 tag 名为 `main` 的公开 Release。
+  本机对那条正则另验一遍：`python3 -c "…open('moon.mod')…"` → `0.3.11`。
+- **回归锁（点名）**：`workflow_dispatch` 这一支现在**真的会执行到**读 `moon.mod` 的那句
+  —— 谁把 `actions/checkout` 删掉，`meta` 立刻红在第一步并 skip 全链（红的位置就是病因，不必再猜）。
+  这条锁是「从未被走到的分支」型缺陷的反面：**修好之后它每天都在被走到**。
+  同批的门锁：`release` 作业的 `if:`（两半必须同批，先落门再救活路，否则第一个走通派发的人会把公开事故发出去）。

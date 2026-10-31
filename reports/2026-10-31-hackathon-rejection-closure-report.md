@@ -794,3 +794,37 @@ BUG-527 保持 OPEN（本轮没动那 13 份 `moon.pkg`，别把它读成「nati
 ⚠️ 顺序在这里是要命的：**发布门必须先于 meta 修好**。`meta` 一旦能用，派发那一跑就会走到 `release` 作业，
 而它的 `tag_name` 展开的是 `github.ref_name` = 分支名 ⇒ 会创建一条 tag 名为 `main` 的**公开假 Release**
 （名字还写着 `FIST-Mbt v0.3.11`）。所以「事件 + tag 前缀」门与 checkout 是同批两半，拆开做就是把事故留给下一个人。
+
+### 8.21 流水线第一次产出 native 资产 —— 而且验证做到了**产物本体**，不是只盯 job 变绿
+
+`02a59de66` 派发那一跑（run `41194094357`，job `124516667802`）的逐步原文：
+
+```
+#6 Migrate mooncakes dep manifests(先解包)   success     ← BUG-488 那一课：update 只刷索引，.mooncakes 惰性解包
+#7 Reapply BUG-133 sqlite FFI fix            success     ← BUG-526 的主修
+#8 Build native                              success     ← scoped：moon build --target native cmd/cli（绕行 BUG-527）
+#9 Package native artifact                   success     ← 内含调用面闸
+#10 upload-artifact                          success
+产物清单：fist-mbt-native-linux 3,723,458B / fist-mbt-js 791,503B
+meta  success / release  **skipped**（事件+tag 门：派发不顶出公开 Release）/ build-native-windows  failure
+```
+
+**job 绿不等于交付物能用**，所以又把产物下载回本机验了一遍本体：`fist-mbt-native-linux-x64-v0.3.11.zip`
+（3,835,963B）解出 `fist-mbt` = `ELF 64-bit LSB pie executable`，调用面四臂
+`version` rc=0 首行 `FIST-Mbt v0.3.11` / `--help` rc=0（回执里带 `182 MCP tools`）/ `demo` rc=0 / 未知子命令 **rc=2**。
+⇒ 拒收单第 ④ 项（「Native 的 serve/demo 正常参数仅输出帮助」）至此有了**由流水线产出的 Linux 二进制**作正面证据。
+
+三笔自己的错，逐笔留在账上（都是同一族的变体：**闸/夹具自己把通过路径判成失败**）：
+
+| 缺陷出自哪一笔 | 我犯的 | 暴露于哪一跑 | 教训归位 |
+|---|---|---|---|
+| `3aa242056`（我） | 把 `Reapply` 排在 `.mooncakes` **还没解包**的时候 | run `41193539256` #7 红：`找不到目标 stub.c`（本仓 BUG-488 早写过这一课，我又踩一遍） | 顺序是硬前置不是排版；报错文本自己带修法 |
+| **不是我引入**（workflow 原始形状） | `meta` 要读 `moon.mod` 却没有 `checkout` | run `41193357636` 第一次派发才暴露：`meta` 第一步红 ⇒ **四个下游全 skip** | 「从未被走到的那一支」（BUG-528）；修于 `4c516bd4a` |
+| `3aa242056`（我） | 在 Actions 注入的 `bash -e` 下断言「必须非零」 | run `41193805243` #9：版本闸已 PASS，下一句正常返回 rc=2 被 errexit 打死 ⇒ `exit code 2` 指错方向 | 收回 `-e`、逐条自取 rc；**验证要用同一套 shell 语义**（把 `run` 抽出来喂 `bash -e`），改宽后再配一支变异对照；修于 `02a59de66` |
+
+⚠️ **仍未关闭的三件**（都写在账上，不在本报告里宣称完成）：
+① **BUG-513 保持 OPEN** —— 公网 Release `v0.3.11` 目前还是只有 js 一枚：这枚 zip 现在只活在
+Actions 产物区，派发被发布门有意挡住；放上发布面要 owner 选路（`gh release upload` 或新版本 tag）。
+② **BUG-527 保持 OPEN** —— 全项目 `moon build --target native` 仍必崩（13 份库包带 `link`），本轮只绕行。
+③ `build-native-windows` 仍红在 `Install MoonBit`（`…/install/windows` 返回 403）——
+**本轮没有猜正确的安装 URL**，本机探到的几个候选只给 000/403 混合结果，不足以作依据；留给带读数的下一单。
