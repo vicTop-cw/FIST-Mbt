@@ -1465,6 +1465,24 @@ def selftest():
          is_resident_src("def main():\n    server.serve_forever()\n"), True)
     cell("resident-src-flags-run-forever", is_resident_src("    app.run_forever()\n"), True)
     cell("resident-src-clean-guard-not-flagged", is_resident_src("print('ok')\n"), False)
+    # BUG-510 本体：新鲜度判据必须**按源码面**判。三格分别是「旧 dump 不收」「新 dump 收」
+    # 「压根没有不收」。第一格就是变异对照：把 `_dump_is_fresh` 退回旧形状（存在且非空即 True），
+    # 它当场红 —— 旧形状在这台 leftover 机器上给出的是「S4 列切片为空」那种指错方向的 rc=2。
+    _b510 = os.path.join(ROOT, "temp", "_b510_dump.json")
+    if not os.path.isdir(os.path.dirname(_b510)):
+        os.makedirs(os.path.dirname(_b510), exist_ok=True)
+    with open(_b510, "w", encoding="utf-8") as _f:
+        _f.write("{}")
+    try:
+        os.utime(_b510, (0, 0))                       # 「存在、非空、但比任何源码都旧」
+        cell("b510-stale-dump-rejected", _dump_is_fresh(_b510), False)
+        os.utime(_b510, None)                         # 现在：比源码面新
+        cell("b510-fresh-dump-accepted", _dump_is_fresh(_b510), True)
+        os.remove(_b510)
+        cell("b510-missing-dump-rejected", _dump_is_fresh(_b510), False)
+    finally:
+        if os.path.exists(_b510):
+            os.remove(_b510)
     cell("resident-face-is-named-not-silent", len(resident) > 0, True)
     cell("battery-has-no-bare-resident-case",
          any(c["script"] in set(resident) and not c["argv"] for c in CASES), False)
@@ -1500,8 +1518,47 @@ def selftest():
           "plan_landing 门禁格与诊断格并存且诊断格 why 带构成 / "
           "常驻分类器咬 serve_forever 与 run_forever 且不误咬干净尺 / 常驻面逐条点名不静默 / "
           "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红 / "
-          "逐格判定列取自 verdict 而非 kind（红不印成 OK / 命中印 PASS / 预存红仍带口径标注））" % len(cells))
+          "逐格判定列取自 verdict 而非 kind（红不印成 OK / 命中印 PASS / 预存红仍带口径标注）"
+          " + dump 新鲜度按源码面判（旧 dump 不收 / 新 dump 收 / 缺失不收）" % len(cells))
     sys.exit(0)  # NO_CALL_FACE J2
+
+
+def _dump_is_fresh(dump=None):
+    """dump 的新鲜度按**源码面**判，不按「文件在不在」判（BUG-510）。
+
+    默认参数**不在 def 时绑 `DUMP`**：那会让「把 DUMP 指到别处再调用」这条测试路
+    静默读回原文件（实测：重采那一条分支根本没跑到，却打印出「耗时 0.0s」）。
+
+    为什么必须判（实测形状）：按 `file:line:col` 取列切片的那几格，喂进去的若是旧 dump，
+    位置就指到别的文本上 ⇒ 报 rc=2「S4 列切片为空」——**看着像产品坏了，实际是喂给判据的现实腐烂**
+    （判例-32「版本号 PASS ≠ 代码新鲜」、判例-35「探针的结果 ≠ 探针在工作」同族）。
+    取面：`git ls-files` 的**跟踪面** `.mbt/.mbti`（与 `universe_files()` 同一口径，不扫 `_build`），
+    只比 mtime，不重跑 moon —— 重采一次 `moon check` 是 12–25 秒，而这里要的是「该不该重采」这个判。
+    取不到 git 或一个源文件都没枚举到 ⇒ **判为不新鲜**（宁可多跑一次，不冒用旧现实出数）。
+    """
+    if dump is None:
+        dump = DUMP
+    if not (os.path.exists(dump) and os.path.getsize(dump) > 0):
+        return False
+    try:
+        p = subprocess.run(["git", "ls-files", "*.mbt", "*.mbti"],
+                           cwd=ROOT, capture_output=True, text=True, timeout=60)
+        names = [n for n in (p.stdout or "").splitlines() if n.strip()]
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if p.returncode != 0 or not names:
+        return False
+    newest_src = 0
+    for n in names:
+        try:
+            m = os.path.getmtime(os.path.join(ROOT, n))
+        except OSError:
+            continue                     # 被并发删掉的文件不该把整轮毒成「读不到」
+        if m > newest_src:
+            newest_src = m
+    if newest_src == 0:
+        return False                     # 全部 stat 失败 ⇒ 判据无法自证，不冒用旧 dump
+    return os.path.getmtime(dump) >= newest_src
 
 
 def _ensure_check_dump():
@@ -1515,8 +1572,9 @@ def _ensure_check_dump():
     失败时**不拦电池**：生成不出来就让那 3 格继续 SKIP 并如实点名（判例-33 要的就是
     「SKIP 必须说清跳过了什么」，而这里说清的正是「缺前置」）。
     """
-    if os.path.exists(DUMP) and os.path.getsize(DUMP) > 0:
-        return  # 已有（可能是上一次跑的），不重采
+    if _dump_is_fresh():
+        # BUG-510：旧形状是「文件在就不重采」——在 leftovers 机器上那等于拿上一轮的现实出数。
+        return
     try:
         with open(DUMP, "w", encoding="utf-8") as f:
             # ⚠️ 不传 `env=`：`moon_env()` 是 `moon_env_probe.py` 的符号，**本文件没有 import 它**
@@ -1527,7 +1585,7 @@ def _ensure_check_dump():
                                cwd=ROOT, stdout=f, stderr=subprocess.STDOUT,
                                timeout=120)
         if p.returncode == 0:
-            print("（前置）已落 %s（moon check --json，%d 字节）"
+            print("（前置）已落 %s（moon check --json，%d 字节；重采原因=源码面比 dump 新或 dump 不可用）"
                   % (DUMP, os.path.getsize(DUMP)))
         else:
             print("（前置）moon check --json rc=%d ⇒ 相关格将 SKIP 并点名" % p.returncode)
