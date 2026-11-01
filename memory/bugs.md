@@ -14311,7 +14311,7 @@ FAIL 3 条：
   「首行逐字回显版本」（BUG-114 的锁），放宽是 owner 的决定，不是修探针的顺路动作。
 
 
-## BUG-523 [2026-10-31T09:52:00Z] [medium] OPEN
+## BUG-523 [2026-10-31T09:52:00Z] [medium] FIXED
 - summary: CI 的 `Test (native)` 在 2026-10-31 仍红（门那一步 #9 `Native heap gate` 绿），而账上 **BUG-133 记的是 FIXED**
   ——它自己写的关闭条件是**两格**（抽检 0 崩溃 + 干净树全量通过），第二格今天实测未满足
   ⇒ 这是「状态标记与关闭条件脱钩」的账面缺陷，不是又一个新的 native 崩溃
@@ -14379,6 +14379,17 @@ dl_c1~c10 七格文件池计数为 0），即 **Linux-only 的落盘/回读回�
 ⇒ 读数：钉版救不了（本来就是），但 **②格离满足只差 BUG-532 一发**——Linux 测试绿了
 之后 ②格即可在下一发 CI 复读。Reapply 步的「找不到目标 stub.c：…/daqing/sqlite/stub.c」
 是 SKIP 路径的报文（树已迁 `daqing/sqlite@0.4.0`，mizchi 桩永不出现），非阻断。
+
+### FIXED(2026-11-01 / BUG-523)
+
+CI 全绿读数（commit `8da9f920b`，2026-11-01，gh api 实读）：
+- run `41284830056`（ci.yml，workflow `CI`）=> **success**；native job `124783910183`（`check + test (native, ubuntu)`）=> success，分步 `Check (native)`=success / `Native heap gate (BUG-133 探针当门)`=success / **`Test (native)`=success**（干净 checkout 树）；
+- run `41284830060`（fist-ci.yml，workflow `FIST CI — Build + Test`）=> **success**；native job `124783909997` => success，**`Test (native, j=1)`=success**；
+- 后继 ledger-only commit `e464c98e3` 上两条 run `41285566959`（CI）/ `41285566941`（FIST CI）亦均 success——账面改动不影响测试臂。
+
+BUG-133 两格对账：① 抽检格（`e2e_native_heap_probe.py --runs 12` 连发 0 崩溃）此前已由本单追记记录满足；② **干净树全量格**由本次 run 在干净 checkout 树上 `Test (native)` 全绿满足（BUG-527 库包 link 摘除 + BUG-532 Linux 落盘回归修复后收口）。
+
+⇒ 本单所指「账实拆单」（BUG-133 账上 FIXED 而其关闭条件第二格实测未满足）消除，BUG-133 的 FIXED 自此与两格关闭条件对齐。
 
 ## BUG-524 [2026-10-31T08:45:00Z] [medium] FIXED
 - summary: 验收探针 `scripts/blackbox/e2e_acceptance_recheck.py` 两处「旗标/路径被承认但不生效」——
