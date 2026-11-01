@@ -14610,6 +14610,25 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
 - **关闭条件**：CI 两条 native 臂转绿（本机无 MSVC sqlite 环境，native build/test 由 CI 复验）；在此之前本单保持 OPEN。
 - 执行面：explore-r3 T0.1.1（fix-527 + fix-527-root 两成员，统帅终审）。
 
+### 追记2（2026-11-01，出路①被 CI 证伪即回滚，改判「工具链版本语义分歧」，单保持 OPEN）
+- **CI A/B 实证（同日两发，匿名 runs 读取面）**：带 link 的 `8da9f920b` 两条 native 臂**绿**
+  （runs 41284830056 / 41284830060）；摘 link 的 `d43a06a28` 测试 exe 链接即死——
+  `undefined reference to sqlite3_*`（src/store/ops/engine/server 的 native test exe 链
+  `.mooncakes` 里 daqing/sqlite 的 stub.c）⇒ runs 41305804775 / 41305804754 红。
+  出路①自己警告过的那格（「-lsqlite3 若在库包摘掉后由谁提供」）正是死因：**CI nightly moon
+  需要**库包把 `-lsqlite3` 传下去给测试链，而**本地 moon 0.1.20261021** 把带 link 的库包当
+  可执行目标去链 ⇒ 全项目必崩。两个 moon 世代语义相反，单侧整改在另一侧必红。
+- **处置（同日）**：14 份 `moon.pkg` 回滚到 `e0ef45c5e` 状态（link 全部恢复，git checkout 逐份核
+  `cc-link-flags` 在场）；AGENTS.md native 段同批改写回「库包保留 link + 版本分歧现状」口径；
+  04775 那发 JS 臂红与本单无关（battery 登记漂移，判例-5 族第五次，同批补登锚点）。
+- **改判**：本单不再按出路①走，改记为「moon 新版（≥0.1.20261021）与 CI nightly 对
+  `lib 包带 link` 的语义分歧」。出路②（上游 issue）/ 出路③（native 观测臂降级为只建可执行包）
+  择一待下一轮裁决；**关闭条件改判**：不是「CI native 臂转绿」（现状本就绿，代价是本机 native
+  不可用），而是「两条 moon 世代的语义分歧有裁决且两侧同时可用」。
+- AGENTS.md 追记1 里 L503 改写与「关闭条件=CI 转绿」两条自述**已被本追记作废**（自述滞后族
+  预防：以本追记为准）。
+
+
 ## BUG-528 [2026-10-31T10:42:00Z] [medium] FIXED
 - summary: `release.yml` 的 `meta` 作业**没有 `actions/checkout`** ⇒ `workflow_dispatch` 那条
   「ref 剥不出版本就退回真源 moon.mod」的出路**从来没跑通过**：实测第一步就
