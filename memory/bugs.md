@@ -14931,3 +14931,25 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - R2 收口：车道提交 `4d81dfa9b` 把 AGENTS.md 现状面三处测试总数 2002→2004（含本单点名的
   提交侧 `:496`/`:505`/`:530`），CI run `41284221894` 的 Test-count 守卫已绿（该 run 剩的唯一红
   是 encoding 守卫，另案 `95aa8ed62` 修）。本单翻 FIXED；R1 两批 + R2 全部归零。
+## BUG-536 [2026-11-01T10:36:00Z] [medium] OPEN
+- summary: 定时作业「FIST Bug Sync → GitHub Issues」**10-28 起每发必红**（run 40664602973 / 40851761011 /
+  41036125358 / 41188800997 / 41296809919 共 5/5 failure，各 ~25s）——两半根因，都不在 flush 脚本本身：
+  ①定时触发只跑**默认分支 master** 上的 workflow 与代码，而 master 落后 main **132 笔**（merge-base 实证
+  master 是 main 祖先、可 ff），其 `fist-bug-sync.yml` 是旧版、**没有 Build JS target 步骤**
+  （`git show origin/master:.github/workflows/fist-bug-sync.yml` grep 构建步 = 0 命中）⇒
+  `flush_github.mjs` 起手即「未找到 moon build 产物 build/js/cmd/cli/cli.js」退出 1；
+  ②仓库 Secrets 只有 `ED25519_PRIVATE_KEY_HEX` / `STAR_GATE_PAT`（gh secret list 实读），
+  **`FIST_GITHUB_TOKEN` 根本未配置**——workflow 引用它得空串，即使构建步修好也会死在鉴权。
+- detail: 症状与判例-33 同族（服务本体 ≠ 服务接入的另一面：**活分支 ≠ 默认分支**——main 上 CI 全绿
+  掩不住 master 上定时作业天天红）。main 侧 workflow（84bddb299 起）已带完整构建步骤，
+  代码无需改动，修复纯在远端仓库状态。
+- 修复方案（两半都属「共享状态变更」，出方案待 owner 确认执行）：
+  A. `git push origin main:master`（ff，master 132 笔无独有提交、零丢失风险；gitcode 同步同理）——
+     定时作业自此跑 main 同款 workflow（含构建步）；预案：push 前 `git rev-list --count master..main`
+     复核 ff 性质，如拒绝 ff 立即停手回查。
+  B. owner 在 Settings → Secrets 配 `FIST_GITHUB_TOKEN`（fine-grained PAT，issues 写权限）——
+     **token 只能 owner 手配，agent 不经手凭据**；未配前 A 完成后作业会红在鉴权格（比现在死于缺产物更靠后、可读）。
+  C.（可选加固）`fist-bug-sync.yml` 的 flush 步前置产物存在性断言并打明确 error 注解——
+     归入后续批，不是本单关闭条件。
+- 关闭条件：scheduled run 在 master 上成功（或 owner 明示本作业退役/改触发分支，则按改法入账翻面）。
+- reported_by: lead
