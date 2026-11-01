@@ -316,7 +316,7 @@ test "b530_1_播种后按 status 读回路径还原出同池同名同限同阈�
     ]),
     "paid_pool": Json::array([]),
   })
-  let (r0, w0) = router_restore(Json::null(), config=cfg)
+  let (r0, _w0) = router_restore(Json::null(), config=cfg)
   // 注：w0 含"无有效状态，按配置新建路由器"是运行时信息（state 级别），不是配置校验警告。
   // b530_1 回归锁只验"池还原零漂移"，不验 warns 计数——否则与 from_json 校验重复且恒假。
   // 配置校验警告面由 model_router_ops_wbtest 的 mo_4 格覆盖（window_seconds/threshold_pct）。

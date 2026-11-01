@@ -381,7 +381,7 @@ fn model_route_impl(
   // 校验警告来自 from_json，不受影响。
   let cfg_check_warns = match config {
     Json::Object(_) => {
-      let (cfg, w) = @router.RouterConfig::from_json(config)
+      let (_cfg, w) = @router.RouterConfig::from_json(config)
       w
     }
     _ => []
