@@ -13799,7 +13799,7 @@ run 41176543619 / job 124465166015（ubuntu, commit c49e9ba31）
   `git check-ignore` 对着各把尺自己声明的面跑一遍，两秒就能抓完这一族（本仓已为它返工两次：BUG-358、本单）。
 
 
-## BUG-513 [2026-10-31T06:42:00Z] [medium] OPEN
+## BUG-513 [2026-10-31T06:42:00Z] [medium] FIXED
 > 关系注（2026-10-31 追）：与 BUG-523（账实拆单）/ BUG-527（库包带 link 必崩）同族——本单 windows 臂红在
 > `Install MoonBit`（安装线 403），与 527 **不同因**；但装好后 build 仍会撞 527。根因链见 527。
 - summary: `release.yml` 两条 native 臂（linux / windows）在 v0.3.11 这一发**双双失败** ⇒ 公网 Release 只剩
@@ -13881,6 +13881,34 @@ head -c 2 /tmp/n.zip            # 必须是 PK
 2. **出路 ③（给资产集合加尺）没做** —— 今天「少一枚」仍然是人查 API 发现的。
    补一句可验的边界：本单的关闭条件是**「有判据在发布后自动比对臂声明与实际资产，少一枚即红」**，
    不是「资产数现在对了」；数一数就绿的那格不是锁（判例-36）。
+
+### FIXED(2026-11-01 / BUG-513)
+
+windows 臂端到端收口（第三段追记）：
+
+- **安装臂同源 + R15 尺**：install 步改 pwsh + `irm …/install/powershell.ps1 | iex` +
+  双 `Out-File -Append $env:GITHUB_PATH`（与 ci.yml 同形状），回归锁
+  `scripts/check_release_asset_names.py` R15（runs-on windows 段必须含同源 install +
+  GITHUB_PATH 导出，自检含 3 变异 + 2 反向，rc=0），提交 `4f1f5db76`。
+- **三层根因**（车道 C，`335e8a211` / `1965ed6f8` / `de9d75da1`）：env 不跨步
+  （`$env:` 改走 GITHUB_ENV）→ PATH 不跨步（cl/link 目录补导）→ **MSVC 静默忽略
+  `-lsqlite3`**（LNK4044 不拦路 + LNK2019×44，真错被 moon 吞成通用语；治本见
+  账 BUG-533，runner 工作副本补丁过闸）。
+- **端到端验收**（dispatch `41280902551`，commit `de9d75da1`）：
+  Install=Migrate=Reapply=Patch cc-link-flags=Build native=**Package native artifact=success**，
+  artifact `fist-mbt-native-win` 2,167,804B 产出。
+- **公网交付**：资产 `fist-mbt-native-win-x64-v0.3.11.zip` 已上传 Release v0.3.11，
+  本体验证三格实测：zip 魔数 `PK\x03\x04` ✓ / 解包 `fist-mbt.exe` ✓ /
+  `fist-mbt.exe version` ⇒ `FIST-Mbt v0.3.11` rc=0 ✓。
+  （注：dispatch 入参 `-f version=v0.3.11` 会造出 `vv0.3.11` 双 v 形状——tag-push 真源
+  meta 从 moon.mod 取号不带 v，不受影响；上传件已按真源命名。）
+- linux 臂现状：公网资产 `fist-mbt-native-linux-x64-v0.3.11.zip`（10-31 lineage）在位；
+  当前 HEAD 的 Package 版本回显闸红是**新回归**（nightly 未钉版嫌疑），由独立车道
+  处理并入账其自报条目，不属本单「资产缺失」主张。
+
+**回归锁**：R15（安装臂同源）+ dispatch 端到端（Package 步 success 才有资产）+
+资产三格本体验证配方（魔数/解包/version 回显）。公网 Release v0.3.11 现有
+3 枚资产（js / native-linux-x64 / native-win-x64）。
 
 ## BUG-514 [2026-10-31T06:50:00Z] [medium] FIXED
 - summary: `mcp_tool_tour.py` 的自述面**夹具** `surface_fixture()` 只读 `AGENTS.md`，而 `Resources:` 那一行
