@@ -269,6 +269,12 @@ jobs:
             . scripts/native-env.ps1
           }
 
+      # 与 build-native-linux 同源（run 41278010595 实测缺这步红在 Migrate）：
+      # runner 上注册表索引为空，`moon check` 只会回 "module was not found in the
+      # registry" ×N（日志原文），必须先 `moon update` 拉索引，migrate 的解包才有的可解。
+      - name: Refresh registry (first build)
+        run: moon update
+
       # BUG-490（R87 补）：**Windows 臂也缺 migrate 先解包** —— 与 build-js / build-native-linux
       # 同雷（依赖惰性解包，新版 moon 拒旧 `moon.mod.json` ⇒ 解析依赖图即失败 ⇒ 本 job 红
       # ⇒ 少一个 Windows native 资产）。`continue-on-error: true` 让它**不阻塞 release**，
