@@ -189,8 +189,17 @@ pub fn router_restore(
     }
     cfg.threshold_pct
   }
-  let base_free = if sf.length() == 0 { cfg.free_models } else { sf }
-  let base_paid = if sp.length() == 0 { cfg.paid_models } else { sp }
+  // 区分「state 里缺字段/非数组」与「state 里有显式数组（含空数组）」：前者回落配置
+  // （旧状态兼容 + 坏状态兜底），后者保留实效值（to_state 序列化的空数组必须逐字读回，
+  // 否则 b530_1 锁假绿；但字符串"nope"等非数组仍要走 rs_3 的回落配置路径）。
+  let base_free = match sm.get("free_pool") {
+    Some(Json::Array(_)) => sf
+    _ => cfg.free_models
+  }
+  let base_paid = match sm.get("paid_pool") {
+    Some(Json::Array(_)) => sp
+    _ => cfg.paid_models
+  }
   let (final_free, final_paid) = if cfg_gives_pools {
     warns = warns + ["config 覆盖池定义，同名模型已用配额保留"]
     (
@@ -277,4 +286,95 @@ pub fn ModelRouter::hard_reset(self : ModelRouter) -> Unit {
   self.last_switch_at = ""
   self.last_reason = ""
   self.last_pick = ""
+}
+
+// ---------------------------------------------------------------------------
+// BUG-530 回归锁：播种池定义「落盘 → 读回」的往返契约（test 块不进产物）
+//
+// BUG-530 实测形状（2026-10-31，ns=ofm-route-r1）：`model_route(config_json=…)` 回执
+// 声称「已按 config_json 播种池定义」但 `persisted=false`，`model_router_status` 读回
+// `free_pool: []`。本文件把链路的 src/router 半边钉死：池定义经 router_restore(config~)
+// 播种进 ModelRouter，经 to_state()（= server mr_save 落盘的那份 JSON）再
+// router_restore(state)（= model_router_status 的读回路径），池形状必须逐字一致，
+// 路由决策只能取播种池内的模型。池名刻意用 provider/model 形状（与 relay 命名要求同形），
+// 不用默认池的 ling-3.1-flash-free。
+// ---------------------------------------------------------------------------
+
+///|
+/// 锁一（播种 → status 读回同池）：播种后的状态 JSON 经无 config 的 router_restore
+/// 读回，模型名/限额/阈值/用量与播种时逐字一致，读回零告警
+/// （`free_pool: []` 形状的静默丢池在此变红）。
+test "b530_1_播种后按 status 读回路径还原出同池同名同限同阈值" {
+  let cfg : Json = Json::object({
+    "window_seconds": Json::number(18000.0),
+    "threshold_pct": Json::number(90.0),
+    "free_pool": Json::array([
+      Json::object({
+        "name": Json::string("our-free-model/deepseek-v4.1-flash-free"),
+        "limit": Json::number(7.0),
+      }),
+    ]),
+    "paid_pool": Json::array([]),
+  })
+  let (r0, w0) = router_restore(Json::null(), config=cfg)
+  // 注：w0 含"无有效状态，按配置新建路由器"是运行时信息（state 级别），不是配置校验警告。
+  // b530_1 回归锁只验"池还原零漂移"，不验 warns 计数——否则与 from_json 校验重复且恒假。
+  // 配置校验警告面由 model_router_ops_wbtest 的 mo_4 格覆盖（window_seconds/threshold_pct）。
+  assert_eq(r0.config.free_models.length(), 1)
+  assert_eq(
+    r0.config.free_models[0].name,
+    "our-free-model/deepseek-v4.1-flash-free",
+  )
+  assert_eq(r0.config.free_models[0].limit, 7)
+  assert_eq(r0.config.free_models[0].used, 0)
+  assert_eq(r0.config.threshold_pct, 90.0)
+  // server 落盘 ↔ status 读回：同一份 JSON，无 config（status 不带 config_json）
+  let state = r0.to_state()
+  let (r1, w1) = router_restore(state)
+  assert_eq(w1.length(), 0)
+  assert_eq(r1.config.free_models.length(), 1)
+  assert_eq(
+    r1.config.free_models[0].name,
+    "our-free-model/deepseek-v4.1-flash-free",
+  )
+  assert_eq(r1.config.free_models[0].limit, 7)
+  assert_eq(r1.config.free_models[0].used, 0)
+  assert_eq(r1.config.threshold_pct, 90.0)
+  assert_eq(r1.config.paid_models.length(), 0)
+}
+
+///|
+/// 锁二（播种 → 路由决策取播种池内模型）：播种池经「落盘→读回」后，pick 只能选出
+/// 播种池内的 provider/model 形状模型（默认池的 ling-3.1-flash-free 在此出现即红）；
+/// 且记账（executor_run 自动那一笔，不带 config）后再次读回，用量跟播种池走。
+test "b530_2_播种后路由决策与记账都落在播种池内模型上" {
+  let cfg : Json = Json::object({
+    "window_seconds": Json::number(18000.0),
+    "threshold_pct": Json::number(90.0),
+    "free_pool": Json::array([
+      Json::object({
+        "name": Json::string("trae/glm-5.3-flash-free"),
+        "limit": Json::number(7.0),
+      }),
+    ]),
+    "paid_pool": Json::array([]),
+  })
+  let (r0, _) = router_restore(Json::null(), config=cfg)
+  let state = r0.to_state()
+  let (r1, _) = router_restore(state)
+  let dec = r1.pick(now="2026-10-31T14:00:00Z")
+  assert_eq(dec.available, true)
+  assert_eq(dec.model_name, "trae/glm-5.3-flash-free")
+  // executor_run 自动记账那一笔（不带 config）：模型在播种池内 → 记上账
+  let rec = r1.record_call(
+    model="trae/glm-5.3-flash-free",
+    now="2026-10-31T14:01:00Z",
+  )
+  assert_eq(rec.available, true)
+  let state2 = r1.to_state()
+  let (r2, w2) = router_restore(state2)
+  assert_eq(w2.length(), 0)
+  assert_eq(r2.config.free_models[0].used, 1)
+  // limit=7 ⇒ 1/7≈14% 未越 90% 阈值，仍在免费档
+  assert_eq(r2.current_tier, Free)
 }
