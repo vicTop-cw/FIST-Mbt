@@ -14041,7 +14041,7 @@ SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-meas
    ⚠️ 这条最像「为变绿改口径」，**必须先证明重分类规则不吞掉真违例**（配位移变异对照），否则等于关掉这把尺。
 
 
-## BUG-517 [2026-10-31T07:10:00Z] [low] OPEN
+## BUG-517 [2026-10-31T07:10:00Z] [low] FIXED
 - summary: `check_selftest_hermetic.py` 认自检函数只认四个名字（`SELFTEST_FUNCS`）⇒
   叫 `surface_selftest` 的那一类**整份不在普查面里**，同族缺口当年只补了兄弟尺
 - detail: ## 实测（不是推断）
@@ -14062,6 +14062,16 @@ SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-meas
    ⚠️ 改名会同时失去按名匹配的豁免面（判例-39），`check_selftest_call_face` 的白名单与本尺都得同批扫；
 3. 在这把尺的结论行里**点名「未被识别的自检体清单」**（只报不判）——最便宜，先把看不见变成看得见。
 
+
+### FIXED(2026-11-01 / BUG-517)
+- evidence: `check_selftest_hermetic.py` 的识别面已从四名字闭集改为**实现反解**——
+  `selftest_fns()` 认领「模块级函数名含 `selftest` / `self_test`（大小写不敏感）」
+  （`SELFTEST_NAME_MARKS`，:190 起），不再手写白名单。
+- 实测：`--selftest` 42 格 rc=0（清单从已执行格子反解，不手写计数）；
+  其中 :738 起的变异对照格证明「新形状（`surface_selftest`）被认领、改掉命名即不再认领」。
+- **回归锁（点名）**：`scripts/check_selftest_hermetic.py` selftest 的 S 族
+  「`n_surface_named.py` 新形状认领 + 改名脱认领」两格——识别面再收窄回白名单时当场红。
+- 提交：`1fda440d0`（含 BUG-516 棘轮 bless 机制同批）。
 
 ## BUG-519 [2026-10-31T07:45:00Z] [medium] FIXED
 - summary: 心跳跨进程探针 `scripts/blackbox/e2e_heartbeat_xproc.py` 在 **ns 物理隔离之后整段是变量盲的**（五处），
@@ -14361,7 +14371,7 @@ R207 的本仓口径是「**白名单承认 = 该旗标有确定语义**」。`-
 - ⚠️ 关闭条件只覆盖「探针的参数面/路径面」，**不覆盖** A4 那格的 native 臂（Windows 上仍回 SKIP，
   由 BUG-513/527 各自记账）；文档面 `scripts/README.md` 的同名条目已同批改（行数自述删掉，不再抄数）。
 
-## BUG-525 [2026-10-31T08:58:00Z] [medium] OPEN
+## BUG-525 [2026-10-31T08:58:00Z] [medium] FIXED
 - summary: `USAGE.md` 的工具计数自述**不在任何守卫面上**，实测落后真源 52 个（写「130/140+」而活体 182），
   另附一句「三步 = 脚本内部逻辑，二者完全一致」也与脚本源码（含 Step 1b `issue_scan`）不符
   ⇒ 本轮只把**数**改对，**尺没补**；补尺是这一单的关闭条件
@@ -14396,6 +14406,15 @@ scripts/mcp_smoke.py 头注释      →  「断言含 publish 等 79 个工具�
 ⚠️ **本轮（0dd910d7d）只做了「改字」**：USAGE 三处 + `mcp_smoke.py` 头注释一处改成实测值/指向真源。
 按判例-36 的口径，这条修复**没有回归锁**，所以它以「未关闭」记在本单里，而不是记成已修。
 
+
+### FIXED(2026-11-01 / BUG-525)
+- evidence: 新尺 `scripts/check_usage_tool_count.py` 落地并进电池
+  （`run_guards.py` case 登记，check_battery_count_doc 缺面清单归 0）；
+  实测两发：`--selftest` 4/4 rc=0；正常模式 `USAGE 自述与真源(182)一致` PASS。
+- 同批把 USAGE.md 计数改齐 182（第二次复发的文档面），scripts/README.md R9 计数漂移顺手修。
+- **回归锁（点名）**：`scripts/check_usage_tool_count.py`（电池常驻格）——
+  USAGE 计数再落后真源时电池当场红；变异对照在它的 selftest 4 格里。
+- 提交：`7fa7b47fb`。
 
 ## BUG-526 [2026-10-31T10:33:00Z] [high] FIXED
 - summary: `release.yml` 的 `build-native-linux` **从来没有 `reapply BUG-133` 那一步**（ci.yml 两条 native 臂都有）
@@ -14611,3 +14630,52 @@ FIST_ACCEPT_JS=temp/definitely-missing.js python scripts/blackbox/e2e_acceptance
 - summary: [crash] probe() 并发线程池打 importlib.metadata + GC 触发 CPython 3.13 Windows 0x80000003 进程崩溃
 - detail: 复现：全量套件 chunk2（88+ files）中 test_probe.py 的 module 级 _shared_probe_report 真跑 probe()（66 包 × 8 线程 ThreadPoolExecutor）与 test_probe_parallel.py 的 test_report_contains_all_pre_parallel_sections 真跑 probe()（1 包）在邻近位置执行时，CPython 3.13.14 Windows x64 触发 fatal 0x80000003（断点异常）进程级崩溃，EXIT=-2147483645。崩溃栈：多个线程同时位于 importlib.metadata.version → metadata → read_text（email 解析）/ pathlib.open，主线程同时处于 GC（"Garbage-collecting" 帧内 email.feedparser）。probe() 的 executor.shutdown(wait=False, cancel_futures=True) 会把正在跑的探测线程留在后台（vools/actus/probe/python_pkgs.py:487），跨测试继续并发访问 importlib.metadata。测试侧已桩掉 _shared_probe_report 的 python_pkgs 维度规避（test_probe.py 手动 setattr/还原）；产品侧待裁决方案：A) _get_pkg_version_detail 内对 importlib.metadata 加模块级锁串行化；B) probe() 收尾改为等待线程池排空（牺牲预算语义）；C) CPython 层面 importlib.metadata 线程安全修复（上游）。
 - reported_by: lead
+## 追记（2026-11-01T05:48Z，遗留① dispatch 实证：安装半闭环，构建半前移一格）
+
+run [41278010595]（dispatch v0.3.11 @ 4599ff980）的 windows 臂分步结论（jobs API 实测）：
+
+| 步骤 | 结论 |
+|---|---|
+| 3 Install MoonBit toolchain (Windows)（irm powershell.ps1） | **success** |
+| 4 Add moon to PATH（两行 Out-File -Append GITHUB_PATH） | **success** |
+| 5 Load VS DevShell + sqlite | success |
+| 6 Migrate mooncakes dep manifests | **failure（新红点）** |
+| 7~10 Reapply/Build/Package/upload | skipped |
+
+- **安装半（403）已闭环**：同源形状（ci.yml:510-519）在 windows-latest runner 上实证可装、
+  moon 进 PATH —— 遗留① 的「不猜 URL」出路走通，安装步不再是红点。
+- **新红点（下一步 6）根因**：runner 日志原文 `Error: Failed to resolve the module dependency
+  graph` ⇒ `Failed to resolve registry dependency ... module was not found in the registry` ×6
+  （daqing/sqlite / colmugx/mcp / moonbitlang/async / x / cc06b/mooncry / RX-MBT）。
+  对照 build-native-linux 臂：它有 `Refresh registry (first build): moon update`，
+  windows 臂漏了这一步 ⇒ 索引为空，migrate 的 `moon check` 必然解析不到依赖。
+- **修法**：windows 臂同源补 `moon update`（commit f7bd50e86），再 dispatch
+  run [41278260017] 实证中（观察器盯 jobs 结论，读数以那发为准）。
+- 判例-33 同族口径再次生效：**「装上了」≠「能构建」**——安装步 success 只闭环 403 那一半。
+## 追记二（2026-11-01T05:52Z，遗留① 第二发：Migrate 已过，红点前移到构建环境；回归锁落位）
+
+run [41278260017]（@ f7bd50e86，补 `moon update` 后）windows 臂分步结论：
+
+| 步骤 | 结论 |
+|---|---|
+| 3/4 安装 + PATH | **success**（两发均绿，403 半彻底闭环） |
+| 6 Migrate | **success**（`moon update` 补上后即过） |
+| 8 Build native | **failure（红点在此）** |
+
+Build native 的 runner 日志原文（两件根因，都不在 MoonBit 侧）：
+
+1. `Load VS DevShell + sqlite` 步打印 `[native-env] 未找到 .\include\sqlite3.h` /
+   `[native-env] 未找到 .\lib\sqlite3.lib` —— **windows runner 上没有 SQLite 开发库**；
+2. `[native-env] INCLUDE += .\include ; LIB += .\lib` 是 **pwsh 步骤进程内修改**，
+   GitHub Actions 的 `$env:` 改动不跨步骤 ⇒ 后续 Build native 步（shell: bash）
+   既没有 cl.exe 也没有 INCLUDE/LIB。moonc 阶段 41 warnings 0 errors、14 秒后
+   `failed when building project` —— 链接段真错误没进日志。
+
+⇒ 与 moon/本仓源码无关，是**构建环境的装配与传递**缺口。修法（pwsh 单步内完成
+下载 amalgamation（形状检查 PK+双文件）→ 装载 VS → `cl`+`lib` 编出 sqlite3.lib →
+`$env:GITHUB_ENV` 全量导出 INCLUDE/LIB）已派单执行，出数后追记第三段。
+
+**回归锁已落**：`check_release_asset_names.py` 新增 **R15**（windows-latest 作业段剔注释
+代码面必须同时含 `irm …/install/powershell.ps1 | iex` 与 `Out-File -Append $env:GITHUB_PATH`；
+跑了 moon 无安装步也红），selftest 清单反解 `R15×5`（3 变异 + 2 反向）、正常模式 PASS，
+电池已登记，commit `4f1f5db7` 推双远端。判例-36 口径：遗留①（安装半）有锁。
