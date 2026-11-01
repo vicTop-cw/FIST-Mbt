@@ -14572,7 +14572,7 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
   同批的门锁：`release` 作业的 `if:`（两半必须同批，先落门再救活路，否则第一个走通派发的人会把公开事故发出去）。
 
 
-## BUG-529 [2026-10-31T12:20:00Z] [medium] OPEN
+## BUG-529 [2026-10-31T12:20:00Z] [medium] FIXED
 - summary: `scripts/blackbox/e2e_acceptance_recheck.py` 的**尺子自检格（ST1/ST2/ST3）排在真检查之后**
   ⇒ `--selftest` 也要 node + js 产物 + server 起得来；任一前置缺失就 rc=2 退出，**三格一支都不会执行**。
   本轮加 ST2/ST3 时把它扩成了「自检依赖产品」的形状（ST1 原本就如此，我延续了它）
@@ -14609,6 +14609,23 @@ FIST_ACCEPT_JS=temp/definitely-missing.js python scripts/blackbox/e2e_acceptance
 **本轮没做的事**（如实记）：
 没改这段顺序——改它要动 ST1 的依赖面，而今天已经对这支被评审使用的探针做过两处改动，
 不宜在同一批里叠第三处未验证的重排。
+
+### FIXED(2026-11-01 / BUG-529)
+
+出路①「分层前置」已落地（提交 `0e4005094`，Agent 车道 D，双远端已推）：
+
+- ST2/ST3（纯路径归一 / spawn `--help`）与新增 **ST4 反证格**（构造「缺前置假象」路径，
+  验证 rc=2 时真有点名输出——防递归走 `FIST_ACCEPT_ST4_GUARD` 哨兵）全部提到
+  `find_js()` / `Server` 之前；
+- ST1 留原处（需 `MAIN_DB`，server 建库才有那张表）；JS_PIN 存在性检查后移；
+- 4 条 rc=2 退出路径全接 `st_face_note()` 点名：`FIST_ACCEPT_JS=temp/definitely-missing.js --selftest`
+  实测 rc=2 且输出「已执行 ST2/ST3/ST4；未执行 ST1（缺 node/产物/server 前置，未到起跑点）」
+  ——「没跑」不再长得像「跑过了」。
+
+**回归锁**：ST4 反证格 + 点收措辞变异对照（改坏措辞 ⇒ ST4 FAIL、rc=3），
+常驻于 `--selftest`（10 格 = 拒收项 6 + 尺子自检 4，格数从 CELLS 反解）；
+`scripts/README.md` 同条目段已同步。终审实测（本机 Windows）：selftest 10 格
+9 PASS / 0 FAIL / 1 SKIP，rc=0。
 
 ## BUG-530 [2026-10-31T14:20:00Z] [medium] FIXED
 - summary: `model_route(config_json=…)` 声称「已按 config_json 播种池定义」但 `persisted=false`，且 `model_router_status` 读回 `free_pool: []` —— 池定义**没有落进状态盘**，`executor_run(executor=ofm, model 空)` 因此永远只能拿默认池
