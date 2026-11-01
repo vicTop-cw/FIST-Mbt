@@ -14887,12 +14887,13 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   绕行），建议在 RX-MBT 仓补 native FFI 后回归本调用面。
 ## BUG-535 [2026-11-01T07:07:00Z] [low] OPEN
 - summary: 测试总数 2002→2004 全现状面同步后，`check_test_sync` R2 仍单点红：**AGENTS.md 未声明 2004**
-  （`:496`/`:507`/`:532` 三处 2002；R1 六文件面已同批同步：README.md 徽章 + README_EN/SOP/agent-map/
-  deliverable/known-boundaries/scoring_rubric，实测 CI run `41282990210` R1 清单反解）
+  （提交侧 `:496`/`:505`/`:530` 三处 2002；R1 分两批同步：f81a81328 = README.md 徽章 +
+  README_EN/SOP/agent-map/deliverable/known-boundaries/scoring_rubric（run `41282990210` 清单反解），
+  后续批 = ARCHITECTURE.md:81 + README.mbt.md:9（run `41283526304` 首跑清单比上轮多出的两份——上轮日志截断所致））
 - detail: AGENTS.md 被 **BUG-527 WIP 车道占用**（工作树带「native link 摘除治本」hunk，未提交）；
   若本批裹挟提交，AGENTS.md 会声称「全部库包已摘除 link」而 HEAD 代码尚无该改动——文档先于代码撒谎。
   EXEMPT 路也不通：`check_test_sync` 的 EXEMPT 表挂 R79 棘轮（条目数只许降不许升），
   加条目即红——这是设计在挡「懒得改数字」。
 - 关闭条件（结构性归 WIP 收口批）：BUG-527 65 文件收口提交 AGENTS.md 时，同批把
-  `:496`/`:507`/`:532` 三处测试总数改 2004（该 hunk 上下文恰好罩住 `:507`，顺路）；
+  提交侧 `:496`/`:505`/`:530` 三处测试总数改 2004（该 hunk 上下文恰好罩住 `:507`，顺路）；
   届时本单翻 FIXED，判据 `check_test_sync` 全绿为证。
