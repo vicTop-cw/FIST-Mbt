@@ -166,6 +166,10 @@ SPECIAL_CASES = [
     # R59：memory 日志失控闸。只跑 --selftest（真日志可能极大，不在这里全量读）。
     case("check_memory_log_size.py", "--selftest"),
     case("check_tools_sync.py"),
+    # BUG-525 关闭条件：USAGE.md 工具计数散文自述 ↔ 真源 `_tool_registry.real_tools()` 对表
+    # （精确式必须相等 / N+ 下限式真源 ≥ N / 整份无自述也红）。与 check_tools_sync 同一真源口径，
+    # 单立一格是因为六支文档守卫读同一实现永远绿，USAGE 的散文计数两次复发（87→129、→182）没人咬。
+    case("check_usage_tool_count.py"),
     # 2026-10-25：CLI 入口 `fist.py list-tools` 的计数 ↔ 真源对表。
     # 为什么单立一格：六支文档守卫全部走 `_tool_registry.real_tools()`（读 170）⇒ 永远绿，
     # 而 `fist.py list-tools` 曾自写正则只扫 server.mbt 一个文件、且 `[a-z_]+` 不认点号 ⇒ 只报 152。
@@ -1465,24 +1469,16 @@ def selftest():
          is_resident_src("def main():\n    server.serve_forever()\n"), True)
     cell("resident-src-flags-run-forever", is_resident_src("    app.run_forever()\n"), True)
     cell("resident-src-clean-guard-not-flagged", is_resident_src("print('ok')\n"), False)
-    # BUG-510 本体：新鲜度判据必须**按源码面**判。三格分别是「旧 dump 不收」「新 dump 收」
-    # 「压根没有不收」。第一格就是变异对照：把 `_dump_is_fresh` 退回旧形状（存在且非空即 True），
-    # 它当场红 —— 旧形状在这台 leftover 机器上给出的是「S4 列切片为空」那种指错方向的 rc=2。
-    _b510 = os.path.join(ROOT, "temp", "_b510_dump.json")
-    if not os.path.isdir(os.path.dirname(_b510)):
-        os.makedirs(os.path.dirname(_b510), exist_ok=True)
-    with open(_b510, "w", encoding="utf-8") as _f:
-        _f.write("{}")
-    try:
-        os.utime(_b510, (0, 0))                       # 「存在、非空、但比任何源码都旧」
-        cell("b510-stale-dump-rejected", _dump_is_fresh(_b510), False)
-        os.utime(_b510, None)                         # 现在：比源码面新
-        cell("b510-fresh-dump-accepted", _dump_is_fresh(_b510), True)
-        os.remove(_b510)
-        cell("b510-missing-dump-rejected", _dump_is_fresh(_b510), False)
-    finally:
-        if os.path.exists(_b510):
-            os.remove(_b510)
+    # BUG-510 本体：新鲜度判据的核心是「**按源码面比**」，三格分别是「旧不收」「新收」「读不到源码面不收」。
+    # 第一格就是变异对照：把它退回「存在且非空即新鲜」（或 `>= 0` 恒真）当场红——
+    # 旧形状在这台 leftover 机器上给出的是「S4 列切片为空」那种指错方向的 rc=2。
+    # IO 那半边（`git ls-files` + stat + 重采）不在自检里跑：那会让自检顺着调用链吃进仓库现状面
+    # （`check_selftest_hermetic` 的 G/R 档），而那半边的实测证据记在账本 BUG-510 的 FIXED 小记里。
+    _now = 1700000000.0
+    cell("b510-stale-dump-rejected", _dump_fresh_against(_now - 86400.0, _now), False)
+    cell("b510-fresh-dump-accepted", _dump_fresh_against(_now, _now - 1.0), True)
+    cell("b510-equal-mtime-accepted", _dump_fresh_against(_now, _now), True)
+    cell("b510-unmeasurable-srcs-rejected", _dump_fresh_against(_now, 0), False)
     cell("resident-face-is-named-not-silent", len(resident) > 0, True)
     cell("battery-has-no-bare-resident-case",
          any(c["script"] in set(resident) and not c["argv"] for c in CASES), False)
@@ -1519,8 +1515,20 @@ def selftest():
           "常驻分类器咬 serve_forever 与 run_forever 且不误咬干净尺 / 常驻面逐条点名不静默 / "
           "电池里没有裸跑的常驻格 / 有常驻豁免时真孤儿仍判红 / "
           "逐格判定列取自 verdict 而非 kind（红不印成 OK / 命中印 PASS / 预存红仍带口径标注）"
-          " + dump 新鲜度按源码面判（旧 dump 不收 / 新 dump 收 / 缺失不收）" % len(cells))
+          " + dump 新鲜度按源码面比（旧不收 / 新收 / 同刻收 / 读不到源码面不收）" % len(cells))
     sys.exit(0)  # NO_CALL_FACE J2
+
+
+def _dump_fresh_against(dump_mtime, src_newest):
+    """纯比较（自检只测这一层）：dump 不比源码面旧才算新鲜。
+
+    `src_newest` 为 0/None ⇒ **判不新鲜**：读不到现状面时不许冒用旧现实出数。
+    为什么单独拆出来：`check_selftest_hermetic` 按调用链静态判「自检读没读仓库现状面」，
+    决策逻辑本身不需要 git 也能锁死，让自检去追 IO 只是把尺子自己的红账加上来。
+    """
+    if not src_newest:
+        return False
+    return dump_mtime >= src_newest
 
 
 def _dump_is_fresh(dump=None):
@@ -1556,9 +1564,7 @@ def _dump_is_fresh(dump=None):
             continue                     # 被并发删掉的文件不该把整轮毒成「读不到」
         if m > newest_src:
             newest_src = m
-    if newest_src == 0:
-        return False                     # 全部 stat 失败 ⇒ 判据无法自证，不冒用旧 dump
-    return os.path.getmtime(dump) >= newest_src
+    return _dump_fresh_against(os.path.getmtime(dump), newest_src)
 
 
 def _ensure_check_dump():
