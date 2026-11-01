@@ -1,9 +1,9 @@
 name: FIST Bug Sync → GitHub Issues
 
 on:
-  schedule:
-    # 每天 03:00 UTC（用户可能在白天活跃，凌晨 flush 不打扰）
-    - cron: '0 3 * * *'
+  # schedule 已停（BUG-536：master 落后 main 且无构建步，定时 5/5 连红；出路 A 落地后可恢复）
+  # schedule:
+  #   - cron: '0 3 * * *'
   workflow_dispatch: # 允许手动触发（需仓库写权限）
 
 permissions:

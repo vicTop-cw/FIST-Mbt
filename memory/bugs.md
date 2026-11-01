@@ -14960,7 +14960,7 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - R2 收口：车道提交 `4d81dfa9b` 把 AGENTS.md 现状面三处测试总数 2002→2004（含本单点名的
   提交侧 `:496`/`:505`/`:530`），CI run `41284221894` 的 Test-count 守卫已绿（该 run 剩的唯一红
   是 encoding 守卫，另案 `95aa8ed62` 修）。本单翻 FIXED；R1 两批 + R2 全部归零。
-## BUG-536 [2026-11-01T10:36:00Z] [medium] OPEN
+## BUG-536 [2026-11-01T10:36:00Z] [medium] FIXED
 - summary: 定时作业「FIST Bug Sync → GitHub Issues」**10-28 起每发必红**（run 40664602973 / 40851761011 /
   41036125358 / 41188800997 / 41296809919 共 5/5 failure，各 ~25s）——两半根因，都不在 flush 脚本本身：
   ①定时触发只跑**默认分支 master** 上的 workflow 与代码，而 master 落后 main **132 笔**（merge-base 实证
@@ -14982,6 +14982,18 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
      归入后续批，不是本单关闭条件。
 - 关闭条件：scheduled run 在 master 上成功（或 owner 明示本作业退役/改触发分支，则按改法入账翻面）。
 - reported_by: lead
+
+### FIXED(2026-11-01 / BUG-536)
+
+- 出路 C 已执行（owner 指令「cron 调度你关他」= 明示本定时作业退役，命中关闭条件第三档）：
+  `.github/workflows/fist-bug-sync.yml` 的 `schedule:` 触发已注释停用（保留 `workflow_dispatch`
+  手动线），commit b4d50affa 之后的作业笔。定时作业不再每 30 分钟连红。
+- 出路 A（`git push origin main:master`，ff 已验祖先关系）**保留为恢复调度时的前置条件**：
+  若未来要重启 schedule 或手动 dispatch，必须先把 master 快进到 main（当前差 133+ 笔）——
+  否则 flush_github.mjs 依旧死在「未找到 moon build 产物」。
+- 回归锁：本修复不需单测锁（纯 workflow 触发面配置）；判据面残留
+  `check_release_asset_names` 族已覆盖 workflow 代码面，schedule 触发形状暂无人认领，
+  恢复调度时优先补一条「scheduled 工作流的 default 分支必须有构建步」的判据（入账为建议）。
 
 ## BUG-537 [2026-11-01T12:00:00Z] [low] FIXED
 - evidence: 本轮闭环（回归锁 = `scripts/check_ofm_endpoint.py` 入 run_guards.py 电池 + `--selftest` 9 格含 2 变异对照）。三件同批落地：
