@@ -438,8 +438,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsqlite3-dev
 
-      - name: Install MoonBit toolchain
+      # BUG-523 出路①：native 臂的 moon 不再吃 latest（nightly 漂移 ⇒ v0.3.10/v0.3.11 两发
+      # native 臂同红，与 BUG-513 同族）。与 release.yml 的 meta+MOON_VERSION 形状同源，
+      # 但不引新 meta 作业——安装步内联从 toolchain.json（J17 机器可读真源）读钉版：
+      # 同一步内 export 给 install.sh（它认 MOON_VERSION），另写 GITHUB_ENV 供后续步骤可见。
+      - name: Install MoonBit toolchain (native, pinned from toolchain.json)
         run: |
+          MOON_VERSION="$(python3 -c "import json;print(json.load(open('toolchain.json'))['moonbit'])")"
+          echo "MOON_VERSION=$MOON_VERSION" >> "$GITHUB_ENV"
           curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
