@@ -424,6 +424,28 @@ jobs:
       - name: Reapply BUG-133 sqlite FFI fix
         run: bash patches/sqlite-bug133/reapply.sh --force
 
+      # 本机实测链（run 41278899034 / 41279525445 之后，本机 Git Bash + INCLUDE/LIB/PATH 复现）：
+      # moonc 把 cmd/cli/moon.pkg 的 cc-link-flags "-lsqlite3" **原样**传给 MSVC link.exe，
+      # link 报 LNK4044「无法识别的选项 /lsqlite3；已忽略」⇒ 44 个 sqlite3_* 全部 LNK2019，
+      # 而 moon 只回 "failed when building project"，真错误被吞 ⇒ 两发 dispatch 都红在同一层。
+      # MSVC 需要裸 "sqlite3.lib"（link 自行按 LIB 搜库）；"-lsqlite3" 只有 Linux/gcc 臂用。
+      # 本步只在本臂、只改 runner 工作副本（不提交任何 moon.pkg），幂等；形状漂了宁可红。
+      - name: Patch cc-link-flags for MSVC (link.exe ignores -lsqlite3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=cmd/cli/moon.pkg
+          if grep -q '"cc-link-flags": "sqlite3.lib"' "$f"; then
+            echo "[msvc-link] 已是 MSVC 形状，幂等跳过"
+          elif grep -q '"cc-link-flags": "-lsqlite3"' "$f"; then
+            sed -i 's/"cc-link-flags": "-lsqlite3"/"cc-link-flags": "sqlite3.lib"/' "$f"
+            grep -q '"cc-link-flags": "sqlite3.lib"' "$f"
+            echo "[msvc-link] 已改写为 MSVC 形状（本工作副本内，不提交）"
+          else
+            echo "::error::[msvc-link] cmd/cli/moon.pkg 里两种 cc-link-flags 形状都找不到——上游形状漂了，宁可红不静默"
+            exit 1
+          fi
+
       - name: Build native
         # 与 linux 臂对齐：scoped 只建 cmd/cli（全项目 `moon build --target native` 红在
         # 库包带 link 被 moon 去链 ⇒ `undefined reference to 'main'`，BUG-527 治理）。
