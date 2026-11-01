@@ -48,7 +48,14 @@ jobs:
             VER="${REF#v}"
           else
             # workflow_dispatch 时 ref_name 是分支名，剥不出版本 ⇒ 退回真源 moon.mod
+            # workflow_dispatch 的 version 入参两种写法都收（v0.3.11 / 0.3.11）：
+            # tag push 路径已由 REF#v 剥掉 v，dispatch 路径原样透传 ⇒ 带 v 的入参会让
+            # 下游全部双写 v（资产名 fist-mbt-js-vv0.3.11.zip、linux 版本闸期望
+            # FIST-Mbt vv0.3.11）。run 41279525445 / 41280902551 实测：native 产物
+            # rc=0、回执 [FIST-Mbt v0.3.11] 完全健康，纯粹是闸拿 v$VER 去比 ⇒
+            # 归一化只在 meta 这一处做，下游语义不变。
             VER="${{ inputs.version }}"
+            VER="${VER#v}"
             if [[ -z "$VER" ]]; then
               # 版本真源 = moon.mod（本仓没有 moon.mod.json）；正则与 scripts/gen_plugins.py 的
               # RE_VERSION 同一条，避免两处解析口径分叉。
