@@ -374,7 +374,23 @@ fn model_route_impl(
     None => ()
   }
   let now = now_default()
-  let (r, warns) = @router.router_restore(mr_read(project_dir, ns), config~)
+  // BUG-530 补锁：播种有效性只应看**配置校验**警告（from_json 产出的字段级回落），
+  // 不应混入 router_restore 的状态级信息（如"无有效状态，按配置新建路由器"——首次
+  // 调用时恒产，那是运行时状态不是配置错误）。否则 seeds_pools 会被状态信息误判为
+  // "配置坏"而关播种（mo_2/mo_3/mo_8 误伤 3 红）。mo_4 的 window_seconds/threshold_pct
+  // 校验警告来自 from_json，不受影响。
+  let cfg_check_warns = match config {
+    Json::Object(_) => {
+      let (cfg, w) = @router.RouterConfig::from_json(config)
+      w
+    }
+    _ => []
+  }
+  let (r, _restore_warns) = @router.router_restore(
+    mr_read(project_dir, ns),
+    config~,
+  )
+  let warns = cfg_check_warns
   // Star 门（D1=A 完整接入）：从 env 读钉死公钥 / attestation / login，交给纯策略函数判定。
   //   未配置公钥 → 门未启用（保持现状不设门），状态见回执的 `star_gate` 字段（note 即告警，
   //     不进 `warnings`——既有 mo_2 锁定了默认路径 warnings==0，零回归）；
@@ -466,7 +482,12 @@ fn model_route_impl(
   // 唯一的例外：**播种定义，不播种用量**。调用方显式给了池定义时，必须在 pick 之前把
   // 池形状落盘——否则后续不带 config_json 的记账（executor_run 自动记的那一笔就是）只能
   // 拿默认池，自定义模型名走"未在任何池中配置"分支，配额形同虚设（本文件反复拦的静默降级族）。
-  let seeds_pools = !consuming && mr_config_gives_pools(config)
+  // BUG-530 补锁：坏 config（router_restore 逐项回落并产出 warnings）不是"有效池定义"——
+  // 落盘的只是回落默认池的形状，等于替调用方伪造了一份它没给过的配置。只有 config
+  // 解析且校验**零 warning** 且显式带池键，才算播种；坏配置回落 ⇒ 不写盘、persisted=false。
+  let seeds_pools = !consuming &&
+    warns.is_empty() &&
+    mr_config_gives_pools(config)
   let seed_res = if seeds_pools { mr_save(r, project_dir, ns) } else { Ok(()) }
   let unhealthy_ids = mr_unhealthy_models()
   // §8.3 路由联动：兵种（display 层 8 兵种）→ 池标签 → pick 的软性档位提示。
@@ -490,8 +511,11 @@ fn model_route_impl(
     )
   }
   let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
+  // BUG-530：persisted 必须如实反映"这次调用真的写了状态文件"。consuming 落账写盘、
+  // seeds_pools 播种写盘，两者 save_res=Ok 都是落盘成功 ⇒ true；纯查询（两者皆否）
+  // 时 save_res 是 seed_res 的 Ok(()) 占位，一个字节都没写 ⇒ false（mo_6/mo_9 锁定）。
   let persisted = match save_res {
-    Ok(_) => consuming
+    Ok(_) => consuming || seeds_pools
     Err(_) => false
   }
   // CAF 写半（Slice B）：真消耗后把本次调用作为一条 evidence 回写进 CAF 记忆文件，
@@ -1003,6 +1027,7 @@ async fn executor_run_impl(
   model~ : String = "",
   timeout_ms~ : Int32 = 180000,
   dry_run~ : Bool = false,
+  config_json~ : String = "",
 ) -> Json {
   let fail = fn(msg : String, extra : Array[(String, Json)]) -> Json {
     mr_obj(
@@ -1024,6 +1049,13 @@ async fn executor_run_impl(
     Some(msg) => return fail("executor_run: " + msg, [])
     None => ()
   }
+  // BUG-530：executor_run 也要能透传 config_json（与 model_route 同法解析）。
+  // 否则调用方只能先手动 model_route 播种池定义再 executor_run——两步之间任何遗漏
+  // 都让自动记账那一笔拿默认池（静默降级族）。坏 JSON 一律拒绝，不静默回落默认池。
+  let cfgj = match mr_parse_config(config_json) {
+    Err(e) => return fail("executor_run: " + e, [])
+    Ok(j) => j
+  }
   // 可替换 Executor（验收项）：白名单走 build_command；自定义执行器走受限 CLI 通道
   // （binary=注册名、argv=[prompt]，不经 shell）。放行名单由 server 层 exec_reg 把关
   // （executor_run 工具闭包），本层只负责执行通道，不再硬拒非白名单。
@@ -1041,7 +1073,7 @@ async fn executor_run_impl(
   // 由 `cli_argv.atomcode_argv` 省略 `--model`，让 atomcode 走自身 config 的
   // default_model。aider 不同（空模型=绕过路由决策，维持拒绝），仍走路由。
   if chosen.is_empty() && executor != "atomcode" && !custom_cli {
-    match model_route_impl(project_dir, ns~) {
+    match model_route_impl(project_dir, ns~, config=cfgj) {
       Err(e) => return fail(e, [])
       Ok(j) =>
         match j {
@@ -1124,9 +1156,11 @@ async fn executor_run_impl(
     )
   }
   let (bin, args) : (String, Array[String]) = if custom_cli {
-    // 自定义执行器：binary=注册名、argv=[prompt]（受限 CLI 通道，不经 shell，与
-    // build_command 同一安全线：提示词只是字面量 argv 元素）
-    (executor, [prompt])
+    // 自定义执行器：binary=注册名、argv=["run", prompt]（受限 CLI 通道，不经 shell）。
+    // 加 "run" 子命令：codearts 等 CLI 的入口是 `run [message..]`，直接塞 prompt 会被
+    // 当成 project 路径 ⇒ "Failed to change directory to <prompt>"。白名单 aider/atomcode
+    // 走 build_command 不受影响，只有自定义通道走这根线。
+    (executor, ["run", prompt])
   } else {
     match
       @executor.build_command(executor~, prompt~, model=chosen, workdir="") {
