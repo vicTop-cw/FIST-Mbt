@@ -14315,6 +14315,25 @@ FAIL 3 条：
 BUG-523 本单聚焦「账实对齐」——即 BUG-133 状态标记与关闭条件 ② 脱钩这一格的账面处置。
 
 
+## BUG-523 追记（2026-11-01 · 出路①读数）
+
+出路①已落地（提交 `5aeeb7460`，Agent 车道 E，双远端已推）：ci.yml 的 `check-native`
+安装步改为内联读 `toolchain.json`（moonbit=0.1.20261016），未引新 meta 作业；js/windows
+两臂未动。实测 run `41278946534` / native job `124766718130` 分步：
+Install(pinned)=success / Migrate=success / Reapply=success / Check (native)=success /
+**Native heap gate=success** / **Test (native)=failure**。
+
+**关键精化（来自 Test 步原文日志，不是 annotations）**：native 测试二进制**跑完了**
+——`Total tests: 2004, passed: 1995, failed: 9`，rc=2 是「9 个断言失败」不是
+「被信号打死 / core dumped」的既往崩溃形状。9 个失败与 js ubuntu 臂同族同源
+（`model_router_ops_wbtest` mo_2/mo_8 `persisted` 为 false + `ops_commissar_wbtest`
+dl_c1~c10 七格文件池计数为 0），即 **Linux-only 的落盘/回读回归**（账 BUG-532），
+不是 BUG-133 的堆损坏。
+
+⇒ 读数：钉版救不了（本来就是），但 **②格离满足只差 BUG-532 一发**——Linux 测试绿了
+之后 ②格即可在下一发 CI 复读。Reapply 步的「找不到目标 stub.c：…/daqing/sqlite/stub.c」
+是 SKIP 路径的报文（树已迁 `daqing/sqlite@0.4.0`，mizchi 桩永不出现），非阻断。
+
 ## BUG-524 [2026-10-31T08:45:00Z] [medium] FIXED
 - summary: 验收探针 `scripts/blackbox/e2e_acceptance_recheck.py` 两处「旗标/路径被承认但不生效」——
   ① `FIST_ACCEPT_JS` 给**相对路径**时，存在性按脚本 cwd 判、spawn 按沙箱 cwd 走 ⇒ 同一枚有效路径在两副面罩下结论相反；
@@ -14696,3 +14715,41 @@ Build native 的 runner 日志原文（两件根因，都不在 MoonBit 侧）�
 代码面必须同时含 `irm …/install/powershell.ps1 | iex` 与 `Out-File -Append $env:GITHUB_PATH`；
 跑了 moon 无安装步也红），selftest 清单反解 `R15×5`（3 变异 + 2 反向）、正常模式 PASS，
 电池已登记，commit `4f1f5db7` 推双远端。判例-36 口径：遗留①（安装半）有锁。
+
+## BUG-532 [2026-11-01T06:12:00Z] [high] OPEN
+- summary: **Linux-only 测试回归挡住权威轨**：js ubuntu 臂 2 红 + native 臂 7 红（同源）——
+  `model_router_ops_wbtest` mo_2/mo_8 的 `persisted` 断言 false、`ops_commissar_wbtest`
+  dl_c1/c2/c4/c5/c6/c9/c10 的 rhop 文件池计数为 0；**Windows 本机同版本全绿**（js 2002/2002）
+  ⇒ 文件落盘/回读在 Linux 上静默失败，嫌疑面：rx-mbt 0.4.0（`4ecb9d3d2` 升级）的
+  文件系统层路径/换行行为、或 `3699f012a`（BUG-530 收尾 + 播种读回锁）引入的平台差异
+- detail: ## 读数（run `41278994926`，commit `910da93ce`，Test 步原文日志）
+
+```
+js:      Total tests: 2004, passed: 2002, failed: 2   （mo_2@:131, mo_8@:281 —— `true` is not false）
+native:  Total tests: 2004, passed: 1995, failed: 9   （上 2 格 + dl_c1:74 / dl_c2:127 / dl_c4:231(`0 != 1`)
+                                                        / dl_c5:270(`0 != 2`) / dl_c6:321(`3 != 4`)
+                                                        / dl_c9:418(`0 != 5`) / dl_c10:484(`0 != 3`)）
+```
+
+## 为什么是 high
+
+权威稳定门槛 = JS 后端全绿（AI-DEVELOPMENT-STANDARD §7）；js 轨红 ⇒ 验收/发版全被挡。
+且 BUG-133 ②格（干净树全量 native 通过）也只差这一发（native 二进制已能跑完，
+不再是被信号打死的形状——见 BUG-523 追记）。
+
+## 排查入口（给执行者）
+
+1. 失败共同形状=「写成功（save_res=Ok / 计数预期非 0）但读回 0 / persisted=false」⇒
+   优先查 rx-mbt 0.4.0 的 `rhop` / fs 层在 Linux 下的路径分隔符与目录创建
+   （Windows 反斜杠 vs POSIX 斜杠；`mkdir -p` 语义）；mo_2 的 `state_path`
+   是相对路径 `temp/mo_ops/.fist-mbt/data/model-router-mo2.json`。
+2. WSL 快照树 A/B：`git archive HEAD` 干净树里单跑 `moon test --target js src/server`
+   与 `src/ops`，确认复现后二分（rx-mbt 降 0.3.0 对照 / 只跑 mo_2）。
+3. 修复落点优先在本仓或 rx-mbt（rx-mbt 是兄弟仓，改它要单独提交单独发版，见
+   AGENTS「同族一源库」硬规则）。
+
+## 关联
+
+BUG-523 追记（②格只差这一发）/ BUG-133（关闭条件两格）/ BUG-530（播种读回锁就是
+mo_2/mo_8 两格的来历）/ BUG-527（无因果，但 WIP 里 `src/ops/ops_commissar.mbt`
+与 `model_router_ops_wbtest.mbt` 也有未提交改动，收口时别混）。
