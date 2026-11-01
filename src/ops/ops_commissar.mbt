@@ -168,13 +168,37 @@ pub fn commissar_send(
     sig.to_json(),
     at_ms,
   )
-  @rhop.rhop_send(
-    commissar_events_dir(project_dir),
-    id,
-    pkt,
-    @rhop.RhopCipherNone::new(),
-  )
+  commissar_rhop_write(commissar_events_dir(project_dir), id, pkt)
   eprintln("commissar: sent \{id} kind=\{sig.kind} target=\{sig.target}")
+}
+
+///|
+/// 把一条 RhopPacket 落成 events/<id>.rhop 信封文件。
+///
+/// 为什么不直接调 `@rhop.rhop_send`：该入口在依赖侧是**目标分片**——js 是真实现，
+/// native 版（RX-MBT rhop_native.mbt）只 println「native 目标暂不可用」后返回，
+/// **不落盘也不报错**。commissar_send 委托它 ⇒ native 上政委信号被静默丢弃
+/// （src/ops/rhop_native_wbtest.mbt 文件头 2026-10-22 已记录同族缺陷；本次 CI native
+/// 臂 dl_c1/c2/c4/c5/c6/c9/c10 七格红即此根因）。
+///
+/// 修法与 `rhop_native_wbtest.mbt` 的 rn_send 夹具同构：信封与加密仍走 rhop
+/// **公开接口**（RhopPacket::to_json_string + RhopCipherNone + RhopEnvelope::encode，
+/// 与 js 版 rhop_send 逐句一致），只有最后一跳（写盘）改 `@fs` 直写——js/native
+/// 同一份代码、同一行为。原子性说明：`@fs` 无 rename，放弃 tmp+rename 两跳；
+/// 信号载荷为单段小文本（单次 write），watch 侧本就过滤 `.rhop.tmp`、坏文件
+/// 跳过不中断，读侧语义不变。
+fn commissar_rhop_write(
+  shared_path : String,
+  filename : String,
+  pkt : @rhop.RhopPacket,
+) -> Unit {
+  let c = @rhop.RhopCipherNone::new()
+  let ct = c.encrypt(pkt.to_json_string())
+  let text = @rhop.RhopEnvelope::encode(1, c.alg_name(), ct)
+  let path = shared_path + "/" + filename + ".rhop"
+  @fs.write_string_to_file(path, text, encoding="utf8") catch {
+    e => eprintln("commissar: 写事件文件失败 \{path}: \{e.to_repr()}")
+  }
 }
 
 ///|
