@@ -14048,7 +14048,7 @@ SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-meas
   **skipped 的守卫数量本身就是一个应当被观察的指标**，而现在它只出现在日志里、没有任何判据认领。
 
 
-## BUG-516 [2026-10-31T07:10:00Z] [medium] OPEN
+## BUG-516 [2026-10-31T07:10:00Z] [medium] FIXED
 - summary: `check_selftest_hermetic.py` 的 **R 档棘轮越线**（现读 75 > 基线 74 ⇒ 电池那一格 rc=1 常红）——
   存量债、不是本轮引入；本轮把它**降了 1**（76 → 75），仍未回到基线内
 - detail: ## 归属实测（快照树三档，不靠记忆）
@@ -14087,6 +14087,22 @@ SELFTEST FAIL（18 格：clean-synth-green … real-ceiling-not-looser-than-meas
    ⚠️ 这条最像「为变绿改口径」，**必须先证明重分类规则不吞掉真违例**（配位移变异对照），否则等于关掉这把尺。
 
 
+### FIXED(2026-11-01 / BUG-516)
+
+- 走路②落地（commit `88968eb37`，统帅终审 PASS）：`check_selftest_hermetic.py` 新增**校准档 C**——
+  被检尺写模块级 `HERMETIC_CALIBRATION = {锚点名: 理由}`（静态 AST 可解析，与 `--fresh` 显式旗标同构），
+  命中名就是声明名或污点溯源全部落在声明名内的纯读（R）记 C、只记账不顶棘轮；
+  豁免粒度是**锚点**不是函数，W/G 不可校准，空理由/坏损声明一律忽略；
+  同一 helper 传未声明锚点的调用点照旧进 R 顶棘轮（不白送豁免口）。
+- `check_scripts_naming` 的 8 处现状面标定读显式自述为 C（首批），R 档 92→84；
+  **基线未抬**（父提交 vs HEAD 的 `BASELINE = {'W':8,'R':92,'G':34}` 逐字相同已核——本单原文的
+  「基线 74」已过时：BUG-517 纳面时基线按实测 bless 到 92，禁降禁抬两向都守住）；
+  现读 84<92 常驻一条 NOTE，文案已写明「重分类是账面下降不是行为下降，照旧不下调基线」。
+- **不吞真违例的证明**（变异格按红方向实测）：C3 未声明锚点照旧 [R]、C5 声明锚点写探针照旧 [W]、
+  C9 混入 C 条目时 R 超基线仍 rc=1（`over R=(2,1)`）；`--selftest` 51 格（C×9 新族），
+  `check_scripts_naming --selftest` 18 格（含 5 支 MUTATION），相邻尺 5 把全绿。
+- 同批：`scripts/README.md` hermetic 条目补校准档 C 说明（车道边界未碰 README，统帅补）。
+- 残余：基线 92 里仍含其它尺的标定债，同类重分类需各尺自述后逐把收（已在 NOTE 点名）。
 ## BUG-517 [2026-10-31T07:10:00Z] [low] FIXED
 - summary: `check_selftest_hermetic.py` 认自检函数只认四个名字（`SELFTEST_FUNCS`）⇒
   叫 `surface_selftest` 的那一类**整份不在普查面里**，同族缺口当年只补了兄弟尺
