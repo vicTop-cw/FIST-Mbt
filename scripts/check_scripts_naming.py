@@ -46,6 +46,26 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR = os.path.join(ROOT, "scripts")
 NAMING_DOC = os.path.join(SCRIPTS_DIR, "NAMING.md")
 
+# BUG-516 走路②（2026-10-31 owner 裁决）：校准型格子显式档位 —— 本自检里**天生必须读真仓现状**
+# 的读取，经由下列锚点的全部在此显式自述（判据：`scripts/check_selftest_hermetic.py` 的 C 档，
+# 棘轮只对非校准档生效）。每条自述点名到格：读哪个面、为什么必须读现状（判例-32：标定必读真仓，
+# 传合成夹具等于没标定）；只豁免读，写探针/打真仓不在此列。
+HERMETIC_CALIBRATION = {
+    "NAMING_DOC": "校准读面=scripts/NAMING.md 的词法真源（naming-roles-prefix/suffix/shared 三条 "
+                  "anchor 行）。为什么必须读现状：词法表只此一份、不抄进代码（BUG-373 同族「两把尺"
+                  "各执一词」），自检第 1 格（clean-synth-green）起所有 census 格吃的词表都来自它，"
+                  "且读不到词法必须自拒 rc=2 而不是拿夹具词表假装（J10 点名的最便宜假绿）",
+    "SCRIPTS_DIR": "校准读面=scripts/ 顶层 .py 宇宙 + run_guards.py 登记面 + scripts/ 全树引用文本。"
+                   "为什么必须读现状（逐格点名）：第 8 格 real-ceiling-not-looser-than-measured 与"
+                   "第 10 格 ceiling-drift-detected——「上限不得宽于实测」（BUG-515），不读真宇宙等于"
+                   "没标定；第 12 格 MUTATION-whitelist-count-matches-live-repo——白名单豁免数与现状"
+                   "N1 读数对表；第 14 格 MUTATION-battery-registered-in-whitelist-rejected——条件 2"
+                   "要真的 run_guards.py 登记面才能证「被判据登记的名字进白名单必拒」；第 15 格 "
+                   "admission-live-whitelist-all-passes——真白名单正向对照（把现状判成坏=尺子坏了）；"
+                   "第 16 格 ref-detector-sees-real-misses-fake 的 _r16a 半——真共享件被认出"
+                   "（判例-32：传空树等于没标定）",
+}
+
 # 棘轮上限：必须 == 现状读数。下降要随改名同批下调，任何一条新债都会顶穿上限。
 # N2 于 2026-10-31 降到 0：R115 那批改名把 5 份连字符件全部换掉（`fist_gate.py` 等），
 # 但**上限没跟着降** ⇒ `--selftest` 的第 8 格 `real-ceiling-not-looser-than-measured` 判红
