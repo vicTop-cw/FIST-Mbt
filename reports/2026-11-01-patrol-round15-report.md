@@ -1,26 +1,34 @@
-# 巡检轮15（非阻塞）· 2026-11-01
+# 2026-11-01 · 巡检 R15 · OFM 探活缺口立账（BUG-537）+ 双守卫补跑
 
-## 背景
-- `git status --short`：src/** 约 60 文件 WIP 仍被占用（BUG-527 治本车道进行中），HEAD `e464c98e3` 无新收口 → 按标准动作 3 走非阻塞巡检。
-- 本轮换面，避开轮 5–14 已扫面（budget/arg-face/fmt/tools-sync/known-red/host-installable/smoke）。
+## 结果摘要
+WIP 未收口（src/** 与 13 份库包 moon.pkg 仍被 BUG-527 摘 link 工作占用，diff 实证），按第 3 条走非阻塞巡检。三路子代理并发 + 统帅补跑终审：新立 BUG-537 一单（low，OPEN），两支守卫实测绿，mcp_smoke FAIL 判为产物缺失非回归。
 
-## 本轮探活结果
-| 守卫 | 结果 |
-|---|---|
-| `check_demo_isolation.py` | PASS：34 个 spawn `serve` 脚本全部交付 `FIST_DB_PATH`（显式子句 2 + 豁免 1 锚点成立） |
-| `check_store_tables_wired.py` | PASS：32 张表 = 31 有写入点 + 1 显式预留（runs） |
-| `check_ps_encoding.py` | PASS：10 份 .ps1 全带 BOM 或纯 ASCII |
-| `check_publish_payload.py` | **红**：8 份未跟踪 `reports/2026-11-01-*.md` 会进 `moon publish` 载荷面（P1） |
+## 资源消耗
+- 子代理 ×3（mcp_smoke / check_host_installable / OFM 探活），OFM 路发现真缺口；两路无执行面只出静态预判，实测由统帅补跑。
 
-## 发现与处置
-- **新发现（P1）**：历轮巡逻报告只写盘未入库，`moon publish` 的打包面是「工作树 − .gitignore」，
-  未跟踪又未忽略的报告会被公开点名。**处置**：本轮同批 scoped 提交 8 份存量报告 + 本轮报告（共 9 份）入库。
-- 观察项：`.opencode/` 目录未跟踪（判据未点名，疑其扫描面限定文本载荷形状）；后续轮确认是否应入 .gitignore。
-- 其余三面零缺陷，账本无变化。
+## 任务分配记录
+| 单元 | 内容 | 终审证据 |
+|---|---|---|
+| 巡检-A | mcp_smoke 实跑 | 真实 rc=1，FAIL「main.js 未找到」——WIP 未 build 的正常态，不立案 |
+| 巡检-B | check_host_installable 两步 | selftest rc=0 + 主检 rc=0（仅信息级 timeout_ms WARN）；子代理静态预判与实测一致 |
+| 巡检-C | OFM 探活判据盘点 | **BUG-537**：scripts/ 189 份 grep ofm/18326/18899 = 0 命中，无入库判据 |
 
-## 结论
-一处 P1 已当场修（报告入库），三面全绿。WIP 收口后按 Round C 队列执行（BUG-527 收尾 → BUG-530 → run_guards 注册 case）。
+## BUG-537 要点（OPEN）
+1. OFM 端点可用性零入库判据，探活只存在于 USAGE.md 手工规程，端点失效静默（18899 已实际失效过一次，现行 18326）。
+2. 伴生文档缺陷：USAGE.md §6.15 示例端点仍写 18899（漂移）；patrol-round3 报告把 `pol_keeper_run`（任务池 keeper）误标为「OFM 端点探活」。
+3. 修复：新增 `scripts/check_ofm_endpoint.py`（env 无值时 SKIP 不判红不判绿）+ USAGE 同步 + 误标勘误，可先于 src/** 解禁落地。
+
+## 遗留风险
+- BUG-537 待派（scripts/USAGE 不在 WIP 面，可独立落地）。
+- BUG-536 待 owner（方案 A ff 推 master / B owner 配 token）。
+- Round C 三件（527 治本 → 530 修复 → run_guards 注册）等 src/** 解禁。
+
+## 后续建议
+- 下一唤醒若 WIP 已收口：走 Round C 队列；否则优先派 BUG-537 修复单元。
+
+## 超额内容
+无（巡检属本轮目标内）。
 
 ## 来源
-- 指令来源：AGENTS.md FIST 指挥官模式 + 用户唤醒标准动作 3
-- 命令面：git status / git log / check_demo_isolation / check_store_tables_wired / check_ps_encoding / check_publish_payload
+- 子代理回传 ×3 + 统帅实测（check_host_installable / mcp_smoke 补跑读数）
+- FIST 闭环：账本 BUG-537 登记；memory/2026-11-01.md R15 段

@@ -14982,3 +14982,19 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
      归入后续批，不是本单关闭条件。
 - 关闭条件：scheduled run 在 master 上成功（或 owner 明示本作业退役/改触发分支，则按改法入账翻面）。
 - reported_by: lead
+
+## BUG-537 [2026-11-01T12:00:00Z] [low] OPEN
+- summary: OFM 端点可用性**零入库判据**：scripts/ 全部 189 份 grep `ofm|OFM|18326|18899` = 0 命中，
+  run_guards.py 电池无 OFM 检查项；探活判据只有 USAGE.md:492-496 一段手工规程
+  （`GET {FIST_OFM_ENDPOINT}/v1/models`，200=在线 / 401=未鉴权），每轮巡检都靠人/agent 现场拼 curl，
+  端点失效只能静默发生（旧端点 18899 已实际失效过一次，现行 relay 端点 18326 见
+  reports/2026-10-31-ofm-relay-fullchain-report.md）。
+- detail: 伴生两处文档面缺陷同轮发现：① USAGE.md §6.15 示例端点仍写 18899（文档漂移，
+  现行 18326）；② reports/2026-11-01-patrol-round3-report.md:9 把 `pol_keeper_run` 标成
+  「OFM 端点探活」——该脚本实为任务池 keeper（"ofm-fusion" 只是 ns 名），标签名不副实，易被后续巡检误引用。
+  设计上端点/密钥 env-only 不入库是纪律（密钥不进仓），但「无 env 时 SKIP 不红」的守卫脚本与手工规程不冲突。
+- 修复方案：新增 `scripts/check_ofm_endpoint.py`（只探 `{env FIST_OFM_ENDPOINT}/v1/models`，
+  无 env 时 SKIP 退出不判红、不判绿，判据无法自证绝不出数）；USAGE.md 示例端点同步 18326；
+  patrol-round3 误标勘误。三件可在 src/** 解禁前独立落地（scripts/USAGE 均不在当前 WIP 面）。
+- 关闭条件：判据入 run_guards.py 电池 + 两处文档面修正同批提交。
+- reported_by: lead（2026-11-01 巡检轮 R15，OFM 探活子任务发现）
