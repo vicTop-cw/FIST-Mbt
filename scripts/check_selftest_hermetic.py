@@ -30,8 +30,30 @@ R151 只治了那一把尺，**没有任何常驻判据扫这个形状** ⇒ 下
      （`open("scripts/README.md")` 只有 CWD=仓根时才成立 ⇒ 读的必然是现状面）。
      `os.path.join(tmp, "README.md")` 拼出来的夹具路径不判。
 
-分档（红档 W/R/G 判红，记账档 S/T 只点名）——每一档都被一条实测形状逼出来，见 `CLASS_LABEL`：
-  W 写探针进真树 / R 读现状面 / G 打真仓 / S 隔离 spawn 跑真尺子 / T 读写约定的 gitignored `temp/`。
+分档（红档 W/R/G 判红，记账档 S/T 只点名，校准档 C 单独记账且**不进棘轮**）——每一档都被一条实测形状
+逼出来，见 `CLASS_LABEL`：
+  W 写探针进真树 / R 读现状面 / G 打真仓 / S 隔离 spawn 跑真尺子 / T 读写约定的 gitignored `temp/`
+  / C 校准格（BUG-516 走路②，2026-10-31 owner 裁决）。
+
+**校准档 C（BUG-516 走路②）**：有一类格子**天生必须读真仓现状**才能判——`check_scripts_naming` 的
+`real-ceiling-not-looser-than-measured`（上限不得宽于实测，BUG-515）是原型：判例-32 明令「探针必须先在
+新鲜样本上标定」，标定必然读真仓；这与「`--selftest` 必须无现状面读取」是**结构性张力**，不是「债没还」。
+⇒ 出路不是抬基线（BUG-516 明令禁止），而是给校准格开**显式档位**（与 `--fresh` 的显式旗标同构：
+豁免必须显式、可点名、带理由，不许按形状暗猜）：
+
+  · **声明面**：被检文件写模块级 `HERMETIC_CALIBRATION = {锚点名: "读哪个面 / 为什么必须读现状"}`。
+    静态 AST 可解析（装饰器 / docstring 标记要执行期才可见，与本尺的纯静态扫描不同构，故选常量声明）。
+  · **豁免粒度 = 锚点**（不是整个自检函数）：命中名要么**就是**声明名，要么是**污点溯源全部落在
+    声明名内**的局部派生名（`p = os.path.join(SCRIPTS, 'x')` 之后读 p 仍算校准）。
+    ⇒ 「声明了一个锚点、顺手把别的锚点也洗白」在结构上不可能（变异格 C2/C5 锁）。
+  · **只豁免 R（读）**：声明锚点上发生的 W（写真树）/ G（打真仓）**永不可校准**——校准格只读不写，
+    这是它能被豁免的前提（变异格 C4 锁）。
+  · **理由必须非空**；声明坏损（空理由 / 非字符串 / 非 dict）一律**忽略**——保守方向：声明写坏 ⇒
+    该读取仍按 R 判、由棘轮抓，绝不因声明坏损而白送豁免（变异格 C3/C8 锁）。
+  · **调用点级**：同一 helper 一次调用传声明锚点 ⇒ 该调用点的形参流记 C；同一 helper 在别处传
+    未声明锚点 ⇒ 照旧 R（与 H1b「只在该调用点判」同一哲学，变异格 C6 锁）。
+  · **不吞真违例**：C 不进红档、不进棘轮计数 ⇒ 同一文件里**未声明的**现状面读取照样进 R、照样
+    顶棘轮（变异格 C7 在 verdict 层锁：混入 C 条目的违例面，R 超基线仍 rc=1）。
 
 退出码：0=全绿 / 1=违例逐条点名 / 2=判据无法自证（扫描面为空）/ 4=尺子自己坏了。
 扫描面：`<root>/scripts/**/*.py` **递归**（R55/R82 的律逼出：普查只扫顶层 ⇒ 落在 `scripts/blackbox/`
@@ -77,6 +99,10 @@ WRITE_PRIMITIVES = {"os.makedirs", "os.mkdir", "os.remove", "os.unlink", "os.rep
 # 本仓约定的临时区（AGENTS/电池律「临时件放 gitignored temp/」）：锚点派生且落在这一段的读写
 # 不算「现状面」，记 T 档（与 S 同列，只记账不判红）。判据依据是这条明文约定，不是按名字猜。
 SCRATCH_SEGMENTS = ("temp",)
+# BUG-516 走路②：校准档声明常量名。被检文件在模块级写
+# `HERMETIC_CALIBRATION = {锚点名: "读哪个面 / 为什么必须读现状"}` ⇒ 该锚点上的**纯读**（R）
+# 记 C 档（棘轮不统计）；W/G 永不可校准，理由空/坏损的条目一律忽略（不豁免）。
+CALIBRATION_CONST = "HERMETIC_CALIBRATION"
 SKIP_DIRS = {"__pycache__"}
 
 
@@ -260,6 +286,68 @@ def tainted_locals(fn, anchors):
     return tainted
 
 
+def parse_calibration(tree):
+    """BUG-516 走路②：解析模块级 `HERMETIC_CALIBRATION = {锚点名: 理由}` 显式校准声明。
+    只认 str 键 → **非空** str 值的字面量 dict；坏损条目（空理由 / 非字符串 / 键含 `**` 展开）
+    一律**忽略**——保守方向：声明写坏 ⇒ 豁免不生效，该读取仍按 R 判、由棘轮抓，
+    绝不因声明坏损而白送豁免口（自检 C3/C8 锁）。"""
+    out = {}
+    for st in tree.body:
+        if isinstance(st, ast.Assign):
+            targets = [t.id for t in st.targets if isinstance(t, ast.Name)]
+        elif isinstance(st, ast.AnnAssign) and isinstance(st.target, ast.Name):
+            targets = [st.target.id]
+        else:
+            continue
+        if CALIBRATION_CONST not in targets or not isinstance(st.value, ast.Dict):
+            continue
+        for k, v in zip(st.value.keys, st.value.values):
+            if (isinstance(k, ast.Constant) and isinstance(k.value, str)
+                    and isinstance(v, ast.Constant) and isinstance(v.value, str)
+                    and v.value.strip()):
+                out[k.value] = v.value
+    return out
+
+
+def taint_provenance(fn, seeds):
+    """污点名的来源集：每个污点局部名 → 它的定义表达式吃进了哪些种子名（种子 = 锚点 ∪ 声明名）。
+    与 `tainted_locals` 同一定面（单目标裸赋值、迭代到不动点、形参/遮蔽名不算），只多记一份出处——
+    校准档要靠它判「污点局部名是否**全部**派生自已声明的锚点」（防拿声明锚点给别的锚点洗白）。"""
+    shadowed = local_names(fn)
+    prov = {}
+    changed = True
+    while changed:
+        changed = False
+        for sub in ast.walk(fn):
+            if not (isinstance(sub, ast.Assign) and len(sub.targets) == 1
+                    and isinstance(sub.targets[0], ast.Name)):
+                continue
+            name = sub.targets[0].id
+            src = names_in(sub.value) - shadowed
+            got = {s for s in src if s in seeds}
+            for nm in src:
+                if nm in prov:
+                    got |= prov[nm]
+            if got and prov.get(name) != got:
+                prov[name] = got
+                changed = True
+    return prov
+
+
+def is_calibrated(hit, declared, prov):
+    """一命中是否全落在校准声明内：每个命中名要么**就是**声明名，要么是溯源**全部**落在
+    声明名内的污点局部名。混合（声明 + 未声明锚点一起流进同一原语）⇒ False（保守，照旧 R）。"""
+    if not declared or not hit:
+        return False
+    for h in hit:
+        if h in declared:
+            continue
+        src = prov.get(h)
+        if not src or not src <= set(declared):
+            return False
+    return True
+
+
 def mode_of(call):
     mode = ""
     if len(call.args) > 1 and isinstance(call.args[1], ast.Constant):
@@ -329,10 +417,12 @@ def classify_primitive(call, prim_name, sources, scratch, hit):
     return "R"
 
 
-def io_primitive_hits(fn, anchors, taint, scratch):
+def io_primitive_hits(fn, anchors, taint, scratch, declared=None, prov=None):
     """I/O 原语（读 + 写两面）调用里，参数子树命中锚点/污点名的位置。
     锚点要被局部遮蔽检查挡住（防「自检里 `ROOT = temp` 重新赋值」被误判），
-    但污点名本来就是局部变量——再减一次局部集会把 `p = os.path.join(ROOT, …)` 这条链自己抹掉。"""
+    但污点名本来就是局部变量——再减一次局部集会把 `p = os.path.join(ROOT, …)` 这条链自己抹掉。
+    BUG-516 走路②：`declared`/`prov` 给出时，分类为 R 且命中**全部**落在校准声明内的条目改记 C
+    （只降 R；W/G/S/T 不动——校准格只读不写，写探针/打真仓永不可校准）。"""
     out = []
     shadowed = local_names(fn)
     sources = (anchors - shadowed) | taint
@@ -355,8 +445,10 @@ def io_primitive_hits(fn, anchors, taint, scratch):
             arg_names |= names_in(a)
         hit = sorted(arg_names & sources)
         if hit:
-            out.append((name or attr or "?", sub.lineno, hit,
-                        classify_primitive(sub, name or attr or "?", sources, scratch, hit)))
+            cls = classify_primitive(sub, name or attr or "?", sources, scratch, hit)
+            if cls == "R" and declared and is_calibrated(hit, declared, prov or {}):
+                cls = "C"
+            out.append((name or attr or "?", sub.lineno, hit, cls))
     return out
 
 
@@ -367,7 +459,7 @@ def callee_params(fn):
     return ps
 
 
-def param_flow_hits(fn, funcs, anchors, taint, scratch, chain):
+def param_flow_hits(fn, funcs, anchors, taint, scratch, chain, declared=None, prov=None):
     """调用点级的一跳判定：本函数体把锚点表达式交给**同文件 helper 的形参**，而那个形参在 helper
     体内被直接喂给 I/O 原语 ⇒ 判违例。
     实测反证（第五轮定形）：`check_memory_log_dup.py` 的 S9 走
@@ -376,7 +468,8 @@ def param_flow_hits(fn, funcs, anchors, taint, scratch, chain):
     移出跟踪面 ⇒ `memory/` 枚举不到日志 ⇒ S9 报「仓库内一份日志都没读到」），本尺却看不见它。
     保守面：**只在这处调用点判**——同一 helper 被别处用 temp 目录调用不受影响；两跳以上（helper 再调
     helper）不判。
-    """
+    BUG-516 走路②：`declared`/`prov` 给出时，本调用点的实参溯源**全部**落在校准声明内的形参流，
+    其 R 档命中改记 C（调用点级——同一 helper 在别处传未声明锚点照旧 R，自检 C6 锁）。"""
     out = []
     shadowed = local_names(fn)
     sources = (anchors - shadowed) | taint
@@ -398,11 +491,24 @@ def param_flow_hits(fn, funcs, anchors, taint, scratch, chain):
             arg_src = names_in(argn) & sources
             if not arg_src:
                 continue
+            # 实参的**终极锚点来源**：锚点名取自身、污点局部名沿溯源展开——
+            # 全部落在校准声明内 ⇒ 这条形参流是校准（混合 ⇒ 照旧 R，防洗白）。
+            flow_cal = False
+            if declared:
+                ultimate = set()
+                for n in arg_src:
+                    if n in prov:
+                        ultimate |= prov[n]
+                    else:
+                        ultimate.add(n)
+                flow_cal = bool(ultimate) and ultimate <= set(declared)
             # helper **体内**再派生一层（`q = d + "/x"` 之后读 q）同样算——污点跟着形参走
             inner = {pname} | tainted_locals(callee, {pname})
             # 实参只吃进临时区名 ⇒ 这一跳连同它在 helper 内的派生都留在 T，别升级成红档
             local_scratch = scratch | inner if arg_src <= scratch else scratch
             for prim, lineno, _hit, cls in io_primitive_hits(callee, set(), inner, local_scratch):
+                if cls == "R" and flow_cal:
+                    cls = "C"
                 out.append((cls,
                             "%s L%d 把 %s 经形参 `%s` 交给 %s()（其体内 L%d `%s(...)` 直接读写它；链：%s）"
                             % (fn.name, sub.lineno, ",".join(sorted(arg_src)), pname,
@@ -414,13 +520,16 @@ def violations_of(tree, root):
     anchors = module_anchors(tree)
     scratch = scratch_names(tree, anchors)
     funcs = module_functions(tree)
+    declared = parse_calibration(tree)  # BUG-516 走路②：校准档显式声明（锚点名 → 理由）
     out = []
     for fn in selftest_fns(tree):
         for body, chain in closure(fn, funcs):
             taint = tainted_locals(body, anchors)
+            prov = taint_provenance(body, anchors | set(declared))
             # 临时区名也要走同一层局部污点：`p = SELFTEST_DIR / "x"` 之后写 p 仍是临时区
             scratch |= tainted_locals(body, scratch) if scratch else set()
-            for prim, lineno, hit, cls in io_primitive_hits(body, anchors, taint, scratch):
+            for prim, lineno, hit, cls in io_primitive_hits(body, anchors, taint, scratch,
+                                                            declared, prov):
                 out.append((cls, fn.name,
                             "%s L%d `%s(...)` 的参数吃进 %s（链：%s）"
                             % (body.name, lineno, prim, ",".join(hit), "→".join(chain))))
@@ -429,7 +538,7 @@ def violations_of(tree, root):
                             "%s L%d 裸相对字面量真源读 `%s`（链：%s）"
                             % (body.name, lineno, path, "→".join(chain))))
             for cls, note in param_flow_hits(body, funcs, anchors, taint, scratch,
-                                             "→".join(chain)):
+                                             "→".join(chain), declared, prov):
                 out.append((cls, fn.name, note))
     return out
 
@@ -476,9 +585,12 @@ CLASS_LABEL = {
     "G": "自检用 git/subprocess 打真仓",
     "S": "自 spawn 跑真尺子（合成输入可接受，但仍要点名——子进程内写盘本尺看不到）",
     "T": "读写落在本仓约定的 gitignored temp/ 临时区（可控夹具，只记账不判红）",
+    "C": "校准格读现状面（被检文件 HERMETIC_CALIBRATION 显式自述「读哪个面/为什么必须读现状」；"
+         "只豁免点名的锚点、只豁免读；棘轮不统计，单独记账——BUG-516 走路②）",
 }
 RED_CLASSES = ("W", "R", "G")
 DIAG_CLASSES = ("S", "T")
+CAL_CLASS = "C"
 
 # ══════════════════════════════════════════════════════════════════════
 # ★★ 棘轮基线（R218 / Lane EC）—— **本判据原本是「无条件红」**
@@ -795,11 +907,12 @@ def selftest():
     classes = {c for _f, c, _fn, _n in viol}
     diag_only = {"s_selfspawn.py", "t_scratch.py", "t_local.py", "p_scratch_arg.py"}
     # 断言按语义写不写死条数：红档恰是「除记账夹具外的全部违例件」，记账档不进取红面；
-    # 下一档变更（或冒出第五档）时这一格不会假红，但 `reds+diags==len(viol)` 会抓住「有条目两头不算」。
+    # 下一档变更（或冒出第五档）时这一格不会假红，但 `reds+diags+cals==len(viol)` 会抓住「有条目两头不算」。
     cell("F1-red-face-counts-only-WRG-and-S-T-listed-as-diag",
-         rc1 == 1 and classes <= set(RED_CLASSES + DIAG_CLASSES)
+         rc1 == 1 and classes <= set(RED_CLASSES + DIAG_CLASSES + (CAL_CLASS,))
          and reds == len([v for v in viol if v[1] in RED_CLASSES])
-         and reds + diags == len(viol)
+         and reds + diags + _rt1["cals"] == len(viol)
+         and _rt1["cals"] == 0  # 本夹具面无校准声明 ⇒ 不许凭空冒出 C 条目
          and red_offenders == [f for f in planted if f not in diag_only],
          repr((rc1, reds, diags, sorted(classes), red_offenders)))
 
@@ -823,6 +936,71 @@ def selftest():
     rc3, reds3, diags3, _rat3 = verdict(viol3)
     cell("F6-scratch-temp-alone-is-not-red", (rc3, reds3, diags3) == (0, 0, 1)
          and {v[1] for v in viol3} == {"T"}, repr((rc3, reds3, diags3, viol3)))
+
+    # ══════════════════════════════════════════════════════════════════
+    # ★★ BUG-516 走路②：校准档 C 的九格 ══════════════════════════════
+    # 机制：被检文件写模块级 `HERMETIC_CALIBRATION = {锚点名: 理由}`（与 --fresh 的显式旗标
+    # 同构：豁免必须显式、可点名、带理由）。棘轮只对非校准档（W/R/G）生效。
+    # 下面 C1-C9 每格锁一条性质，重点是「声明洗不白它没点名的东西」与「不吞真违例」。
+    # ══════════════════════════════════════════════════════════════════
+    _calib = ("HERMETIC_CALIBRATION = {'SCRIPTS': '校准：读 scripts/ 宇宙标定棘轮上限"
+              "（判例-32：标定必读真仓，BUG-516 走路②）'}\n")
+    _calib_head = head + "SCRIPTS = os.path.join(ROOT, 'scripts')\n"
+
+    # C1 基本面：声明锚点上的纯读 ⇒ 记 C（不进 R 棘轮）；机制坏了会退回 R ⇒ 这格红
+    v = run("c_declared_read.py", _calib_head + _calib
+            + "def selftest():\n    return open(os.path.join(SCRIPTS, 'README.md')).read()\n")
+    cell("C1-declared-anchor-read-reclassified-calibration", cls_of(v, "SCRIPTS") == ["C"], repr(v))
+
+    # C2 溯源：声明锚点的局部派生名同样记 C（豁免粒度跟数据流，不是只看直名）
+    v = run("c_derived_local.py", _calib_head + _calib
+            + "def selftest():\n    p = os.path.join(SCRIPTS, 'README.md')\n"
+            "    return open(p).read()\n")
+    cell("C2-derived-local-of-declared-anchor-still-calibration", cls_of(v, "p") == ["C"], repr(v))
+
+    # C3 反洗白（变异）：同一声明在，读取走**未声明**锚点 ⇒ 照旧 R（声明不构成整函数豁免）
+    v = run("c_undeclared_anchor.py", _calib_head + _calib
+            + "def selftest():\n    return open(os.path.join(ROOT, 'other.md')).read()\n")
+    cell("C3-undeclared-anchor-stays-red-despite-declaration", cls_of(v, "ROOT") == ["R"], repr(v))
+
+    # C4 反洗白（变异）：声明 + 未声明锚点**混合**流进同一原语 ⇒ 照旧 R
+    v = run("c_mixed_anchors.py", _calib_head + _calib
+            + "def selftest():\n    return open(os.path.join(ROOT, SCRIPTS, 'x.md')).read()\n")
+    cell("C4-mixed-declared-and-undeclared-stays-red", cls_of(v, "SCRIPTS") == ["R"], repr(v))
+
+    # C5 校准洗不了写：声明锚点上的写原语 ⇒ 仍 W（校准格只读不写，这是它可被豁免的前提）
+    v = run("c_write_not_calibratable.py", _calib_head + _calib
+            + "def selftest():\n    io.open(SCRIPTS, 'w').write('x')\n    return 0\n")
+    cell("C5-calibration-cannot-launder-writes", cls_of(v, "SCRIPTS") == ["W"], repr(v))
+
+    # C6 调用点级：同一 helper，传声明锚点的那次调用记 C、传未声明锚点的那次照旧 R
+    v = run("c_paramflow.py", _calib_head + _calib
+            + "def logs(d):\n    return os.listdir(d)\n"
+            "def selftest():\n    a = logs(SCRIPTS)\n    b = logs(ROOT)\n    return (a, b)\n")
+    cell("C6-paramflow-calibrated-at-declared-call-site-only",
+         cls_of(v, "SCRIPTS") == ["C"] and cls_of(v, "ROOT") == ["R"], repr(v))
+
+    # C7 理由必须非空：空理由的声明条目被忽略 ⇒ 读取照旧 R（不白送豁免口）
+    v = run("c_empty_reason.py", head
+            + "HERMETIC_CALIBRATION = {'ROOT': ''}\n"
+            "def selftest():\n    return open(os.path.join(ROOT, 'x.md')).read()\n")
+    cell("C7-empty-reason-declaration-buys-nothing", cls_of(v, "ROOT") == ["R"], repr(v))
+
+    # C8 声明坏损（非 dict）整体忽略 ⇒ 照旧 R
+    v = run("c_malformed_decl.py", head
+            + "HERMETIC_CALIBRATION = ['ROOT']\n"
+            "def selftest():\n    return open(os.path.join(ROOT, 'x.md')).read()\n")
+    cell("C8-malformed-declaration-ignored-stays-red", cls_of(v, "ROOT") == ["R"], repr(v))
+
+    # C9 不吞真违例（verdict 层变异）：C 条目在场时，R 超基线**仍** rc=1、over 仍只数 R；
+    # C 单独计数。若重分类把真违例一起吞掉（over 少算 / rc 变绿）这格红。
+    _vm = [("a.py", "C", "selftest", "校准"), ("b.py", "R", "selftest", "x"),
+           ("c.py", "R", "selftest", "y")]
+    _rc7, _r7, _d7, _rat7 = verdict(_vm, {"W": 0, "R": 1, "G": 0})
+    cell("C9-calibration-does-not-mask-ratchet-overage",
+         _rc7 == 1 and _rat7["over"].get("R") == (2, 1) and _rat7["cals"] == 1
+         and _r7 == 2 and _d7 == 0,
+         repr((_rc7, _r7, _d7, _rat7.get("over"), _rat7.get("cals"))))
 
     # ══════════════════════════════════════════════════════════════════
     # ★★ R218 / Lane EC：**棘轮**的两支变异对照
@@ -899,6 +1077,7 @@ def verdict(viol, baseline=None):
         baseline = BASELINE
     reds = [v for v in viol if v[1] in RED_CLASSES]
     diags = [v for v in viol if v[1] in DIAG_CLASSES]
+    cals = [v for v in viol if v[1] == CAL_CLASS]
     counts = {}
     for cls in RED_CLASSES:
         counts[cls] = sum(1 for v in reds if v[1] == cls)
@@ -908,6 +1087,7 @@ def verdict(viol, baseline=None):
              if counts[c] < baseline.get(c, 0)}
     return (1 if over else 0), len(reds), len(diags), {
         "counts": counts, "over": over, "under": under, "baseline": baseline,
+        "cals": len(cals),
     }
 
 
@@ -994,8 +1174,10 @@ def main():
         print("  （确认越线来源是新增自检格后，用 `--bless-baseline` 按实测前移基线——"
               "BUG-516 裁决：棘轮只许升不许降；不要悄悄改常量，也不要放宽判据。）")
     if rat["under"]:
-        print("NOTE **还了债**：这些档低于基线 —— 棘轮只许升不许降，基线保持不动；"
-              "请把那几格的读取移出 `--selftest` 归主面把现读做成实绩：")
+        print("NOTE **现读低于基线**：这些档低于基线 —— 棘轮只许升不许降，基线保持不动。"
+              "两种来历要分清：① 真还了债（把那几格的读取移出 `--selftest` 归主面把现读做成实绩）；"
+              "② BUG-516 走路②的校准档重分类——下降的是**账面**不是行为，基线虚高是已知状态，照旧不下调"
+              "（`--bless-baseline` 会拒绝下调）：")
         for k, (got, want) in sorted(rat["under"].items()):
             print("  ↓ %s 档 %d < 基线 %d（基线不降）" % (k, got, want))
     if rc:
@@ -1010,12 +1192,20 @@ def main():
         for f, cls, fn, note in viol:
             if cls in DIAG_CLASSES:
                 print("  - [%s] scripts/%s :: %s() %s" % (cls, f, fn, note))
+    cals = rat["cals"]
+    if cals:
+        print("CALIB 校准档记账 %d 处（C=读现状面，但被检文件的 HERMETIC_CALIBRATION 已显式自述"
+              "「读哪个面/为什么必须读现状」；只豁免点名的锚点、只豁免读；**不进棘轮**——BUG-516 走路②，"
+              "理由原文见各文件声明）：" % cals)
+        for f, cls, fn, note in viol:
+            if cls == CAL_CLASS:
+                print("  - [C] scripts/%s :: %s() %s" % (f, fn, note))
     if rc:
         print("处置：把那一段移出 `--selftest` 归主面，或改用 temp 合成夹具（写探针的改成写 temp 树）。")
         return 1
     print("PASS 自检 hermetic：%d 份带自检的脚本、W/R/G 三档**都在棘轮基线内**"
-          "（W=%d R=%d G=%d，记账档 %d 处已点名）——**这不是「零违例」，是「没比基线更差」**"
-          % (len(files), c["W"], c["R"], c["G"], diags))
+          "（W=%d R=%d G=%d，记账档 %d 处、校准档 %d 处已点名）——**这不是「零违例」，是「没比基线更差」**"
+          % (len(files), c["W"], c["R"], c["G"], diags, cals))
     return 0
 
 
