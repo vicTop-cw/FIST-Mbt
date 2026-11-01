@@ -13910,6 +13910,24 @@ windows 臂端到端收口（第三段追记）：
 资产三格本体验证配方（魔数/解包/version 回显）。公网 Release v0.3.11 现有
 3 枚资产（js / native-linux-x64 / native-win-x64）。
 
+
+**资产谱系注（2026-11-01T06:35Z 补）**：tag `v0.3.11` 指向 `5f33517e`；tag 之后唯一 src 变更是
+`3699f012a`（BUG-530 收尾）。当前 Release 三资产的构建谱系不一致——js / native-linux-x64 =
+tag 树产物（10-31 lineage），native-win-x64 = HEAD 树产物（`de9d75da1`，含 3699f012a 的
+路由器播种修，是 tag 的超集）。已评估不回收 tag/不换资产：回收是破坏性动作且 js 轨正被
+BUG-532 挡住（HEAD 的 js 有已知红格，不宜作资产谱系基准）；一致性交给 BUG-532 修复后的
+下一版发布自然收敛。本注是「资产与 tag 逐件比」纪律的如实记账，不是豁免。
+
+**linux Package 闸读数修正（2026-11-01T06:36Z，车道报告）**：上文 FIXED 段里「nightly
+未钉版嫌疑」**作废**——钉版早已接线（release.yml meta 的 `MOON_VERSION` 吃
+`toolchain.json`=0.1.20261016），且产物行为面三格全对（`version` rc=0 回执逐字正确 /
+未知子命令 rc=2 / `--help` 正常）。闸红的真因是 **dispatch 版本入参未剥 v**：
+tag-push 路径 meta 走 `REF#v` 剥 v，dispatch 路径漏了同一语义 ⇒ `VER=v0.3.11`
+⇒ 闸拿 `FIST-Mbt v$VER` 比成 `vv0.3.11`。「闸红」≠「产物坏」——坏的是喂给闸的期望值
+（判例-34 同族：报错指向 ≠ 病因所在）。修：meta 作业 version 解析处补 `VER="${VER#v}"`
+（`d95817c1a`，单文件 +7 行）；实证 run `41281168161` 四 build 作业全 success、
+Package native artifact success、三枚 artifact 齐全。详见账 BUG-534。
+
 ## BUG-514 [2026-10-31T06:50:00Z] [medium] FIXED
 - summary: `mcp_tool_tour.py` 的自述面**夹具** `surface_fixture()` 只读 `AGENTS.md`，而 `Resources:` 那一行
   早已随 R212 搬到 `docs/AGENTS-mcp-inventory.md` ⇒ `re.search(...)` 回 None、`.group(1)` 当场
@@ -14824,3 +14842,26 @@ WIP 收口时应把该文件的 cc-link-flags 改成 `"sqlite3.lib"`（或 moonc
 Package native artifact 步 + windows 资产产出）；`check_release_asset_names`（含 R15）全绿。
 URL 标定：`https://www.sqlite.org/2026/sqlite-amalgamation-3510200.zip`（2026-11-01 实测
 200 + application/zip + PK 魔数）。
+
+## BUG-534 [2026-11-01T06:36:00Z] [low] FIXED
+- summary: `release.yml` 的 workflow_dispatch 路径**版本入参未剥 v**（tag-push 路径 meta 走
+  `REF#v` 剥 v，dispatch 路径漏了同一语义）⇒ `-f version=v0.3.11` 时 `VER=v0.3.11`，
+  linux Package 闸拿 `FIST-Mbt v$VER` 比出 `vv0.3.11` 双写 ⇒ 「产物不回显版本」假红，
+  资产名同吃双写（`fist-mbt-native-win-x64-vv0.3.11.zip` 实证）。两条路径语义不一致是本缺陷形状
+- detail: ## 读数
+
+  - 红形状（run `41279525445` / `41280902551`，均 workflow_dispatch）：
+    `version rc=0 回执：[FIST-Mbt v0.3.11]（期望逐字 [FIST-Mbt vv0.3.11]）`
+    —— 产物 rc=0、回执**逐字正确**，闸红纯粹因为期望值带了双写。
+  - 10-31 绿的归因：那发是 tag push（`refs/tags/v0.3.11`），`REF#v` 剥 v ⇒ 闸逐字相等。
+
+### FIXED(2026-11-01 / BUG-534)
+
+修：meta 作业 version 解析处补 `VER="${VER#v}"`（提交 `d95817c1a`，单文件
+`.github/workflows/release.yml` +7 行，tag-push 路径逐字未动）。
+**回归锁**：dispatch 端到端 run `41281168161`——四 build 作业全 success、
+`Package native artifact` success、`version rc=0 回执：[FIST-Mbt v0.3.11]（期望逐字
+[FIST-Mbt v0.3.11]）`、未知子命令 rc=2、三枚 artifact（js 791KB / native-linux 3.7MB /
+native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核一致。
+遗留：dispatch `version` 入参仍不校验格式（`0.3.11-x` 会透传，修前同状，非本缺陷回归面）；
+`release` 作业只能真实 tag push 触达，dispatch 验不到发布面。
