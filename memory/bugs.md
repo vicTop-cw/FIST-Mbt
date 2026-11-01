@@ -14885,6 +14885,24 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   已由 BUG-523 追记记录在案。②格条件满足，BUG-133 保持 FIXED 不动，读数在此存档。
 - 遗留债（不在本单关）：RX-MBT 侧 rhop_send 的 native 实现与原子写仍缺（现修法是本仓调用面
   绕行），建议在 RX-MBT 仓补 native FFI 后回归本调用面。
+### 追记2(2026-11-01 / BUG-532 · 修复车道回执归档：非平台差异读数 + 潜伏时间线 + 依赖债)
+
+- **A/B 读数（钉「非平台差异」）**：修复车道在 Windows 干净树（`git archive HEAD`）
+  复跑修复前版本，`moon test --target js -p src/server` = 563 总 / 561 过 / 2 败
+  （mo_2/mo_8），与 CI js-ubuntu 修复前同版本读数**逐字同形** ⇒ mo_2/mo_8 两红在
+  两侧同现，非平台差异；native 侧 WSL 干净树（先 `bash patches/sqlite-bug133/reapply.sh --force`，
+  否则 SIGABRT）src/ops + src/server 782/782 全绿、rx-mbt 0.4.0 嫌疑排除。
+- **潜伏时间线**：dl_c1~c10 的缺陷自 **2026-10-29**（commissar 委托 rhop_send 引入）即存在，
+  但 native 臂此前一直红在**构建期**，测试从未跑到 ⇒ 「此前全绿」不构成反证。
+  本轮 native 构建治本（BUG-527 摘 link，账在 WIP 车道）后测试首次到达该面，缺陷当场暴露。
+- **rx-mbt 债务（正式化）**：`@rhop.rhop_send` 的 native 实现是占位分片
+  （println 后返回，不落盘不报错）+ 信封写缺 tmp+rename 原子性。本仓修法是调用面绕行
+  （最后一跳 @fs 直写），债在 RX-MBT 仓：补 native 真实现后回归本调用面（dl_c1~c10 即回归锁）。
+- **判例沉淀（暂落账，待 AGENTS 同步）**：「**本机全绿读数必须注明所测树**」——工作树的绿
+  不能为提交树作证（本轮 mo_2/mo_8 的「Windows 2002/2002 全绿」是 WIP 污染读数，
+  修正断言躺在未提交 WIP 里）。判例-33 同族（服务本体 ≠ 服务接入）的变体：
+  **被测树 ≠ 申报树**。AGENTS.md 现被 BUG-527 WIP 占用，本判例待其收口批同步入现状面。
+
 ## BUG-535 [2026-11-01T07:07:00Z] [low] FIXED
 - summary: 测试总数 2002→2004 全现状面同步后，`check_test_sync` R2 仍单点红：**AGENTS.md 未声明 2004**
   （提交侧 `:496`/`:505`/`:530` 三处 2002；R1 分两批同步：f81a81328 = README.md 徽章 +
