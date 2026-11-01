@@ -14885,7 +14885,7 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   已由 BUG-523 追记记录在案。②格条件满足，BUG-133 保持 FIXED 不动，读数在此存档。
 - 遗留债（不在本单关）：RX-MBT 侧 rhop_send 的 native 实现与原子写仍缺（现修法是本仓调用面
   绕行），建议在 RX-MBT 仓补 native FFI 后回归本调用面。
-## BUG-535 [2026-11-01T07:07:00Z] [low] OPEN
+## BUG-535 [2026-11-01T07:07:00Z] [low] FIXED
 - summary: 测试总数 2002→2004 全现状面同步后，`check_test_sync` R2 仍单点红：**AGENTS.md 未声明 2004**
   （提交侧 `:496`/`:505`/`:530` 三处 2002；R1 分两批同步：f81a81328 = README.md 徽章 +
   README_EN/SOP/agent-map/deliverable/known-boundaries/scoring_rubric（run `41282990210` 清单反解），
@@ -14897,3 +14897,8 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - 关闭条件（结构性归 WIP 收口批）：BUG-527 65 文件收口提交 AGENTS.md 时，同批把
   提交侧 `:496`/`:505`/`:530` 三处测试总数改 2004（该 hunk 上下文恰好罩住 `:507`，顺路）；
   届时本单翻 FIXED，判据 `check_test_sync` 全绿为证。
+### FIXED(2026-11-01 / BUG-535)
+
+- R2 收口：车道提交 `4d81dfa9b` 把 AGENTS.md 现状面三处测试总数 2002→2004（含本单点名的
+  提交侧 `:496`/`:505`/`:530`），CI run `41284221894` 的 Test-count 守卫已绿（该 run 剩的唯一红
+  是 encoding 守卫，另案 `95aa8ed62` 修）。本单翻 FIXED；R1 两批 + R2 全部归零。
