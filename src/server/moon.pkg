@@ -42,5 +42,4 @@ options(
     "ofm_http_native.mbt": [ "native" ],
     "ofm_http_js.mbt": [ "js" ],
   },
-  link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )

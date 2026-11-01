@@ -500,8 +500,10 @@ S3 九段全落地 + BUG-466 取票窗口 + 本段软强制后，**该条件技�
 
 ### native 目标构建环境要求
 
-> 全部项目 `moon.pkg` 已内置 native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})`，
-> Linux 下直接可链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
+> **BUG-527 治本后（2026-11-01）**：native 链接 flag `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})` **只保留在可执行包**
+> （`cmd/cli`、`cmd/main`）与 native 测试消费方（`tests/smoke`、`tests/external_executor`）；全部库包（src/** 与根级 moon.pkg / atgc / atgc-old / omega）**已摘除 link**——
+> 新版 moon（≥0.1.20261021）会把带 link 的库包当可执行目标去链导致全项目 native build/test 必崩。
+> Linux 下可执行包统一链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
 > **JS 后端**：`moon test --target js` = **2004/2004**（2026-11-01 Windows 本机实测 + Linux(WSL) 干净树复测，四模式流水线自我迭代 Round 1~3 收口 + 黑客松拒收六项整改（BUG-501~507） + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
 > **Native 后端**：2026-10-01 在 WSL(Linux ubuntu-22.04) 实测 `moon test --target native -j 1` = **572/572**（工作树带既往构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩，根因见账本 BUG-133（依赖的 native FFI），

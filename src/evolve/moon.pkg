@@ -5,7 +5,3 @@ import {
 }
 
 supported_targets = "js+native"
-
-options(
-  link: { "native": { "cc-link-flags": "-lsqlite3" } },
-)

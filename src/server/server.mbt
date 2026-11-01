@@ -9701,6 +9701,9 @@ pub async fn run_server() -> Unit {
         "model": string_prop(
           "可选：指定模型；留空则由模型路由器决定并记账",
         ),
+        "config_json": string_prop(
+          "可选：模型路由池定义 JSON（与 model_route 的 config_json 同法；给了则 executor_run 自动路由/记账都基于此池，播种+记账一步完成）",
+        ),
         "namespace": string_prop(
           "命名空间（可选，默认 default）——路由配额按 ns 记",
         ),
@@ -9719,6 +9722,7 @@ pub async fn run_server() -> Unit {
       let prompt = get_str(args, "prompt")
       let model = get_str(args, "model")
       let ns = get_str(args, "namespace")
+      let cfg_json = get_json_text(args, "config_json")
       let ns2 = if ns.is_empty() { "default" } else { ns }
       // 可替换 Executor（验收项）：白名单 OR 已注册自定义执行器（注册表从 store 回灌，跨进程可复现）。
       // 未注册即拒绝——executor_run_impl 只负责执行通道，放行名单在此把关。
@@ -9755,6 +9759,7 @@ pub async fn run_server() -> Unit {
         executor=ex,
         prompt~,
         model~,
+        config_json=cfg_json,
         timeout_ms=tm,
         dry_run=get_bool(args, "dry_run", default=false),
       )
