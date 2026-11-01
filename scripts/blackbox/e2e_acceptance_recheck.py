@@ -23,17 +23,24 @@
 
 用法：
     python scripts/blackbox/e2e_acceptance_recheck.py            # 六格
-    python scripts/blackbox/e2e_acceptance_recheck.py --selftest  # 再加一格合成违例
+    python scripts/blackbox/e2e_acceptance_recheck.py --selftest  # 尺子自检 4 格 + 六格
     python scripts/blackbox/e2e_acceptance_recheck.py --json      # 另存机器可读证据
 环境变量：
     FIST_ACCEPT_JS  指定要验的 server 产物（默认按 _build → dist → LOCALAPPDATA 顺序找）。
                   相对路径按**调用方 cwd**归一；指不到文件即 rc=2 自拒，不静默回落默认候选。
     NODE            指定 node 可执行文件（默认 `node`）
+    FIST_ACCEPT_ST4_GUARD  内部防递归哨兵（ST4 反证子进程自带），调用方不用管。
 退出码（契约，勿改档）：
     0 = 六格全部 PASS（SKIP 不算 PASS，也不阻塞）
     1 = 任一 FAIL
     2 = 探针自身不可用（找不到 server 产物 / node 起不来）—— 绝不冒用 1
     3 = --selftest 的合成违例没被抓到 ⇒ **尺子坏了**，六格的绿不可信
+
+自检格分层（BUG-529）：
+    ST2（路径归一）/ ST3（--help）/ ST4（前置缺失点名反证）不依赖 node/产物/server，
+    在一切前置检查**之前**执行；ST1 需要 MAIN_DB（server 建库才有表），留在起跑之后。
+    走 rc=2 的各退出路径会打印「自检面点收」：逐格点名已执行/未执行——
+    「没跑」不许长得像「跑过了」。
 
 已知边界（不遮）：A4 的 native 臂只能校「资产平台与文件名是否自洽」+「有本平台产物时真跑一次」；
   Windows 上若本地没有 Windows native 产物，该格回 SKIP 并写明缺什么，不拿 WSL 读数冒充。
@@ -94,10 +101,9 @@ def resolve_env_js(raw):
 
 
 JS_PIN = resolve_env_js(os.environ.get("FIST_ACCEPT_JS", ""))
-if JS_PIN and not os.path.isfile(JS_PIN):
-    # 显式指名却不落空到默认候选：那等于「旗标被承认但不生效」（R207 同族）。
-    print("[FATAL] FIST_ACCEPT_JS 指向的文件不存在：%s（已按调用方 cwd 归一，不回落默认候选，rc=2）" % JS_PIN)
-    sys.exit(2)
+# 存在性检查原来就在这里 rc=2 退出 —— BUG-529：那会把 --selftest 的无前置自检格一并挤掉
+# （ST2/ST3/ST4 一支不跑 ⇒ 「尺子坏了 rc=3」这一档在缺前置的机器上永远不可达）。
+# 检查挪到「起跑」之前、无前置自检格之后：先把不依赖 server 的自检跑完，再判产物面。
 
 JS_CANDIDATES = [
     JS_PIN,
@@ -219,6 +225,23 @@ def record(key, verdict, why, evidence):
     CELLS[key] = {"verdict": verdict, "why": why, "evidence": evidence}
 
 
+def st_face_note():
+    """BUG-529：rc=2 的退出路径必须点名自检格执行面——「没跑」不许长得像「跑过了」。
+
+    ST1 需要 MAIN_DB（server 建库才有那张表），只能到起跑之后才跑；前置缺失走 rc=2
+    时它必然未执行。逐格点名缺哪格、其余哪几格已经自证过，让「探针不可用」与
+    「尺子已自证健康、只是被测对象没接上」两种结论可分（判例-33）。
+    """
+    if "--selftest" not in sys.argv[1:]:
+        return
+    ran = sorted(k.split("_", 1)[0] for k in CELLS if k.startswith("ST"))
+    missing = [s for s in ("ST1", "ST2", "ST3", "ST4") if s not in ran]
+    print("[自检面点收] rc=2：已执行 %s；未执行 %s%s"
+          % ("/".join(ran) if ran else "（无）",
+             "/".join(missing) if missing else "（无）",
+             "（ST1 缺 node/产物/server 前置，未到起跑点）" if missing else ""))
+
+
 def tid_of(res):
     j = res["json"]
     if isinstance(j, dict):
@@ -229,83 +252,13 @@ def tid_of(res):
     return ""
 
 
-# ═══════════════════════════════════════════════════════════════════ 起跑
-JS = find_js()
-if not JS:
-    print("[FATAL] 找不到 server 产物。先跑 `moon build --target js --release` "
-          "+ `python scripts/patch_esm_main.py`，或用 FIST_ACCEPT_JS 指名。")
-    sys.exit(2)
-
-MAIN_DB = os.path.join(SANDBOX, "main.db")
-NS_ROOT = os.path.join(SANDBOX, ".fist-mbt", "data")
-srv = Server(JS, SANDBOX, MAIN_DB)
-try:
-    n_tools = srv.tools_count()
-except Exception as e:
-    print("[FATAL] server 起不来：%s" % e)
-    sys.exit(2)
-if n_tools < 100:
-    # 反幻影：工具面没起来 ⇒ 后面每一格的「没报错」都没有意义
-    print("[FATAL] tools/list 只回 %d 个工具（<100）⇒ 产物不可用，六格拒绝出数" % n_tools)
-    sys.exit(2)
-print("server = %s (sha8=%s) tools=%d sandbox=%s"
-      % (os.path.relpath(JS, ROOT).replace("\\", "/"), sha8(JS), n_tools,
-         os.path.relpath(SANDBOX, ROOT).replace("\\", "/")))
-
-NS = "alpha"
-NS_DB = os.path.join(NS_ROOT, NS + ".db")
-srv.call("store_open", {"namespace": NS})
-for a in ("human_steward", "exec-1"):
-    srv.call("agent_acl_grant", {"agent_id": a, "namespace": NS, "can_write": True})
-
-
-def main_rows(tag):
-    return sql1(MAIN_DB, "select count(*) from tasks where ns=?", (tag,)) or 0
-
-
-def ns_rows():
-    return sql1(NS_DB, "select count(*) from tasks") or 0
-
-
-# ───────────────────────────────────────────────── ST 尺子自检（先于一切真检查）──
-# BUG-523：自检格原来排在真检查**之后**——自检若崩，真检查已经跑过、结论面已污染。
-# 修法：fail-fast。尺子先自证健康（ST1/ST2/ST3），再做被测对象的检查（A1–A6）。
-# 退出码契约不变：自检失败仍 rc=3（尺子坏了），只是现在发生在任何真检查出数**之前**。
+# ──────────────────── 无前置尺子自检（ST2/ST3/ST4 · 先于一切 node/产物/server 前置）──
+# BUG-529（分层前置）：ST2 是纯路径归一、ST3 只 spawn 本脚本自身的 --help、ST4 反证格
+# 同样不需要产物 ⇒ 三格提到 find_js()/Server 之前执行。否则任一前置缺失就 rc=2 退出，
+# 三格一支不跑，「尺子坏了（rc=3）」这一档在缺 node/产物的机器上永远不可达。
+# ST1 需要 MAIN_DB（server 建库才有表），留在起跑之后原处；rc=2 的各退出路径由
+# st_face_note() 逐格点名「已执行 / 未执行」，不让「没跑」长得像「跑过了」。
 if "--selftest" in sys.argv[1:]:
-    # 把探针的判据挪到一个「必然违例」的样本上：手工往主库塞一行 ns=<合成标签>，
-    # 让 A1 那套读数逻辑再跑一遍 ⇒ 必须报出漏点。抓不到 = 尺子坏了，六格的绿不可信。
-    synth = "synthetic-leak-" + RUN_ID[-6:]
-    c = sqlite3.connect(MAIN_DB)
-    try:
-        c.execute("insert into tasks (id,parent_id,project_dir,ns,priority,importance,depth,"
-                  "split_n,level,status,assignee,description,deliverable,created_at,updated_at,"
-                  "completed_by,cleanup_mode,depends_on,omega_required,created_by) "
-                  "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                  ("ZZ-synth", "", ".", synth, "中", "中", 3, 3, 6, "待领取", "",
-                   "合成违例", "", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
-                   "", "deferred", "[]", 0, "acceptance-selftest"))
-        c.commit()
-    finally:
-        c.close()
-    caught = (sql1(MAIN_DB, "select count(*) from tasks where ns=?", (synth,)) or 0) > 0
-    record("ST1_合成违例(尺子自检)", "PASS" if caught else "FAIL",
-           "往主库注入 ns=%s 的行后，读数逻辑必须看得见（看不见=恒绿探针）" % synth,
-           ["main_db(synthetic ns)=%s" % sql1(MAIN_DB,
-                                              "select count(*) from tasks where ns=?", (synth,))])
-    if not caught:
-        print("[FATAL] 合成违例没被抓到 ⇒ 探针恒绿")
-        for k, v in CELLS.items():
-            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
-        sys.exit(3)
-    # 自检样本不留给后面的真检查：A1 的隔离读数用的是增量（before/after），本就不受这行影响，
-    # 但尺子验完就该把自己的脚印擦掉——沙箱里不该有第二个「人为违例」的来源。
-    c = sqlite3.connect(MAIN_DB)
-    try:
-        c.execute("delete from tasks where id='ZZ-synth'")
-        c.commit()
-    finally:
-        c.close()
-
     # ── ST2 `FIST_ACCEPT_JS` 相对路径归一（BUG-524①，变异对照内建）──────────
     # 真跑一次 spawn 用的那副面罩：把 cwd 切到沙箱再判存在性。不做归一 ⇒ 这一格必红
     # （naive 形态是「原样交给 os.path.isfile」，在沙箱 cwd 下就是 False）。
@@ -347,6 +300,126 @@ if "--selftest" in sys.argv[1:]:
         print("[FATAL] ST3：--help 没被处理（rc=%d）⇒ 白名单里有旗标没人认领"
               % hp.returncode)
         sys.exit(3)
+
+    # ── ST4 前置缺失的点名契约（BUG-529 反证格 · 判例-36：新门必配必然红对照）──
+    # 构造一个「必然缺前置」的假象路径：子进程把 FIST_ACCEPT_JS 指向不存在的文件，
+    # 断言 rc=2 输出里点名 ST2/ST3 已执行、ST1 未执行，且 FATAL 指名 FIST_ACCEPT_JS
+    # ——不再是一句分不清「尺子没跑」还是「尺子跑了没抓到」的笼统报错。
+    # 防递归：ST4 子进程自带 FIST_ACCEPT_ST4_GUARD=1，子进程内跳过 ST4。
+    if os.environ.get("FIST_ACCEPT_ST4_GUARD") != "1":
+        st4_env = dict(os.environ)
+        st4_env["FIST_ACCEPT_JS"] = os.path.join(
+            ROOT, "temp", "acceptance-recheck", "definitely-missing-%s.js" % RUN_ID)
+        st4_env["FIST_ACCEPT_ST4_GUARD"] = "1"
+        try:
+            pr = subprocess.run([sys.executable, os.path.abspath(__file__), "--selftest"],
+                                capture_output=True, timeout=120, env=st4_env)
+            out = pr.stdout.decode("utf-8", "replace") + pr.stderr.decode("utf-8", "replace")
+            st4_ok = (pr.returncode == 2 and "已执行 ST2/ST3" in out
+                      and "未执行 ST1" in out and "FIST_ACCEPT_JS" in out)
+            record("ST4_前置缺失点名(BUG-529)", "PASS" if st4_ok else "FAIL",
+                   "缺前置走 rc=2 时必须点名「ST2/ST3 已执行 / ST1 未执行」——"
+                   "「没跑」不许长得像「跑过了」",
+                   ["rc=%d 点名ST2/ST3已执行=%s 点名ST1未执行=%s FATAL指名FIST_ACCEPT_JS=%s"
+                    % (pr.returncode, "已执行 ST2/ST3" in out, "未执行 ST1" in out,
+                       "FIST_ACCEPT_JS" in out)])
+        except Exception as ex:
+            st4_ok = False
+            record("ST4_前置缺失点名(BUG-529)", "FAIL", "反证子进程起不来：%s" % ex, [])
+        if not st4_ok:
+            print("[FATAL] ST4：rc=2 退出路径没有逐格点名自检面 ⇒ 「没跑」与「跑过了」不可分")
+            for k, v in CELLS.items():
+                print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+            sys.exit(3)
+
+# 存在性判据从模块顶部挪到这里（BUG-529）：无前置自检格先跑完，再判产物面。
+if JS_PIN and not os.path.isfile(JS_PIN):
+    # 显式指名却不落空到默认候选：那等于「旗标被承认但不生效」（R207 同族）。
+    print("[FATAL] FIST_ACCEPT_JS 指向的文件不存在：%s（已按调用方 cwd 归一，不回落默认候选，rc=2）" % JS_PIN)
+    st_face_note()
+    sys.exit(2)
+
+# ═══════════════════════════════════════════════════════════════════ 起跑
+JS = find_js()
+if not JS:
+    print("[FATAL] 找不到 server 产物。先跑 `moon build --target js --release` "
+          "+ `python scripts/patch_esm_main.py`，或用 FIST_ACCEPT_JS 指名。")
+    st_face_note()
+    sys.exit(2)
+
+MAIN_DB = os.path.join(SANDBOX, "main.db")
+NS_ROOT = os.path.join(SANDBOX, ".fist-mbt", "data")
+srv = Server(JS, SANDBOX, MAIN_DB)
+try:
+    n_tools = srv.tools_count()
+except Exception as e:
+    print("[FATAL] server 起不来：%s" % e)
+    st_face_note()
+    sys.exit(2)
+if n_tools < 100:
+    # 反幻影：工具面没起来 ⇒ 后面每一格的「没报错」都没有意义
+    print("[FATAL] tools/list 只回 %d 个工具（<100）⇒ 产物不可用，六格拒绝出数" % n_tools)
+    st_face_note()
+    sys.exit(2)
+print("server = %s (sha8=%s) tools=%d sandbox=%s"
+      % (os.path.relpath(JS, ROOT).replace("\\", "/"), sha8(JS), n_tools,
+         os.path.relpath(SANDBOX, ROOT).replace("\\", "/")))
+
+NS = "alpha"
+NS_DB = os.path.join(NS_ROOT, NS + ".db")
+srv.call("store_open", {"namespace": NS})
+for a in ("human_steward", "exec-1"):
+    srv.call("agent_acl_grant", {"agent_id": a, "namespace": NS, "can_write": True})
+
+
+def main_rows(tag):
+    return sql1(MAIN_DB, "select count(*) from tasks where ns=?", (tag,)) or 0
+
+
+def ns_rows():
+    return sql1(NS_DB, "select count(*) from tasks") or 0
+
+
+# ────────────────────────────── ST1 尺子自检（需要 MAIN_DB · server 建库才有表）──
+# BUG-523：自检格原来排在真检查**之后**——自检若崩，真检查已经跑过、结论面已污染。
+# 修法：fail-fast。尺子先自证健康，再做被测对象的检查（A1–A6）。
+# BUG-529（分层前置）：ST2/ST3/ST4 不依赖 server，已前移到「起跑」之前；ST1 依赖
+# MAIN_DB 只能留在原处。退出码契约不变：自检失败仍 rc=3（尺子坏了），
+# 前置缺失走 rc=2 时由 st_face_note() 点名「ST1 未执行」。
+if "--selftest" in sys.argv[1:]:
+    # 把探针的判据挪到一个「必然违例」的样本上：手工往主库塞一行 ns=<合成标签>，
+    # 让 A1 那套读数逻辑再跑一遍 ⇒ 必须报出漏点。抓不到 = 尺子坏了，六格的绿不可信。
+    synth = "synthetic-leak-" + RUN_ID[-6:]
+    c = sqlite3.connect(MAIN_DB)
+    try:
+        c.execute("insert into tasks (id,parent_id,project_dir,ns,priority,importance,depth,"
+                  "split_n,level,status,assignee,description,deliverable,created_at,updated_at,"
+                  "completed_by,cleanup_mode,depends_on,omega_required,created_by) "
+                  "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  ("ZZ-synth", "", ".", synth, "中", "中", 3, 3, 6, "待领取", "",
+                   "合成违例", "", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
+                   "", "deferred", "[]", 0, "acceptance-selftest"))
+        c.commit()
+    finally:
+        c.close()
+    caught = (sql1(MAIN_DB, "select count(*) from tasks where ns=?", (synth,)) or 0) > 0
+    record("ST1_合成违例(尺子自检)", "PASS" if caught else "FAIL",
+           "往主库注入 ns=%s 的行后，读数逻辑必须看得见（看不见=恒绿探针）" % synth,
+           ["main_db(synthetic ns)=%s" % sql1(MAIN_DB,
+                                              "select count(*) from tasks where ns=?", (synth,))])
+    if not caught:
+        print("[FATAL] 合成违例没被抓到 ⇒ 探针恒绿")
+        for k, v in CELLS.items():
+            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+        sys.exit(3)
+    # 自检样本不留给后面的真检查：A1 的隔离读数用的是增量（before/after），本就不受这行影响，
+    # 但尺子验完就该把自己的脚印擦掉——沙箱里不该有第二个「人为违例」的来源。
+    c = sqlite3.connect(MAIN_DB)
+    try:
+        c.execute("delete from tasks where id='ZZ-synth'")
+        c.commit()
+    finally:
+        c.close()
 
 A1_PATHS = [
     ("publish", lambda: srv.call("publish", {
@@ -701,7 +774,8 @@ record("A4_native serve/demo", verdict,
        "; ".join(a4_skip),
        a4_detail)
 
-# （ST1/ST2/ST3 尺子自检格已前移到一切真检查之前 —— BUG-523 fail-fast，见 A1 前那一段。）
+# （尺子自检格分层：ST2/ST3/ST4 已前移到「起跑」之前——BUG-529，无前置先自证；
+#   ST1 需要 MAIN_DB，留在 server 起来之后。rc=2 退出路径由 st_face_note() 点名执行面。）
 srv.close()
 
 # ═══════════════════════════════════════════════════════════════════ 结论
