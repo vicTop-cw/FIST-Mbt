@@ -14762,7 +14762,7 @@ Build native 的 runner 日志原文（两件根因，都不在 MoonBit 侧）�
 跑了 moon 无安装步也红），selftest 清单反解 `R15×5`（3 变异 + 2 反向）、正常模式 PASS，
 电池已登记，commit `4f1f5db7` 推双远端。判例-36 口径：遗留①（安装半）有锁。
 
-## BUG-532 [2026-11-01T06:12:00Z] [high] OPEN
+## BUG-532 [2026-11-01T06:12:00Z] [high] FIXED
 - summary: **Linux-only 测试回归挡住权威轨**：js ubuntu 臂 2 红 + native 臂 7 红（同源）——
   `model_router_ops_wbtest` mo_2/mo_8 的 `persisted` 断言 false、`ops_commissar_wbtest`
   dl_c1/c2/c4/c5/c6/c9/c10 的 rhop 文件池计数为 0；**Windows 本机同版本全绿**（js 2002/2002）
@@ -14865,3 +14865,23 @@ URL 标定：`https://www.sqlite.org/2026/sqlite-amalgamation-3510200.zip`（202
 native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核一致。
 遗留：dispatch `version` 入参仍不校验格式（`0.3.11-x` 会透传，修前同状，非本缺陷回归面）；
 `release` 作业只能真实 tag push 触达，dispatch 验不到发布面。
+### FIXED(2026-11-01 / BUG-532)
+
+- 修法（commit `3acdcca7f`，两半，均非平台差异）：
+  1. **mo_2/mo_8（跨平台 js）**：3699f012a（BUG-530）把播种语义改成「save_res=Ok 即 persisted=true」
+     （播种也是真写盘），两条测试的 `assert_false(persisted)` 没同批翻面——修正断言一直躺在
+     本机工作树 WIP 未提交，本机「2002/2002 全绿」读数是被 WIP 污染的。修法=断言翻面并
+     **升格为回归锁**（`assert_true(persisted)` + `@fs.path_exists(state_path)`），锁「播种=真写盘」。
+  2. **dl_c1~c10（native 独有）**：commissar_send 委托 @rhop.rhop_send，该入口在 RX-MBT 是
+     目标分片——native 版只 println「native 目标暂不可用」后返回，不落盘也不报错 ⇒ 政委信号
+     被静默丢弃（写侧不报错、读侧拿 0；dl_c6 的 3!=4 即铁证）。修法：信封/加密仍走 rhop 公开
+     接口，仅最后一跳写盘改 @fs 直写（js/native 同一份代码），写失败 eprintln 点名路径。
+- **验证**：CI run `41282057782`（HEAD a218c9917，干净 checkout + moon update + BUG-133 reapply）
+  **三测试臂全绿**：Test (js, windows) success / Test (native, ubuntu) success（dl_c* 全过，
+  Total 2004 全绿）/ Test (js) success（mo_2/mo_8 全过）。该 run 唯一红是 R126 锚点守卫
+  （文档锚点漂移，独立收口：docs/2026-10-20-slave-tasks.md 五处回锚 756/805/963/139/250，尺实算失配 0）。
+- **BUG-133 ②格复读**：CI native 全量测试臂（干净树）在该 run 绿了——「git archive HEAD 干净树
+  全量通过」的等价面（Actions checkout 即干净树）已达；抽检格（--runs 12 连发 0 崩溃）此前
+  已由 BUG-523 追记记录在案。②格条件满足，BUG-133 保持 FIXED 不动，读数在此存档。
+- 遗留债（不在本单关）：RX-MBT 侧 rhop_send 的 native 实现与原子写仍缺（现修法是本仓调用面
+  绕行），建议在 RX-MBT 仓补 native FFI 后回归本调用面。
