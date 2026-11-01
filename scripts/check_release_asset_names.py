@@ -69,6 +69,16 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
       一失败就换源会把"抖一下就好"放大成"装不上"）。但 404/403/"给的不是 zip" 是确定性结论，
       重试只会让用户多等 N 倍。两条子判据：必须保留"拿到 HTTP 响应就 break"的闸 + 重试必须带退避间隔。
 
+  R15 windows 臂安装形状（BUG-513 回归锁，判例-33 同族「服务本体 ≠ 服务接入」）：
+      release.yml 的 build-native-windows 原来用
+      `curl.exe -fsSL …/install/windows -o moonbit.zip`（实测 HTTP 403）且从不把 moon 写进
+      GITHUB_PATH ⇒ runner 上工具链根本没装好，红不红全凭运气。判据：每个 windows-latest
+      作业段（剔掉 `#` 注释行之后的代码面，R9 前科：注释里的针会喂绿自己——本文件 ：248 的
+      注释就原样写着 irm powershell.ps1 字样）必须同时含
+      `irm …/install/powershell.ps1 | iex` 与至少一行 `Out-File -Append $env:GITHUB_PATH`
+      （与 ci.yml:510-519 已跑通的形状同源）；作业段跑了 moon 却没有安装步也红（安装步被整个摘掉）。
+      不碰 moon 的 windows 臂不判（R9 的「不跑 moon 的 workflow 不判」同口径）。
+
 自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
 无扩展名 shim 被摘掉必红 / 不做 HTML 与魔数检查必红 / 文档首选线漂到 main 必红 /
 自检退化成空 catch 或无条件 ✅ 或去掉 stderr 隔离必红 /
@@ -280,6 +290,22 @@ def judge(texts):
         problems.append("R9 FATAL 一个 workflow 都没读到（扫描面空转 ≠ 没有问题，判据拒绝出数）")
     for wf_name, wf in sorted(wf_face.items()):
         wf_code = code_face_text(wf)
+        # R15 windows 臂安装形状（BUG-513 回归锁）：windows-latest 作业段必须照抄
+        # ci.yml:510-519 已跑通的 pwsh 形状——`irm …/install/powershell.ps1 | iex` +
+        # 至少一行 `Out-File -Append $env:GITHUB_PATH`。原 `curl …/install/windows` 实测 403
+        # 且不写 PATH。只看剔掉注释行之后的代码面（R9 前科：注释里的针会喂绿自己）。
+        for wm in re.finditer(r'runs-on:\s*windows-latest\b', wf_code):
+            nxt = re.search(r'\n\s*runs-on:', wf_code[wm.end():])
+            arm = wf_code[wm.end():] if not nxt else wf_code[wm.end():wm.end() + nxt.start()]
+            if "cli.moonbitlang.com/install/" in arm:
+                if "install/powershell.ps1" not in arm or "irm" not in arm:
+                    problems.append("R15 %s 的 windows 臂没走 `irm …/install/powershell.ps1 | iex` 安装步"
+                                    "（BUG-513：`curl …/install/windows` 实测 403 ⇒ 工具链装不上）" % wf_name)
+                if "Out-File -Append $env:GITHUB_PATH" not in arm:
+                    problems.append("R15 %s 的 windows 臂没把 moon 写进 GITHUB_PATH（Out-File -Append）"
+                                    "（runner 每步起新 shell ⇒ 装完 moon 不在 PATH，后续步骤必红）" % wf_name)
+            elif MOON_CALL.search(arm) and "install/powershell.ps1" not in arm:
+                problems.append("R15 %s 的 windows 臂跑了 moon 却看不到工具链安装步（安装步被整个摘掉？）" % wf_name)
         if not MOON_CALL.search(wf_code):
             continue
         if "GITHUB_PATH" not in wf_code:
@@ -449,6 +475,15 @@ def selftest():
         ("ps1", "$tmpOk = Get-UrlTo $u", "$tmpOk = $false", "R14"),
         ("ps1", "-not $_.Exception.Response", "-not $true", "R14"),
         ("ps1", "-fsSL --retry 3", "-fsSL", "R14"),
+        # R15 三支（BUG-513 回归锁的三种退化）：irm 行退回 BUG-513 的 curl install/windows 形状 /
+        # 两行 Out-File GITHUB_PATH 被摘掉 / 安装步整个消失（只剩跑 moon 的步骤）。
+        # 注意变异打在 `wf:release.yml`（R15 读的是目录派生面，不是 R8 那个 release_yml 键——
+        # R9 的前科：打错键那格变异永远不红，自述还照写）。
+        ("wf:release.yml", "irm https://cli.moonbitlang.com/install/powershell.ps1 | iex",
+         "curl.exe -fsSL https://cli.moonbitlang.com/install/windows -o moonbit.zip", "R15"),
+        ("wf:release.yml", ' | Out-File -Append $env:GITHUB_PATH', ' | Out-Null', "R15"),
+        ("wf:release.yml", "irm https://cli.moonbitlang.com/install/powershell.ps1 | iex",
+         "Write-Host (Get-Date)", "R15"),
     ]
     executed = []
     for key, old, new, want in checks:
@@ -548,6 +583,21 @@ def selftest():
     if not any(p.startswith("R9") and "win-only.yml" in p for p in probs):
         fails.append("R9 pwsh 写入变异未红（合成 win-only 夹具摘掉 Out-File GITHUB_PATH）：%s" % probs[:1])
     executed.append("R9")
+    # R15 反向两支：正确形状不许误红（win-only 夹具就是 ci.yml:510-519 同款形状）；
+    # 不碰 moon 的 windows 臂也不许误红（R9「不跑 moon 不判」同口径）。
+    d3 = dict(base); d3["wf:win15-ok.yml"] = win_only
+    probs = judge(d3)
+    if any(p.startswith("R15") for p in probs):
+        fails.append("R15 对正确形状的 windows 臂误红（照抄 ci.yml:510-519 的形状必须是绿的）：%s" % probs[:1])
+    executed.append("R15")
+    d3 = dict(base); d3["wf:win15-noop.yml"] = chr(10).join([
+        "name: wn", "on: push", "jobs:", "  a:", "    runs-on: windows-latest", "    steps:",
+        "      - run: python scripts/noop.py",
+    ])
+    probs = judge(d3)
+    if any(p.startswith("R15") for p in probs):
+        fails.append("R15 对不碰 moon 的 windows 臂误红：%s" % probs[:1])
+    executed.append("R15")
 
     from collections import Counter
     cnt = Counter(executed)
@@ -577,7 +627,8 @@ def main():
         return 1
     print("PASS 分发面同源（判据范围从正文反解：%s）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
           "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿 + 发布作业不顶掉分发 + "
-          "工具链 bootstrap 与 CI 同源 + 文档线 BOM 安全 + 源码版本常量与 moon.mod 同源" % rule_inventory())
+          "工具链 bootstrap 与 CI 同源 + 文档线 BOM 安全 + 源码版本常量与 moon.mod 同源 + "
+          "windows 臂安装形状与 ci.yml 同源" % rule_inventory())
     return 0
 
 
