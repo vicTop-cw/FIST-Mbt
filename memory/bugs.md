@@ -14719,7 +14719,7 @@ FIST_ACCEPT_JS=temp/definitely-missing.js python scripts/blackbox/e2e_acceptance
 
 回归锁：`src/router/router_state_wbtest.mbt` b530_1 + b530_2；`src/server/model_router_ops_wbtest.mbt` mo_2/mo_3/mo_8；全量 JS 2004/2004。
 提交：`3699f012a`（scoped 六道校验）。
-## BUG-531 [2026-11-01T01:10:56Z] [high] OPEN
+## BUG-531 [2026-11-01T01:10:56Z] [high] FIXED
 - summary: [crash] probe() 并发线程池打 importlib.metadata + GC 触发 CPython 3.13 Windows 0x80000003 进程崩溃
 - detail: 复现：全量套件 chunk2（88+ files）中 test_probe.py 的 module 级 _shared_probe_report 真跑 probe()（66 包 × 8 线程 ThreadPoolExecutor）与 test_probe_parallel.py 的 test_report_contains_all_pre_parallel_sections 真跑 probe()（1 包）在邻近位置执行时，CPython 3.13.14 Windows x64 触发 fatal 0x80000003（断点异常）进程级崩溃，EXIT=-2147483645。崩溃栈：多个线程同时位于 importlib.metadata.version → metadata → read_text（email 解析）/ pathlib.open，主线程同时处于 GC（"Garbage-collecting" 帧内 email.feedparser）。probe() 的 executor.shutdown(wait=False, cancel_futures=True) 会把正在跑的探测线程留在后台（vools/actus/probe/python_pkgs.py:487），跨测试继续并发访问 importlib.metadata。测试侧已桩掉 _shared_probe_report 的 python_pkgs 维度规避（test_probe.py 手动 setattr/还原）；产品侧待裁决方案：A) _get_pkg_version_detail 内对 importlib.metadata 加模块级锁串行化；B) probe() 收尾改为等待线程池排空（牺牲预算语义）；C) CPython 层面 importlib.metadata 线程安全修复（上游）。
 - reported_by: lead
@@ -14773,6 +14773,19 @@ Build native 的 runner 日志原文（两件根因，都不在 MoonBit 侧）�
 跑了 moon 无安装步也红），selftest 清单反解 `R15×5`（3 变异 + 2 反向）、正常模式 PASS，
 电池已登记，commit `4f1f5db7` 推双远端。判例-36 口径：遗留①（安装半）有锁。
 
+### FIXED(2026-11-01 / BUG-531)
+
+- 方案 A 落地（正身在兄弟仓 **vools**，commit `c6bf905`）：`actus/probe/python_pkgs.py` 加
+  `_METADATA_READ_LOCK` 模块级锁，串行化全部 importlib.metadata 读取点（`_build_metadata_index` /
+  `_indexed_version` / 逐名回退链三处持锁），并发同池的 `actions.py has_python` 的 `_metadata.version`
+  共用同锁；锁粒度=单次读取（索引构建 ~16ms），不损 probe 预算语义。
+- **回归锁 = 桩撤回后的真跑**：test_probe.py 的 PythonPackagesProber setattr 桩已删、python_pkgs
+  维度恢复真跑——`pytest test_probe.py test_probe_parallel.py` 连跑 3 发 EXIT=0/0/0（各 32 passed），
+  无 0x80000003；probe 读数修前=修后（66 items / 42 installed + `_summary`，包名清单逐字一致）。
+- 残余（不在本单关）：① 其余四维度桩（system_tools/runtimes/compilers/platform_tools）保留，
+  其线程池/子进程面不在方案 A 内，若也要钉需另裁决；② 崩溃是概率性，3 连跑绿是强信号非数学证明；
+  ③ vools 仓提交未 push（push 权在 owner）。
+- reported_by: lead → FIXED by lead（车道回执终审 PASS：vools 仓 c6bf905 diff 核验、锁覆盖面 grep 全包无遗漏调用点）
 ## BUG-532 [2026-11-01T06:12:00Z] [high] FIXED
 - summary: **Linux-only 测试回归挡住权威轨**：js ubuntu 臂 2 红 + native 臂 7 红（同源）——
   `model_router_ops_wbtest` mo_2/mo_8 的 `persisted` 断言 false、`ops_commissar_wbtest`
