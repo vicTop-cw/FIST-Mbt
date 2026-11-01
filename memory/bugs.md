@@ -14492,6 +14492,13 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
 ⇒ 本单保持 OPEN，别把它读成「native 全项目构建已可用」。
 
 
+### 追记（2026-11-01，治本文件面 14/14 落地，native 复验待 CI）
+- **出路①执行完毕**：全部库包摘除 `cc-link-flags`——src/** 10 份 + 根级 4 份（`moon.pkg`/`atgc`/`atgc-old`/`omega`）；保留面=可执行包 `cmd/cli`/`cmd/main` + native 测试消费方 `tests/smoke`/`tests/external_executor`（后者无 main 但为 native 测试链接消费方，按本条出路①「真正需要它的消费方」口径保留）。
+- 终审：`moon build --target js` rc=0（2 warning 0 error）；全仓跟踪面 `cc-link-flags` 残留仅剩上述允许面（vendor/temp/_build 均未跟踪不计）。
+- AGENTS.md L503「全部项目 moon.pkg 已内置」过期自述已同批改写（自述滞后族预防）。
+- **关闭条件**：CI 两条 native 臂转绿（本机无 MSVC sqlite 环境，native build/test 由 CI 复验）；在此之前本单保持 OPEN。
+- 执行面：explore-r3 T0.1.1（fix-527 + fix-527-root 两成员，统帅终审）。
+
 ## BUG-528 [2026-10-31T10:42:00Z] [medium] FIXED
 - summary: `release.yml` 的 `meta` 作业**没有 `actions/checkout`** ⇒ `workflow_dispatch` 那条
   「ref 剥不出版本就退回真源 moon.mod」的出路**从来没跑通过**：实测第一步就
@@ -14584,10 +14591,23 @@ FIST_ACCEPT_JS=temp/definitely-missing.js python scripts/blackbox/e2e_acceptance
 没改这段顺序——改它要动 ST1 的依赖面，而今天已经对这支被评审使用的探针做过两处改动，
 不宜在同一批里叠第三处未验证的重排。
 
-## BUG-530 [2026-10-31T14:20:00Z] [medium] OPEN
+## BUG-530 [2026-10-31T14:20:00Z] [medium] FIXED
 - summary: `model_route(config_json=…)` 声称「已按 config_json 播种池定义」但 `persisted=false`，且 `model_router_status` 读回 `free_pool: []` —— 池定义**没有落进状态盘**，`executor_run(executor=ofm, model 空)` 因此永远只能拿默认池
 - 实测（2026-10-31，ns=ofm-route-r1，直连 JSON-RPC）：①播种调用回执 `mode=query-only（…已按 config_json 播种池定义…）`、`persisted=false`；②紧接 `model_router_status` 同 ns 读回 `free_pool: []`；③`executor_run(executor=ofm, model 空)` 的路由回执 `warnings=["无有效状态，按配置新建路由器"]`、选中默认池 `ling-3.1-flash-free`（缺 `provider/` 前缀，被 relay 拒 400 `model must use provider/model format` ⇒ `failure_kind=BAD_REQUEST`）
 - 与工具文档承诺直接矛盾：`model_route` 描述写明「显式给了 config_json 的池定义时，在决策之前把池形状写进状态文件（否则 executor_run 自动记账那一笔不带 config，只能拿默认池，配额形同虚设）」——承诺的「播种→executor_run 可用」链路实际断裂
 - 影响：OFM 免费路由在「路由决策」与「执行器记账」两处读到的池**不一致**；默认池命名与 OpenAI 兼容 relay 的 `provider/model` 要求不兼容时，空 model 真跑必 400——历史「能启动、一用就死」的根因之一
 - 修复动线（待 src/router 并发 WIP 收口）：`src/router/router_state.mbt` / `model_router.mbt` 的播种写盘路径 + `executor_run` 路由调用是否带 config 透传；锁 = 播种后 `model_router_status` 必须读回同池 + `executor_run(空 model)` 选中播种池内 `provider/model` 形状模型
 - evidence: `reports/2026-10-31-ofm-relay-fullchain-report.md`（全链路实测三发现之①③）
+
+### FIXED(2026-11-01 / BUG-530)
+三处修复 + 全量回归（2004/2004）：
+1. **seeds_pools 分离配置校验警告 vs 状态信息警告**（src/server/model_router_ops.mbt）：`seeds_pools` 只看 `RouterConfig::from_json` 字段级回落，不再混入 `router_restore` 运行时状态级信息（"无有效状态，按配置新建路由器"——首次调用恒产）。
+2. **router_restore 区分「缺字段/非数组」vs「显式数组（含空数组）」**（src/router/router_state.mbt）：`to_state` 序列化的 `paid_pool: []` 读回后保留空池，不加 `Json::Array(_)` 守卫后 rs_3 + b530_1 双绿。
+3. **custom executor argv 适配 codearts `run [message..]` 接口**（src/server/model_router_ops.mbt）：`(executor, [prompt])` → `(executor, ["run", prompt])`。
+
+回归锁：`src/router/router_state_wbtest.mbt` b530_1 + b530_2；`src/server/model_router_ops_wbtest.mbt` mo_2/mo_3/mo_8；全量 JS 2004/2004。
+提交：`3699f012a`（scoped 六道校验）。
+## BUG-531 [2026-11-01T01:10:56Z] [high] OPEN
+- summary: [crash] probe() 并发线程池打 importlib.metadata + GC 触发 CPython 3.13 Windows 0x80000003 进程崩溃
+- detail: 复现：全量套件 chunk2（88+ files）中 test_probe.py 的 module 级 _shared_probe_report 真跑 probe()（66 包 × 8 线程 ThreadPoolExecutor）与 test_probe_parallel.py 的 test_report_contains_all_pre_parallel_sections 真跑 probe()（1 包）在邻近位置执行时，CPython 3.13.14 Windows x64 触发 fatal 0x80000003（断点异常）进程级崩溃，EXIT=-2147483645。崩溃栈：多个线程同时位于 importlib.metadata.version → metadata → read_text（email 解析）/ pathlib.open，主线程同时处于 GC（"Garbage-collecting" 帧内 email.feedparser）。probe() 的 executor.shutdown(wait=False, cancel_futures=True) 会把正在跑的探测线程留在后台（vools/actus/probe/python_pkgs.py:487），跨测试继续并发访问 importlib.metadata。测试侧已桩掉 _shared_probe_report 的 python_pkgs 维度规避（test_probe.py 手动 setattr/还原）；产品侧待裁决方案：A) _get_pkg_version_detail 内对 importlib.metadata 加模块级锁串行化；B) probe() 收尾改为等待线程池排空（牺牲预算语义）；C) CPython 层面 importlib.metadata 线程安全修复（上游）。
+- reported_by: lead
