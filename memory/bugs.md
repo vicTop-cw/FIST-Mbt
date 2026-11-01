@@ -14753,3 +14753,46 @@ native:  Total tests: 2004, passed: 1995, failed: 9   （上 2 格 + dl_c1:74 / 
 BUG-523 追记（②格只差这一发）/ BUG-133（关闭条件两格）/ BUG-530（播种读回锁就是
 mo_2/mo_8 两格的来历）/ BUG-527（无因果，但 WIP 里 `src/ops/ops_commissar.mbt`
 与 `model_router_ops_wbtest.mbt` 也有未提交改动，收口时别混）。
+
+## BUG-532 追记（2026-11-01T06:30Z · 定位修正：不是 Linux-only）
+
+**修正依据**（本机实测，`git archive HEAD` 干净树＝temp/headtree，moon update 后
+`moon test --target js -p src/server`，Windows 本机）：
+
+```
+Total tests: 563, passed: 561, failed: 2
+  mo_2@model_router_ops_wbtest.mbt:131 FAILED（persisted）
+  mo_8@model_router_ops_wbtest.mbt:281 FAILED（persisted）
+```
+
+⇒ **mo_2/mo_8 在 Windows 也红**：原 detail 里「Windows 本机同版本全绿（js 2002/2002）」
+的前提**作废**——那次读数是 2026-10-31，早于 `3699f012a`（mo_2/mo_8 随 BUG-530 播种读回锁
+进仓，2026-11-01T10:55+0800）。同时 CI run `41279943784` 的 **js windows 臂** Test (js) 也红。
+
+**修正后的故障分型**（两条线索，别混）：
+- mo_2/mo_8：**跨平台**（Windows js 本机 + CI windows/js ubuntu 全红）⇒
+  BUG-530 播种读回锁自身回归或暴露的真缺陷，与本机可复现 ⇒ 最快调试路径在本机，不走 WSL。
+- dl_c1~c10 七格：**只在 native 目标红**（js ubuntu 臂 2004 总只红 mo_2/mo_8 两格，dl_c* 全绿）
+  ⇒ rhop 文件池在 native 后端的问题（rx-mbt 0.4.0 native 面或其调用面）。
+
+## BUG-533 [2026-11-01T06:30:00Z] [medium] FIXED
+- summary: **MSVC link.exe 静默忽略 moonc 透传的 `-lsqlite3`** ⇒ windows native 构建三层根因的
+  第三层：env 不跨步（第一层，`$env:` 写法）→ PATH 不跨步（第二层，cl/link 目录）→
+  cc-link-flags 语义错配（第三层，`cmd/cli/moon.pkg` 的 `-lsqlite3` 是 GCC/ld 形状，
+  MSVC 要 `sqlite3.lib`；LNK4044「无法识别的选项」警告 + LNK2019 ×44 全部 `sqlite3_*`，
+  且真错误被 moon 吞成 `failed when building project`）
+- detail: 实测链（Agent 车道 C，dispatch 41278899034 / 41279525445 + 本机 Git Bash 全复现）：
+  本机 `-v` 展开链接行原文 `link.exe ... /link ... -lsqlite3` ⇒ LNK4044 + LNK2019×44；
+  改写 `cmd/cli/moon.pkg:16` 的 cc-link-flags 为 `"sqlite3.lib"` + `moon clean` 后
+  `moon build --target native cmd/cli` rc=0，cli.exe 6451200 字节，`version` 回执
+  `FIST-Mbt v0.3.11` rc=0；改回即复现 44 个 LNK2019（变异对照双向）。
+  CI 侧落法：release.yml windows 臂新增「Patch cc-link-flags for MSVC」步（只改 runner
+  工作副本，幂等，形状漂移即红），提交 `335e8a211` / `1965ed6f8` / `de9d75da1`。
+### FIXED(2026-11-01 / BUG-533)
+
+治本位在 `cmd/cli/moon.pkg`（tracked，正被 BUG-527 WIP 占用，本轮用 runner 工作副本补丁过闸）；
+WIP 收口时应把该文件的 cc-link-flags 改成 `"sqlite3.lib"`（或 moonc 支持分平台 cc-link-flags
+后收敛），并删 release.yml 的补丁步。回归锁：release.yml dispatch 端到端（run 41280902551，
+Package native artifact 步 + windows 资产产出）；`check_release_asset_names`（含 R15）全绿。
+URL 标定：`https://www.sqlite.org/2026/sqlite-amalgamation-3510200.zip`（2026-11-01 实测
+200 + application/zip + PK 魔数）。
