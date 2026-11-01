@@ -354,7 +354,15 @@ jobs:
               exit 1
             }
           } finally { Pop-Location }
-          # ---- 5) INCLUDE/LIB 全量写 GITHUB_ENV（跨步骤传递；含换行才用 heredoc 形状） ----
+          # ---- 5) PATH 也要导：cl/link 的目录写 GITHUB_PATH（run 41278899034 实测：
+          #      INCLUDE/LIB 落了 GITHUB_ENV，但 cl.exe 不在后续 bash 步的 PATH 上，
+          #      moon 原生后端在 moonc 阶段之后立刻红且真错误被吞 ⇒ PATH 与 $env: 一样不跨步骤） ----
+          $clDir = Split-Path (Get-Command cl.exe).Source -Parent
+          $linkDir = Split-Path (Get-Command link.exe).Source -Parent
+          foreach ($d in @($clDir, $linkDir)) {
+            if ($d) { Add-Content $env:GITHUB_PATH $d }
+          }
+          # ---- 6) INCLUDE/LIB 全量写 GITHUB_ENV（跨步骤传递；含换行才用 heredoc 形状） ----
           if ([string]::IsNullOrEmpty($env:INCLUDE) -or [string]::IsNullOrEmpty($env:LIB)) {
             Write-Host "::error::[环境导出失败] INCLUDE 或 LIB 为空，无东西可导出"
             exit 1
@@ -368,7 +376,7 @@ jobs:
               [IO.File]::AppendAllText($env:GITHUB_ENV, "$name=$value`n")
             }
           }
-          # ---- 6) 自检（lib >0 字节 + sqlite3.h 在 INCLUDE 上可解析 + GITHUB_ENV 真写进去了） ----
+          # ---- 7) 自检（lib >0 字节 + sqlite3.h 在 INCLUDE 上可解析 + GITHUB_ENV 真写进去了） ----
           $libFile = Join-Path $root "lib\sqlite3.lib"
           if (-not (Test-Path $libFile) -or (Get-Item $libFile).Length -le 0) {
             Write-Host "::error::[编译失败] lib\sqlite3.lib 不存在或为 0 字节"
@@ -387,7 +395,12 @@ jobs:
             Write-Host "::error::[环境导出失败] GITHUB_ENV 里没看到 INCLUDE= / LIB= 行"
             exit 1
           }
-          Write-Host "[win-native] 自检通过：lib\sqlite3.lib=$((Get-Item $libFile).Length) 字节；sqlite3.h 在 INCLUDE 上；INCLUDE/LIB 已落 GITHUB_ENV"
+          $pathFace = [IO.File]::ReadAllText($env:GITHUB_PATH)
+          if (-not $pathFace.Contains($clDir) -or -not $pathFace.Contains($linkDir)) {
+            Write-Host "::error::[环境导出失败] GITHUB_PATH 里没看到 cl/link 的目录"
+            exit 1
+          }
+          Write-Host "[win-native] 自检通过：lib\sqlite3.lib=$((Get-Item $libFile).Length) 字节；sqlite3.h 在 INCLUDE 上；INCLUDE/LIB 已落 GITHUB_ENV；cl/link 目录已落 GITHUB_PATH"
 
       # 与 build-native-linux 同源（run 41278010595 实测缺这步红在 Migrate）：
       # runner 上注册表索引为空，`moon check` 只会回 "module was not found in the
