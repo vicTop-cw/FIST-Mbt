@@ -142,7 +142,8 @@ def rpc(method, **payload):
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
 → 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-10-31 本机实测：**182 个工具**；
-   这个数**不写死在文档里当契约** —— 唯一真源是 server 注册表，`scripts/mcp_smoke.py` 逐次与之对表）
+   这个数**不写死在文档里当契约** —— 唯一真源是 server 注册表，`scripts/mcp_smoke.py` 逐次与之对表，
+   本手册内一切计数自述由 `scripts/check_usage_tool_count.py` 同步对表（BUG-525 守卫面））
 
 **Step 2 · 发布一个根任务**
 ```json
@@ -529,7 +530,9 @@ Invoke-RestMethod -Uri "http://127.0.0.1:18899/v1/models" -Headers @{ Authorizat
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 返回 87 个工具（**那一次实跑的截面记录，不改数**；当前总数见 §6 标题）；`resources/read(fist://principles)` 返回七条金条 JSON；
+> 补充实测：`tools/list` 当时返回的工具数是**那次实跑的截面**，本手册不抄数（抄了就是第二份实现，BUG-525 两次复发）；
+> 当前总数以 server 注册表为唯一真源，对表守卫 `scripts/check_usage_tool_count.py` 每次跑都核；
+> `resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 
 ---
@@ -638,7 +641,8 @@ moon publish
 
 ## 12. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **140+ 个 MCP 工具**）。
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **182 个 MCP 工具**；
+此数由 `scripts/check_usage_tool_count.py` 与 server 注册真源逐次对表，漂移即红）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
 
