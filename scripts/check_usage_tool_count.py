@@ -23,6 +23,11 @@ import re
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 USAGE_PATH = SCRIPT_DIR.parent / "USAGE.md"
 REGISTRY_PATH = SCRIPT_DIR / "_tool_registry.py"
