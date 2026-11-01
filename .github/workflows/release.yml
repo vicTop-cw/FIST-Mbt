@@ -261,13 +261,133 @@ jobs:
           "$HOME\.moon\bin" | Out-File -Append $env:GITHUB_PATH
           "$env:USERPROFILE\.moon\bin" | Out-File -Append $env:GITHUB_PATH
 
-      - name: Load VS DevShell + sqlite
+      # run 41278260017 / job 124764780649 实测根因：原「Load VS DevShell + sqlite」步在
+      # pwsh 步**进程内** dot-source native-env.ps1 —— $env:INCLUDE/LIB 的修改不跨步骤
+      # （Actions 每步起新 shell），后续 bash 步「Build native」既没有 cl.exe 也没有
+      # INCLUDE/LIB ⇒ moonc 阶段 41 warnings 0 errors、14 秒后链接段红且真错误没进日志。
+      # ⇒ 本步重写：① 实测 URL 下载 SQLite amalgamation（形状检查：PK 魔数 + 解压含
+      #    sqlite3.h/sqlite3.c，HTTP 200 != 拿到文件，BUG-107 前科）；
+      # ② **同一进程**装载 VS（native-env.ps1，失败走 vswhere+DevShell 兜底，不静默）；
+      # ③ cl 编 sqlite3.c + lib 归档成 lib\sqlite3.lib（落在 checkout 目录）；
+      # ④ INCLUDE/LIB **全量**写 $env:GITHUB_ENV —— 这是跨步骤传递的正解，
+      #    Build native 的 bash 会作为子进程继承。
+      # 三个候选 URL 均于 2026-11-01 实测（curl -sIL）：200 + application/zip，
+      # 按新旧排序逐个试，前一个失效自动落到下一个（只对「拿不到 zip」换源，非传输抖动重试）。
+      - name: Install SQLite dev + export build env
+        shell: pwsh
         run: |
-          # Windows runner 自带 VS Build Tools；SQLite 需单独装
-          # 若 sqlite3.lib 未就绪，本 job 会因 continue-on-error 被跳过
-          if (Test-Path scripts/native-env.ps1) {
-            . scripts/native-env.ps1
+          $ErrorActionPreference = "Stop"
+          $candidates = @(
+            "https://www.sqlite.org/2026/sqlite-amalgamation-3510200.zip",
+            "https://www.sqlite.org/2025/sqlite-amalgamation-3510100.zip",
+            "https://www.sqlite.org/2025/sqlite-amalgamation-3500400.zip"
+          )
+          # ---- 1) 下载（候选逐试 + PK 魔数形状检查） ----
+          $zip = Join-Path $env:RUNNER_TEMP "sqlite-amalgamation.zip"
+          $gotZip = $false
+          foreach ($u in $candidates) {
+            Write-Host "[win-native] GET $u"
+            curl.exe -sSL --max-time 180 -o "$zip" "$u"
+            if ($LASTEXITCODE -ne 0) { Write-Host "  curl rc=$LASTEXITCODE，换下一候选"; continue }
+            $magic = Get-Content -AsByteStream -TotalCount 2 "$zip"
+            if ($magic[0] -eq 0x50 -and $magic[1] -eq 0x4B) { $gotZip = $true; break }
+            Write-Host "  200 拿到的不是 zip（无 PK 魔数，BUG-107 前科），换下一候选"
           }
+          if (-not $gotZip) {
+            Write-Host "::error::[下载失败] 全部候选 URL 都没拿到有效 zip（curl 非零或 PK 魔数检查不过）"
+            exit 1
+          }
+          # ---- 2) 解压 + 形状检查（必须含 sqlite3.h 与 sqlite3.c） ----
+          $exDir = Join-Path $env:RUNNER_TEMP "sqlite-amalgamation"
+          Expand-Archive -Path "$zip" -DestinationPath $exDir -Force
+          $h = Get-ChildItem -Recurse $exDir -Filter sqlite3.h | Select-Object -First 1
+          $c = Get-ChildItem -Recurse $exDir -Filter sqlite3.c | Select-Object -First 1
+          if (-not $h -or -not $c) {
+            Write-Host "::error::[解压失败] zip 解开了但里面找不到 sqlite3.h / sqlite3.c"
+            exit 1
+          }
+          $root = (Get-Location).Path
+          New-Item -ItemType Directory -Force (Join-Path $root "include"), (Join-Path $root "lib") | Out-Null
+          Copy-Item $h.FullName (Join-Path $root "include\sqlite3.h")
+          Copy-Item $c.FullName (Join-Path $root "lib\sqlite3.c")
+          # ---- 3) 同一进程装载 VS（native-env.ps1 优先，vswhere+DevShell 兜底；不静默） ----
+          $clOk = $false
+          if (Test-Path scripts/native-env.ps1) {
+            try {
+              . scripts/native-env.ps1 -SqliteDev $root
+              if (Get-Command cl.exe -ErrorAction SilentlyContinue) { $clOk = $true }
+            } catch {
+              Write-Host "[win-native] dot-source native-env.ps1 失败：$_ —— 走兜底"
+            }
+          }
+          if (-not $clOk) {
+            $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+            if (-not (Test-Path $vswhere)) {
+              Write-Host "::error::[环境装载失败] vswhere 不在，VS Build Tools 无法探测"
+              exit 1
+            }
+            $inst = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+            if (-not $inst) {
+              Write-Host "::error::[环境装载失败] vswhere 找不到含 VC.Tools.x86.x64 的 VS 实例"
+              exit 1
+            }
+            Import-Module (Join-Path $inst "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+            Enter-VsDevShell -VsInstallPath $inst -SkipAutomaticLocation -DevCmdArguments "-arch=x64" | Out-Null
+            $env:INCLUDE = "$(Join-Path $root "include");$env:INCLUDE"
+            $env:LIB = "$(Join-Path $root "lib");$env:LIB"
+            if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+              Write-Host "::error::[环境装载失败] 兜底装载后 cl.exe 仍不在 PATH"
+              exit 1
+            }
+          }
+          # ---- 4) 编 sqlite3.c → lib\sqlite3.lib（checkout 目录下） ----
+          Push-Location (Join-Path $root "lib")
+          try {
+            cl /nologo /c /O2 sqlite3.c
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::[编译失败] cl /c sqlite3.c rc=$LASTEXITCODE"
+              exit 1
+            }
+            lib /nologo /OUT:sqlite3.lib sqlite3.obj
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::[编译失败] lib /OUT:sqlite3.lib rc=$LASTEXITCODE"
+              exit 1
+            }
+          } finally { Pop-Location }
+          # ---- 5) INCLUDE/LIB 全量写 GITHUB_ENV（跨步骤传递；含换行才用 heredoc 形状） ----
+          if ([string]::IsNullOrEmpty($env:INCLUDE) -or [string]::IsNullOrEmpty($env:LIB)) {
+            Write-Host "::error::[环境导出失败] INCLUDE 或 LIB 为空，无东西可导出"
+            exit 1
+          }
+          foreach ($name in @("INCLUDE", "LIB")) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value.Contains("`n") -or $value.Contains("`r")) {
+              $delim = "FIST_ENV_$($name)_DELIM"
+              [IO.File]::AppendAllText($env:GITHUB_ENV, "$name<<$delim`n$value`n$delim`n")
+            } else {
+              [IO.File]::AppendAllText($env:GITHUB_ENV, "$name=$value`n")
+            }
+          }
+          # ---- 6) 自检（lib >0 字节 + sqlite3.h 在 INCLUDE 上可解析 + GITHUB_ENV 真写进去了） ----
+          $libFile = Join-Path $root "lib\sqlite3.lib"
+          if (-not (Test-Path $libFile) -or (Get-Item $libFile).Length -le 0) {
+            Write-Host "::error::[编译失败] lib\sqlite3.lib 不存在或为 0 字节"
+            exit 1
+          }
+          $incHit = $false
+          foreach ($p in ($env:INCLUDE -split ';')) {
+            if ($p -and (Test-Path (Join-Path $p "sqlite3.h"))) { $incHit = $true; break }
+          }
+          if (-not $incHit) {
+            Write-Host "::error::[环境导出失败] INCLUDE 里没有任何一条路径能解析到 sqlite3.h"
+            exit 1
+          }
+          $envFace = [IO.File]::ReadAllText($env:GITHUB_ENV)
+          if (-not ($envFace -match '(?m)^INCLUDE=') -or -not ($envFace -match '(?m)^LIB=')) {
+            Write-Host "::error::[环境导出失败] GITHUB_ENV 里没看到 INCLUDE= / LIB= 行"
+            exit 1
+          }
+          Write-Host "[win-native] 自检通过：lib\sqlite3.lib=$((Get-Item $libFile).Length) 字节；sqlite3.h 在 INCLUDE 上；INCLUDE/LIB 已落 GITHUB_ENV"
 
       # 与 build-native-linux 同源（run 41278010595 实测缺这步红在 Migrate）：
       # runner 上注册表索引为空，`moon check` 只会回 "module was not found in the
