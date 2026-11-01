@@ -6,7 +6,7 @@
 - 按「禁区意识」不碰 src/**，转非阻塞巡检，四面全绿：
   - `mcp_smoke`：PASS，182 工具，publish/get 闭环正常（T0r21）
   - `check_host_installable`：PASS（仅 `timeout_ms` 信息级 WARN，既有已知项）
-  - `pol_keeper_run`（OFM 端点探活）：Hung 0 / Blacklist 0 / Idle>24h 0 / Pend>7d 0，无异常任务
+  - `pol_keeper_run`（任务池 keeper 巡检；**勘误 2026-11-01 R16**：原标「OFM 端点探活」系误标——"ofm-fusion" 只是 ns 名，该脚本与 OFM 端点探活无关；真探活判据见 `scripts/check_ofm_endpoint.py`）：Hung 0 / Blacklist 0 / Idle>24h 0 / Pend>7d 0，无异常任务
 - 无新发现，未立新账；本轮零代码改动。
 
 ## 资源消耗

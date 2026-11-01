@@ -489,11 +489,11 @@ def rpc(method, **payload):
 
 ```pwsh
 # 1) 设端点与密钥（env-only）
-$env:FIST_OFM_ENDPOINT = "http://127.0.0.1:18899/v1"
+$env:FIST_OFM_ENDPOINT = "http://127.0.0.1:18326/v1"
 $env:FIST_OFM_KEY = "<你的 OFM key>"
 
 # 2) 拉可用模型清单（服务在线时；未鉴权会回 401）
-Invoke-RestMethod -Uri "http://127.0.0.1:18899/v1/models" -Headers @{ Authorization = "Bearer $env:FIST_OFM_KEY" }
+Invoke-RestMethod -Uri "http://127.0.0.1:18326/v1/models" -Headers @{ Authorization = "Bearer $env:FIST_OFM_KEY" }
 ```
 
 拿到清单后，把选定的模型 ID 写进 `free_pool` 并给每条 `lane` 一个显式值；空 `lane` 保持未标注，
