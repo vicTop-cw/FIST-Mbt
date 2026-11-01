@@ -125,10 +125,10 @@ test "mo_2_状态走文件：第二次调用看得见第一次的用量与档位
     mo_str(j1, "state_path"),
     "temp/mo_ops/.fist-mbt/data/model-router-mo2.json",
   )
-  // BUG-62 后语义：只问不消耗 ⇒ persisted=false（没记账）。但显式给了 config 时池**定义**
+  // BUG-62 后语义：只问不消耗不记账（total_used=0）。但显式给了 config 时池**定义**
   // 会被播种进状态文件——这正是 BUG-61 接线的前提：executor_run 自动记账那一笔不带 config，
-  // 只认文件里的池。播种只带定义不带用量，所以文件里的 total_used 必须还是 0。
-  assert_false(mo_bool(j1, "persisted"))
+  // 只认文件里的池。BUG-530：save_res=Ok 即落盘成功 ⇒ persisted=true（播种也是真写盘）。
+  assert_true(mo_bool(j1, "persisted"))
   assert_true(@fs.path_exists(mo_str(j1, "state_path")))
   assert_eq(mo_str(mo_get(j1, "decision"), "model"), "mo_free")
   let st0 = mo_unwrap(model_router_status_impl(d, ns="mo2"))
@@ -278,7 +278,9 @@ test "mo_8_带 config 的查询播种池定义：文件里有名但用量为零"
     "paid_pool": Json::array([pool("mo8_p", 9)]),
   })
   let q1 = mo_unwrap(model_route_impl(d, ns="mo8", config=cfg))
-  assert_false(mo_bool(q1, "persisted"))
+  // BUG-530：save_res=Ok 即落盘成功（播种也算 persisted=true）——文件真建出来才算数
+  assert_true(mo_bool(q1, "persisted"))
+  assert_true(@fs.path_exists(mo_str(q1, "state_path")))
   assert_true(mo_str(q1, "mode").contains("播种"))
   let st0 = mo_unwrap(model_router_status_impl(d, ns="mo8"))
   assert_true(mo_bool(st0, "exists"))
