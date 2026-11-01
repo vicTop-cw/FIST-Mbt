@@ -14983,7 +14983,11 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - 关闭条件：scheduled run 在 master 上成功（或 owner 明示本作业退役/改触发分支，则按改法入账翻面）。
 - reported_by: lead
 
-## BUG-537 [2026-11-01T12:00:00Z] [low] OPEN
+## BUG-537 [2026-11-01T12:00:00Z] [low] FIXED
+- evidence: 本轮闭环（回归锁 = `scripts/check_ofm_endpoint.py` 入 run_guards.py 电池 + `--selftest` 9 格含 2 变异对照）。三件同批落地：
+  ① 新判据 `scripts/check_ofm_endpoint.py`（探 `{FIST_OFM_ENDPOINT}/v1/models`，rc 0/1/2/3 = 在线/探不通/配置问题或判据自身异常/无 env SKIP；argparse 拒未知旗标；电池 tolerant(0,1,2,3) 树态诊断格——端点死活结论在探针输出行，不进门禁）；② USAGE.md §6.15 两处 18899→18326；③ patrol-round3 报告 `pol_keeper_run` 误标勘误（"ofm-fusion" 只是 ns 名）。
+  接线验证：check_scripts_index PASS / check_py_stdout_encoding 48/48 / run_guards --selftest 44 格 OK 缺面 0。
+  **实测新发现（本轮探活首跑即抓到，证明判据在咬）**：本机 `FIST_OFM_ENDPOINT` 仍指旧死端点 18899（探活 rc=1 down，WinError 10061）——环境变量需人改到 18326（agent 不碰用户 env）。
 - summary: OFM 端点可用性**零入库判据**：scripts/ 全部 189 份 grep `ofm|OFM|18326|18899` = 0 命中，
   run_guards.py 电池无 OFM 检查项；探活判据只有 USAGE.md:492-496 一段手工规程
   （`GET {FIST_OFM_ENDPOINT}/v1/models`，200=在线 / 401=未鉴权），每轮巡检都靠人/agent 现场拼 curl，
@@ -14998,3 +15002,13 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   patrol-round3 误标勘误。三件可在 src/** 解禁前独立落地（scripts/USAGE 均不在当前 WIP 面）。
 - 关闭条件：判据入 run_guards.py 电池 + 两处文档面修正同批提交。
 - reported_by: lead（2026-11-01 巡检轮 R15，OFM 探活子任务发现）
+
+### FIXED(2026-11-01 / BUG-537)
+
+- 统帅车道 R16 三件同批落地（均在 src/** WIP 解禁前的独立面）：新判据 `scripts/check_ofm_endpoint.py`
+  （argparse 拒未知旗标；rc 0=在线 / 1=有 env 探不通 / 2=401 配置或判据自身异常 / 3=无 env SKIP），
+  电池 tolerant(0,1,2,3) 树态诊断格接线——端点死活结论在探针输出行，不进电池门禁；
+  USAGE.md §6.15 示例端点 18899→18326（两处）；patrol-round3 报告 `pol_keeper_run` 误标勘误。
+  接线验证：check_scripts_index PASS / check_py_stdout_encoding 48/48 / run_guards --selftest 44 格 OK 缺面 0。
+- **探活首跑即抓到现行实例**：本机 `FIST_OFM_ENDPOINT` 仍指旧死端点 18899（rc=1 down，WinError 10061）
+  ——判据会咬的直接证据；环境变量改道 18326 属用户 env，留人终审。回归锁 = 判据本体 + 电池格。
