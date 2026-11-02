@@ -15173,3 +15173,28 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - **终审读数**：src/server `Total tests: 586, passed: 586`（+2 格，待终审批注后以此为准）；
   check_mcp_stdio_purity rc=0；check_fmt_gate PASS；.mbti 零 diff。
 - 关闭条件不变：两半齐（owner 重连连接器 + server.log 判因面实测过一次）才翻 FIXED。
+
+## BUG-540 [2026-11-02T10:25:00Z] [low] FIXED
+USAGE.md 手册的参数列（14 张三列表约 271 个 `名(必)/名(选,默认X)` token）零守卫：J8 只扫
+templates/*.md 且解析器要求反引号 token，USAGE 裸参数列全被跳过。历史同族 BUG-33/BUG-66
+（`now` 参数 0 工具都有却广告全表）随时可重犯——2026-11-02 人工修复过一轮参数列，但无尺
+盯着，下次 server.mbt 加参数即静默漂移。
+证据：check_doc_surface.py 里 `USAGE` 仅出现于 J4 版本检查与 J17 地板（修前 :137/:1050），
+参数列不在任何 J 编号射程内。
+### FIXED(2026-11-02 / BUG-540 J19 参数列守卫落地)
+check_doc_surface.py 新增 J19：解析 USAGE 全部三列表第 3 列（`(?<!\)\|` 切列防转义竖线破格），
+`[a-z_][a-z0-9_]*\(` 形状 token 单向校验 ∈ 真源 schema 属性集（不反向——USAGE 只覆盖 89/182
+工具）。配套：`tool_registry()` 扩读面到 src/server/*.mbt 全家（164→182 工具）+ schema 内联
+`Json::object` 键提取双口径（实测抓到 loop_create.steps / executor_auction.bid 两个 RE_PROP
+盲区）；棘轮地板 14 表/78 行/271 token（2026-11-02 实测）；四档自拒；自检含真实数据变异对照
+（判例-29 实现路径格：断言真实解析到 publish.project_dir）。终审亲证：selftest rc=0 /
+干净面 rc=0 / 干净↔变异（project_dir→project_dirx）双向 rc=0/1。残余缺口：`specs(JSON 数组)`
+等泛指括号刻意不进面，这两处参数名漂移暂无人认领。
+
+## BUG-541 [2026-11-02T10:25:00Z] [low] FIXED
+J18（README 快速开始注释抄数==实测）的三格自检格被误贴在 check_doc_surface.py 的 main()
+里：引用未定义的 `fails`（J18 真红会 NameError 而非出 FAIL 报告），且 `problems += j18_…`
+缩进在 `if j18_real:` 内 ⇒ J18 从不真正进门——红着没人读同族（BUG-114 形状）。
+### FIXED(2026-11-02 / BUG-541 J18 自检格归位)
+自检格搬回 j_selftest（fails 在场、--selftest 真执行），main() 只留真接线；补真实现状面
+对照（先判尺子再判被测）。亲证：--selftest 反解清单含 J18，selftest rc=0。

@@ -85,6 +85,14 @@
       引文（`「…」`）与历史面（reports/ memory/ docs/archive/ CHANGELOG BACKLOG）与生成副本
       （plugins/<host>/）豁免——判的是现状承诺，不是当时的记录。
 
+  J19 USAGE 手册参数列 ↔ 真源 schema 属性集（2026-11-02 新增）：解析 USAGE.md 全部
+     `| 工具 | 说明 | 参数 |` 三列表的第 3 列，对每个 `名(必)` / `名(选,默认X)` / `名(可选，默认X)`
+     形状的参数 token，校验 `名` ∈ 该工具在 src/server/*.mbt 真源 schema 的属性集
+     （单向：文档参数 ⊆ schema；不做反向——USAGE 只覆盖约 89/182 工具，反向必全红）。
+     说明列散文与「JSON 数组」类泛指括号不进面；USAGE 缺失 / 表数·行数·token 低于地板 ⇒ 自拒不报绿。
+     依赖 tool_registry 的多文件读面（supervisor/hat_hexa/mcpcf 拆分面）与 schema 对象键提取
+     （内联 `Json::object` 声明的属性，如 loop_create.steps / executor_auction.bid，RE_PROP 看不见）。
+
 设计约束：不改被校验的文档、不写库、纯只读。
 """
 import inspect
@@ -166,7 +174,14 @@ STALE_NEEDLES = (
 # J8：工具属性声明与 required 列表
 RE_PROP = re.compile(r"\"([a-z_0-9]+)\":\s*(?:required_)?(?:string|bool|int|double|number|array|object|enum)_prop")
 RE_REQUIRED = re.compile(r"schema\(\s*\{.*?\},\s*\[([^\]]*)\]", re.S)
-RE_TOOL_BLOCK_START = re.compile(r"instrumented_tool\(\s*s1\s*,\s*\"([a-z_0-9]+)\"\s*,")
+RE_TOOL_BLOCK_START = re.compile(r'instrumented_tool\(\s*\w+\s*,\s*"([a-z_0-9]+)"\s*,')
+# 链式注册块（mcpcf_embed.mbt 的 mcpcf.*，名字含点）：块边界也要认它，
+# 否则 J8 对这批工具假豁免、J19 会把它们的手册行假红成「未注册工具」。
+RE_TOOL_CHAIN_BLOCK = re.compile(r'\b\w+\.tool\(\s*"([a-z_0-9.]+)"\s*,')
+# schema 属性对象的两种开口：① `schema({ … })`（instrumented_tool，属性值可为 *_prop 或内联
+# Json::object）；② `"properties": Json::object({ … })`（链式注册的裸 JSON schema）。
+RE_SCHEMA_OPEN = re.compile(r"schema\(\s*\{")
+RE_PROPERTIES_OPEN = re.compile(r'"properties":\s*Json::object\(\{')
 
 
 def real_tools():
@@ -185,19 +200,43 @@ def names_in(path):
 
 
 def tool_registry():
-    """server.mbt → {tool: {props, required}}：按 instrumented_tool 块边界切，避免跨块串味。"""
-    txt = SERVER.read_text(encoding="utf-8")
-    starts = [(m.group(1), m.start()) for m in RE_TOOL_BLOCK_START.finditer(txt)]
+    """src/server/*.mbt（排除测试，读面委托单一实现 _tool_registry.server_files）
+    → {tool: {props, required}}：按块边界切，避免跨块串味。
+    BUG-157 同族（2026-11-02）：注册不止 server.mbt——supervisor_tools / hat_hexa_tools /
+    mcpcf_embed / wt_tools 都在 src/server/ 下；只读一个文件时其余工具在 J8 里假豁免、
+    在 J19 里被假红成「未注册工具」（此前本函数只读 SERVER 一个文件，实测 164/182）。
+    属性提取双口径：RE_PROP 认 `*_prop` 声明；schema/{properties} 对象的 depth-1 键补上
+    内联 `Json::object` 声明（实测 loop_create.steps / executor_auction.bid 就是这形状，
+    只有 _prop 口径会把它们漏成「手册广告了不存在的参数」）。"""
     reg = {}
-    for i, (name, pos) in enumerate(starts):
-        end = starts[i + 1][1] if i + 1 < len(starts) else len(txt)
-        region = txt[pos:end]
-        props = set(RE_PROP.findall(region))
-        m = RE_REQUIRED.search(region)
-        req = set()
-        if m:
-            req = {x.strip().strip('"') for x in m.group(1).split(",") if x.strip()}
-        reg[name] = {"props": props, "required": req}
+    for f in _tool_registry.server_files():
+        try:
+            txt = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        starts = [(m.group(1), m.start(), False) for m in RE_TOOL_BLOCK_START.finditer(txt)]
+        starts += [(m.group(1), m.start(), True) for m in RE_TOOL_CHAIN_BLOCK.finditer(txt)]
+        starts.sort(key=lambda x: x[1])
+        for i, (name, pos, chained) in enumerate(starts):
+            end = starts[i + 1][1] if i + 1 < len(starts) else len(txt)
+            region = txt[pos:end]
+            props = set(RE_PROP.findall(region))
+            m = RE_SCHEMA_OPEN.search(region)
+            if m:
+                blob = obj_span(region, m.end() - 1)
+                if blob:
+                    props |= set(top_level_keys(blob))
+            elif chained:
+                m2 = RE_PROPERTIES_OPEN.search(region)
+                if m2:
+                    blob = obj_span(region, m2.end() - 1)
+                    if blob:
+                        props |= set(top_level_keys(blob))
+            m = RE_REQUIRED.search(region)
+            req = set()
+            if m:
+                req = {x.strip().strip('"') for x in m.group(1).split(",") if x.strip()}
+            reg[name] = {"props": props, "required": req}
     return reg
 
 
@@ -940,6 +979,84 @@ def j18_quickstart_tool_count_problems(readme_text, n):
     return problems
 
 
+# ---- J19 USAGE 手册参数列 ↔ 真源 schema 属性集（2026-11-02 新增）----
+# 为什么要有：USAGE §6 的手册每行广告一组参数（`名(必)` / `名(选,默认X)` / `名(可选，默认X)`），
+# 但该列此前零守卫——写一个 schema 里不存在的参数名，_instrument 只校验 required，
+# 未知键被静默丢弃（BUG-31 同族）⇒ 读者照手册调用，参数等于没传，还不报错。
+# 口径刻意单向（文档参数 ⊆ schema）：USAGE 只覆盖约 89/182 工具，反向（schema ⊆ 文档）必全红。
+# 解析面 = 全部 `| 工具 | 说明 | 参数 |` 三列表的**第 3 列**；说明列散文（「秒数组」「只统计该 ns」）
+# 与「JSON 数组」类泛指括号（`specs(JSON 数组)`，括号内不以 必/选/可选 开头）不进面，不误伤。
+RE_J19_TABLE_HEADER = re.compile(r"^\|\s*工具\s*\|\s*说明\s*\|\s*参数\s*\|\s*$")
+# 单元格内的 `\|`（如 executor_auction 的 `1-\|出价-验收通过率\|`）是转义，不是列界。
+RE_J19_CELL = re.compile(r"(?<!\\)\|")
+RE_J19_TOKEN = re.compile(r"([a-z_][a-z0-9_]*)\((?:必|选|可选)[^)]*\)")
+RE_J19_TOOL_CELL = re.compile(r"^\s*`([a-z_0-9.]+)`\s*$")
+# 棘轮地板（现状读数：14 表 / 78 行 / 271 token，2026-11-02 实测）。降基线必须显式改这里并写理由；
+# 加表/加行不红（地板只防「结构变化让守卫大面积失明后没人知道」）。
+J19_TABLE_FLOOR = 14
+J19_ROW_FLOOR = 50
+J19_TOKEN_FLOOR = 100
+
+
+def j19_usage_param_rows(usage_text):
+    """解析 `| 工具 | 说明 | 参数 |` 三列表的数据行 → (表数, [(行号, 工具, [参数名])])。
+    只认数据行（工具格是反引号名）；分隔行/表头跳过；表外的行不进面。"""
+    tables, rows, in_tab = 0, [], False
+    for ln, line in enumerate(usage_text.splitlines(), 1):
+        if RE_J19_TABLE_HEADER.match(line):
+            tables += 1
+            in_tab = True
+            continue
+        if in_tab:
+            if not line.lstrip().startswith("|"):
+                in_tab = False
+                continue
+            cells = RE_J19_CELL.split(line)
+            if len(cells) < 4:
+                continue
+            tm = RE_J19_TOOL_CELL.match(cells[1])
+            if not tm:
+                continue  # 分隔行（|---|）等
+            rows.append((ln, tm.group(1), RE_J19_TOKEN.findall(cells[3])))
+    return tables, rows
+
+
+def j19_usage_param_problems(rows, reg, n_tables, row_floor=None, tok_floor=None):
+    """纯判定：喂解析行 + 注册表 + 表数 → 违例清单。自测拿合成输入直接考它，不碰文件。
+    row_floor/tok_floor 可覆盖地板（自测合成格只有一两行，传小值专考判定路径；
+    真实现状面走默认地板）。自拒四档（判据饿死不冒绿）：
+    注册表空 / 表数低于地板 / 行数饿死 / 参数 token 饿死。"""
+    rf = J19_ROW_FLOOR if row_floor is None else row_floor
+    tf = J19_TOKEN_FLOOR if tok_floor is None else tok_floor
+    if not reg:
+        return ["FATAL J19 工具注册表为空 ⇒ 判据没有基线，拒绝出绿灯"]
+    if n_tables < J19_TABLE_FLOOR:
+        return [f"FATAL J19 只解析到 {n_tables} 张「工具|说明|参数」表（<{J19_TABLE_FLOOR}）"
+                "⇒ USAGE 手册结构变了，参数列守卫大面积失明（降基线需显式改 J19_TABLE_FLOOR 并写理由）"]
+    if len(rows) < rf:
+        return [f"FATAL J19 只解析到 {len(rows)} 行工具条目（<{rf}）⇒ 扫描面饿死，不报绿"]
+    n_tok = sum(len(t) for _, _, t in rows)
+    if n_tok < tf:
+        return [f"FATAL J19 只解析到 {n_tok} 个参数 token（<{tf}）⇒ 解析器或列位漂移，不报绿"]
+    problems = []
+    for ln, tool, toks in rows:
+        if tool not in reg:
+            problems.append(f"J19 USAGE.md:{ln} 手册行登记了未注册工具 `{tool}`（退役或拼错）")
+            continue
+        for tok in sorted(set(toks) - reg[tool]["props"]):
+            problems.append(
+                f"J19 USAGE.md:{ln} 参数列的 `{tok}` 不在 {tool} 的 schema 属性集里"
+                "（_instrument 只校验 required，未知键静默丢弃=手册在教一个不存在的参数）")
+    return problems
+
+
+def j19_usage_param_consistency():
+    if not USAGE.is_file():
+        return ["FATAL J19 读不到 USAGE.md（固定路径）⇒ 参数列守卫没有对照面"]
+    n_tables, rows = j19_usage_param_rows(USAGE.read_text(encoding="utf-8", errors="replace"))
+    return j19_usage_param_problems(rows, tool_registry(), n_tables)
+
+
 # ---- J17 BACKLOG 现状段计数必须点名真源（R175 把「120 工具 / 442 测试」撤成指针，本条钉住它不复发）----
 RE_J17_COUNT = re.compile(r"(?<![\dA-Za-z.:/-])(\d{2,5})\s*(?:个)?\s*(?:条|项)?\s*(?:工具|测试|用例)")
 RE_J17_POINTER = re.compile(r"(真源|single source|check_tools_sync|check_test_sync|check_badge|server\.mbt|徽章)")
@@ -1632,6 +1749,80 @@ def j_selftest():
     j17_real = j17_toolchain_floor_consistency()
     if j17_real:
         fails.append("J17 在真实现状面上就红了（先判尺子，再判被测）：" + j17_real[0])
+    # ---- J18（README 快速开始注释抄数==实测；2026-11-02 从 main 搬回——它原被误贴在 main 里，
+    # 引用未定义的 `fails`，且从不在 --selftest 执行）三格：抄错数必红 / 不写数不误红 / 真实现状面不红。
+    _bad18 = "python scripts/fist.py list-tools   # 列出 166 个工具（实测 tools/list）\n"
+    if not any("J18" in p for p in j18_quickstart_tool_count_problems(_bad18, 170)):
+        fails.append(
+            "J18 抓不到『快速开始注释抄错工具数』→ 真源 170、注释 166、命令实跑 152 会各说各话"
+        )
+    _ok18 = "python scripts/fist.py list-tools   # 全量工具名清单（数量以本命令末行为准，不抄数）\n"
+    if j18_quickstart_tool_count_problems(_ok18, 170):
+        fails.append("J18 对『不写数』的正解误红（恒红判据不可信）")
+    _j18_real = j18_quickstart_tool_count_problems(
+        README.read_text(encoding="utf-8") if README.exists() else "", len(reg))
+    if _j18_real:
+        fails.append("J18 在真实现状面上就红了（先判尺子，再判被测）：" + _j18_real[0])
+    # ---- J19（USAGE 手册参数列 ↔ schema 属性集）：违例必红 / 干净不误红 / 四档自拒 /
+    # 真实现状面不红 / 真实数据变异对照（判例-29：解析格必须考实现路径，不是夹具自洽）。
+    j19_tables, j19_rows = j19_usage_param_rows(USAGE.read_text(encoding="utf-8", errors="replace"))
+    if j19_tables < J19_TABLE_FLOOR or len(j19_rows) < J19_ROW_FLOOR:
+        fails.append(f"J19 真实解析面饿死：{j19_tables} 张表 / {len(j19_rows)} 行")
+    if not any(t == "publish" and "project_dir" in toks for _, t, toks in j19_rows):
+        fails.append("J19 没从真实 USAGE 解析到 publish 的参数列（解析器或列位失效）")
+    j19_reg = tool_registry()
+    if ("supervisor_status" not in j19_reg or "hat_run" not in j19_reg
+            or "mcpcf.ops_init" not in j19_reg):
+        fails.append("J19 注册表缺 supervisor/hat_hexa/mcpcf 的工具（读面没扩到 src/server/*.mbt 全家）")
+    if "project_dir" not in j19_reg.get("publish", {}).get("props", set()):
+        fails.append("J19 注册表解析不到 publish.project_dir（属性提取失效）")
+    _j19_props = {"project_dir", "description", "created_by", "namespace", "level"}
+    _j19_reg = {"publish": {"props": _j19_props, "required": set()}}
+    if j19_usage_param_problems([(193, "publish", ["project_dir", "description"])],
+                                _j19_reg, 14, row_floor=1, tok_floor=1):
+        fails.append("J19 对干净的参数列误红（恒红判据不可信）")
+    if not any("不在 publish 的 schema 属性集" in p for p in j19_usage_param_problems(
+            [(193, "publish", ["project_dir", "now"])], _j19_reg, 14, row_floor=1, tok_floor=1)):
+        fails.append("J19 抓不到『手册广告 schema 里不存在的参数』→ BUG-66 的 `now` 形状会重犯")
+    if not any("未注册工具" in p for p in j19_usage_param_problems(
+            [(193, "ghost_tool", ["x"])], _j19_reg, 14, row_floor=1, tok_floor=1)):
+        fails.append("J19 对手册里的未注册工具行不敏感（退役/拼错无人管）")
+    if not any("FATAL J19" in p for p in j19_usage_param_problems([], {}, 14)):
+        fails.append("J19 注册表为空时不自拒（先判尺子坏）")
+    if not any("FATAL J19" in p for p in j19_usage_param_problems(
+            [(193, "publish", ["project_dir"])], _j19_reg, 0)):
+        fails.append("J19 表数低于地板时不自拒 → USAGE 结构变化会让守卫大面积失明")
+    if not any("FATAL J19" in p for p in j19_usage_param_problems([], _j19_reg, 14)):
+        fails.append("J19 行数饿死时不自拒（没抓到 ≠ 没有问题）")
+    if not any("FATAL J19" in p for p in j19_usage_param_problems(
+            [(193, "publish", [])], _j19_reg, 14)):
+        fails.append("J19 一个参数 token 都解析不到时不自拒")
+    # 变异对照：把真实解析行里的一个合法参数名改坏，判据必须在真数据上红（改的是数据不是注释）。
+    _j19_mut = [list(r) for r in j19_rows]
+    _j19_hit = False
+    for r in _j19_mut:
+        if r[2]:
+            r[2] = ["zz_param_not_in_schema" if x == r[2][0] else x for x in r[2]]
+            _j19_hit = True
+            break
+    if not _j19_hit:
+        fails.append("J19 变异夹具没找到带参数的真实行（真实解析面可能已空）")
+    elif not any("zz_param_not_in_schema" in p for p in j19_usage_param_problems(
+            [tuple(r) for r in _j19_mut], j19_reg, j19_tables)):
+        fails.append("J19 变异对照失败：真实参数名改坏后判据不红（机制没在真数据上承重）")
+    # 解析器形状格：散文/泛指括号/转义竖线三不误伤（「specs(JSON 数组)」不是参数 token）。
+    _j19_md = ("| 工具 | 说明 | 参数 |\n"
+               "|---|---|---|\n"
+               "| `omega_verify` | 批量验证 specs(JSON 数组) | specs(JSON 数组) namespace(选) |\n"
+               "| `executor_auction` | 校准系数 1-\\|出价-验收通过率\\| 防胜者诅咒 | need(必) bid(选,{执行者:0..1}) |\n")
+    _j19_t, _j19_r = j19_usage_param_rows(_j19_md)
+    if (_j19_t != 1 or [x[1] for x in _j19_r] != ["omega_verify", "executor_auction"]
+            or _j19_r[0][2] != ["namespace"] or _j19_r[1][2] != ["need", "bid"]):
+        fails.append(f"J19 解析器形状漂移：tables={_j19_t} rows={_j19_r}"
+                     "（散文/泛指括号/转义竖线的口径变了）")
+    j19_real = j19_usage_param_consistency()
+    if j19_real:
+        fails.append("J19 在真实现状面上就红了（先判尺子，再判被测）：" + j19_real[0])
     return fails
 
 
@@ -1822,23 +2013,13 @@ def main(argv):
     problems += j13_release_status_consistency()
     problems += j14_tool_count_claims()
     problems += j15_docs_date_prefix_consistency()
-    # J18（README 快速开始的工具数注释 == 实测，R41）：三格——抄错数必红 / 不写数不误红 /
-    # 真实现状面不许误红（先判尺子，再判被测）。
-    bad18 = "python scripts/fist.py list-tools   # 列出 166 个工具（实测 tools/list）\n"
-    if not any("J18" in p for p in j18_quickstart_tool_count_problems(bad18, 170)):
-        fails.append(
-            "J18 抓不到『快速开始注释抄错工具数』→ 真源 170、注释 166、命令实跑 152 会各说各话"
-        )
-    ok18 = "python scripts/fist.py list-tools   # 全量工具名清单（数量以本命令末行为准，不抄数）\n"
-    if j18_quickstart_tool_count_problems(ok18, 170):
-        fails.append("J18 对『不写数』的正解误红（恒红判据不可信）")
-    j18_real = j18_quickstart_tool_count_problems(
-        README.read_text(encoding="utf-8") if README.exists() else "", 170
-    )
-    if j18_real:
-        fails.append("J18 在真实现状面上就红了（先判尺子，再判被测）：" + j18_real[0])
-        problems += j18_quickstart_tool_count_problems(readme_txt, n)
+    # J18（README 快速开始的工具数注释 == 实测，R41）：此前三格自检被误贴在 main 里
+    # （引用未定义的 `fails`，且 `problems +=` 缩进在 `if j18_real:` 内 ⇒ J18 真红时会 NameError
+    # 而不是出 FAIL 报告、干净时也从不进门）。2026-11-02 修：自检格搬回 j_selftest，
+    # main 只留真接线（违例进 problems，随整份 FAIL 报告一起输出）。
+    problems += j18_quickstart_tool_count_problems(readme_txt, n)
     problems += j17_toolchain_floor_consistency()
+    problems += j19_usage_param_consistency()
 
     if problems:
         print(f"FAIL 文档面不一致（真源 {n} 工具 / moon.mod {mv}）：")
@@ -1849,7 +2030,7 @@ def main(argv):
         f"PASS 文档面一致：{n} 工具在 AGENTS/README 逐个可查、分组和={n}、当前自述版本={mv}、"
         "J6 规范正文↔投影一致、J7 无旧口径、J8 模板调用面契约干净、"
         "J9 返回契约（必查清单 + 歧义键分工 + 棘轮）未退化、J10 判据范围自述==实现、"
-        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表、J15 docs/ 归档文档文件名日期前缀、J17 工具链地板↔toolchain.json 单一真源对表"
+        "J11 CI native 门步骤↔账本/规范面 三向对表、J12 CI 的 if: 不钉分支名（恒假门）、J13 发布状态短语↔BACKLOG release-fact 对表、J14 工具计数自述与 CLI 分组和↔真源对表、J15 docs/ 归档文档文件名日期前缀、J17 工具链地板↔toolchain.json 单一真源对表、J19 USAGE 手册参数列↔schema 属性集"
     )
     return 0
 
