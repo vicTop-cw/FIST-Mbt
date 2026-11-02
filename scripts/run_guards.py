@@ -169,6 +169,9 @@ SPECIAL_CASES = [
     # BUG-525 关闭条件：USAGE.md 工具计数散文自述 ↔ 真源 `_tool_registry.real_tools()` 对表
     # （精确式必须相等 / N+ 下限式真源 ≥ N / 整份无自述也红）。与 check_tools_sync 同一真源口径，
     # 单立一格是因为六支文档守卫读同一实现永远绿，USAGE 的散文计数两次复发（87→129、→182）没人咬。
+    # T0r12 原地升格：同尺加 Part B —— USAGE §6 参数列「工具名+参数名集」双向对表，真源=tools/list
+    # 活体 schema（自带采集：起 `node cli.js serve`，FIST_DB_PATH 默认改道 temp/，BUG-122 面）；
+    # §6.15 模型路由工具按 WHITELIST_NO_ROW 点名豁免（豁免过期三向自红）；自检全合成、不起 server。
     case("check_usage_tool_count.py"),
     # 2026-10-25：CLI 入口 `fist.py list-tools` 的计数 ↔ 真源对表。
     # 为什么单立一格：六支文档守卫全部走 `_tool_registry.real_tools()`（读 170）⇒ 永远绿，
