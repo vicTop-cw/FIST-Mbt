@@ -63,3 +63,39 @@ async test "bug538_i3_io失败静默_父目录被文件占位_不抛不崩" {
   }
   assert_true(raw.contains("placeholder"))
 }
+
+///|
+async test "bug538_i4_心跳_短间隔真写_到点自停_off零io" {
+  // 心跳短间隔真写：30ms 间隔 + @async.sleep 驱动事件循环 —— 这里等待本身就是
+  // 被测语义（「间隔到了会写」），不是判例-31 反对的「sleep 抢时序竞态锁」。
+  // max_ticks=3：30ms 间隔 400ms 窗口里 tick 远多于 3 个 ⇒ 落盘行数**恰好 3**
+  // （少 = 没在写，多 = 到点没自停）—— 两向变异对照都在这一格。
+  let path = BUG538_IO_TEST_DIR + "/heartbeat.log"
+  @fs.remove_file(path) catch {
+    _ => ()
+  }
+  server_log_heartbeat_start_with(path, 30, 3)
+  @async.sleep(400)
+  let raw = @fs.read_file_to_string(path) catch {
+    _ => abort("bug538_i4: 心跳未落盘")
+  }
+  // 行形状与其它事件同一收口：ISO 时间戳 + [fist-mbt] heartbeat alive pid=
+  assert_true(raw.contains("Z [fist-mbt] heartbeat alive pid="))
+  // 恰好 3 行（每行以 \n 结尾 ⇒ split 尾部多一个空段）
+  assert_eq(raw.split("\n").length(), 4)
+  // off 门：空路径不装定时器（零 IO）—— 30ms 间隔走的是注入参数，
+  // off 门拦的是 path==""，两个开关维度都过一遍
+  server_log_heartbeat_start_with("", 30, 3)
+  @async.sleep(150)
+  let off_path = BUG538_IO_TEST_DIR + "/heartbeat-off.log"
+  assert_false(@fs.path_exists(off_path))
+  // interval<=0 / max_ticks<=0 同样不装（零开销门的另外两半）
+  server_log_heartbeat_start_with(path, 0, 3)
+  server_log_heartbeat_start_with(path, 30, 0)
+  @async.sleep(150)
+  // 两发都不装 ⇒ 文件行数不变（仍停在上面的 3 行）
+  let raw2 = @fs.read_file_to_string(path) catch {
+    _ => abort("bug538_i4: 日志文件消失")
+  }
+  assert_eq(raw2, raw)
+}

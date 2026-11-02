@@ -89,3 +89,68 @@ async fn server_log_install_crash_hooks(path : String) -> Unit {
     _ => ()
   }
 }
+
+///|
+/// BUG-538 心跳定时器（js · node setInterval）：每 interval_ms 一行 `heartbeat`。
+///
+///   · 行构造走 MoonBit 闭包 line_of ⇒ 复用 server_log_line + now_default
+///     （与其它事件**同一收口**，行形状不在 JS 侧抄第二份）；
+///   · append 与 js_server_log_append / 崩溃钩子同一原语（mkdir + appendFileSync，
+///     全程 try/catch 静默降级）—— 异步的 server_log_write 无法从同步 timer
+///     回调里 await，故 IO 原语在此薄壳内同形复刻（与崩溃钩子的 write 同一先例）；
+///   · 进程生命周期面：run_server 装一次、不接 stop（timer 随进程死亡消亡，
+///     这正是心跳的目的 —— 进程死了它自然停）；tick 上限只作 FFI 内的自清
+///     保险（句柄活着会让 node 事件循环永不排空，测试运行器挂死实测），
+///     生产传天文数字等效于无限；
+///   · 只写文件，绝不碰 stdout/stderr（stdio 纯净性）。
+extern "js" fn js_server_log_heartbeat_start(
+  interval_ms : Int32,
+  max_ticks : Int32,
+  path : String,
+  line_of : () -> String,
+) -> Unit =
+  #| (interval_ms, max_ticks, path, line_of) => {
+  #|   try {
+  #|     let n = 0
+  #|     const t = setInterval(async () => {
+  #|       n = n + 1
+  #|       if (n > max_ticks) { clearInterval(t); return }
+  #|       try {
+  #|         const fs = await import('node:fs')
+  #|         const sep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  #|         if (sep > 0) fs.mkdirSync(path.slice(0, sep), { recursive: true })
+  #|         fs.appendFileSync(path, line_of())
+  #|       } catch (e) {}
+  #|     }, interval_ms)
+  #|   } catch (e) {}
+  #| }
+
+///|
+/// 按注入间隔启动心跳。path==""（= FIST_SERVER_LOG=off）或 interval_ms<=0
+/// ⇒ 不装定时器，零开销零文件（off 门在 MoonBit 层，不靠 JS 兜）。
+fn server_log_heartbeat_start_with(
+  path : String,
+  interval_ms : Int32,
+  max_ticks : Int32,
+) -> Unit {
+  if path == "" || interval_ms <= 0 || max_ticks <= 0 {
+    return
+  }
+  js_server_log_heartbeat_start(interval_ms, max_ticks, path, fn() {
+    server_log_line(
+      now_default(),
+      "heartbeat",
+      server_log_heartbeat_detail(server_log_pid()),
+    )
+  })
+}
+
+///|
+/// 按常量间隔启动心跳（run_server 接线入口；仅 slog_path != "" 时被调）。
+fn server_log_heartbeat_start(path : String) -> Unit {
+  server_log_heartbeat_start_with(
+    path,
+    SERVER_LOG_HEARTBEAT_MS,
+    SERVER_LOG_HEARTBEAT_TICKS_MAX,
+  )
+}
