@@ -1013,3 +1013,336 @@ test "mo_11_跳过记账的三种理由分明：不把执行器规则说成调�
   assert_false(supplied.contains("custom_executor_channel"))
   assert_false(atomic.contains("custom_executor_channel"))
 }
+
+///|
+/// §2.3 server 接线 · caf_ops_1：status 的 CAF 记忆块（第三件事）。
+/// 默认未开 CAF 时块照样出现：enabled=false / count=0 / status_text 点名「0 条记录」
+/// ——调用方不必在「字段缺失」「没开」「开了但空」三种空之间猜。
+test "caf_ops_1_status默认未开CAF_enabled_false_count_0" {
+  let d = mo_prep("caf_ops1")
+  let _ = mo_unwrap(model_route_impl(d, ns="caf_ops1", config=mo_cfg(1, 1)))
+  let st = mo_unwrap(model_router_status_impl(d, ns="caf_ops1"))
+  let caf = mo_get(st, "caf_memory")
+  assert_false(mo_bool(caf, "enabled"))
+  assert_eq(mo_int(caf, "count"), 0)
+  assert_false(mo_bool(caf, "bad_json"))
+  must_contain(mo_str(caf, "status_text"), "0 条记录")
+  must_contain(mo_str(caf, "state_path"), "model-router-caf-caf_ops1.json")
+}
+
+///|
+/// caf_cfg 变体：追加 caf_default_preference（P2d 冷启动偏好的 server 侧透传锁用）。
+fn caf_cfg_with_pref(use_caf : Bool, pref : Array[String]) -> Json {
+  let base = match caf_cfg(use_caf) {
+    Json::Object(m) => m
+    _ => abort("caf_cfg 应返回对象")
+  }
+  base.set(
+    "caf_default_preference",
+    Json::array(pref.map(fn(s) { Json::string(s) })),
+  )
+  Json::object(base)
+}
+
+///|
+/// §2.3 server 接线 · caf_ops_2：记账带上 context 后，CAF evidence 的 feature_hash
+/// 必须来自该 context（executor_run 传 prompt 的接线口径），不再全落空串哈希桶；
+/// status 的 count/status_text 同步可见。
+test "caf_ops_2_记账context特征化_status_count可见" {
+  let d = caf_prep("caf_ops2")
+  // 播种开 CAF 的池定义（查询带 config，只播种定义不播种用量）
+  let _ = mo_unwrap(model_route_impl(d, ns="caf_ops2", config=caf_cfg(true)))
+  let st0 = mo_unwrap(model_router_status_impl(d, ns="caf_ops2"))
+  let caf0 = mo_get(st0, "caf_memory")
+  assert_eq(mo_int(caf0, "count"), 0)
+  // 记一笔账，带 context + config：push 的 feature_hash 必须是它的归一化哈希。
+  // ⚠️ config 必须随账走：to_state 不持久化 use_caf_memory（router_state.mbt 边界，
+  // 见 iterate-1102/T0 submit 缺口段），不带 config 的记账恢复出 use_caf_memory=false，
+  // CAF push 永不发生——这就是 executor_run 侧记账要透传调用方 config 的原因。
+  let ctx = "修复 ts 类型解析器的边界情况"
+  let rec = mr_record_only(
+    d,
+    "caf_free_a",
+    ns="caf_ops2",
+    ok=true,
+    context=ctx,
+    config=caf_cfg(true),
+  )
+  match rec {
+    Ok(_) => ()
+    Err(e) => abort("记账应成功：" + e)
+  }
+  let st1 = mo_unwrap(model_router_status_impl(d, ns="caf_ops2"))
+  let caf1 = mo_get(st1, "caf_memory")
+  assert_eq(mo_int(caf1, "count"), 1)
+  must_contain(mo_str(caf1, "status_text"), "caf_free_a")
+  // 落盘 evidence 的 feature_hash 与 context 同源（与 knn 检索同一哈希），非空串桶
+  let raw = @fs.read_file_to_string(
+    mr_caf_state_path(d, "caf_ops2"),
+    encoding="utf8",
+  ) catch {
+    _ => abort("CAF 记忆文件应已落盘")
+  }
+  let j = @json.parse(raw) catch {
+    _ => abort("CAF 记忆文件应是合法 JSON")
+  }
+  match mo_get(j, "records") {
+    Json::Array(a) => {
+      assert_eq(a.length(), 1)
+      let want = @router.caf_feature_hash(@router.caf_normalize_context(ctx))
+      assert_eq(mo_int(a[0], "feature_hash"), want)
+    }
+    _ => abort("CAF 文件缺 records 数组")
+  }
+}
+
+///|
+/// §2.3 server 接线 · caf_ops_3：真实 pick 侧（非 dry_run）在 use_caf_memory=true 时
+/// 吃 CAF 重排，且 config 的 caf_default_preference 原样透传——证据不足（0 < 10）时
+/// 按偏好做冷启动重排，首个免费模型 caf_free_a 被换成偏好里的 caf_free_b；
+/// use_caf_memory=false 的同形状查询照旧给 caf_free_a（零回归反向对照）。
+test "caf_ops_3_真实pick吃CAF偏好_证据不足冷启动重排" {
+  let d1 = caf_prep("caf_ops3a")
+  let j1 = mo_unwrap(
+    model_route_impl(
+      d1,
+      ns="caf_ops3a",
+      config=caf_cfg_with_pref(true, ["caf_free_b"]),
+    ),
+  )
+  assert_true(mo_bool(j1, "ok"))
+  assert_eq(mo_str(mo_get(j1, "decision"), "model"), "caf_free_b")
+  must_contain(mo_str(mo_get(j1, "decision"), "reason"), "caf reorder")
+  // 反向对照：不开 CAF 的同形状查询回到轮询首模型，零回归
+  let d2 = caf_prep("caf_ops3b")
+  let j2 = mo_unwrap(
+    model_route_impl(d2, ns="caf_ops3b", config=caf_cfg(false)),
+  )
+  assert_eq(mo_str(mo_get(j2, "decision"), "model"), "caf_free_a")
+  assert_false(mo_str(mo_get(j2, "decision"), "reason").contains("caf reorder"))
+}
+
+///|
+/// §2.3 server 接线 · caf_ops_4：真实 pick 路径遇到坏 JSON 记忆必须降级为空记忆 +
+/// 点名告警（不 panic、不静默），坏文件原样保留不删（证据纪律）；status 的 bad_json
+/// 同步点名。与 dry_run 侧 caf_dr_6 同款纪律，锁的是**非 dry_run** 的那条新接线。
+test "caf_ops_4_真实pick坏记忆JSON降级点名不覆盖" {
+  let d = caf_prep("caf_ops4")
+  @fs.create_dir("temp/mo_ops/.fist-mbt/data") catch {
+    _ => ()
+  }
+  let caf_path = "temp/mo_ops/.fist-mbt/data/model-router-caf-caf_ops4.json"
+  let bad = "{ 这不是合法 JSON @@"
+  @fs.write_string_to_file(caf_path, bad, encoding="utf8") catch {
+    _ => abort("预写坏 JSON 失败")
+  }
+  let j = mo_unwrap(
+    model_route_impl(d, ns="caf_ops4", config=caf_cfg(true), context="ctx"),
+  )
+  assert_true(mo_bool(j, "ok"))
+  let wt = match mo_get(j, "warnings") {
+    Json::Array(a) => a.map(fn(x) { x.stringify() }).join(" | ")
+    _ => ""
+  }
+  must_contain(wt, "坏 JSON")
+  // 坏文件是证据：原样保留
+  let after = @fs.read_file_to_string(caf_path, encoding="utf8") catch {
+    _ => abort("坏 JSON 文件被删了（不该发生）")
+  }
+  assert_eq(after, bad)
+  // status 同步点名 bad_json=true
+  let st = mo_unwrap(model_router_status_impl(d, ns="caf_ops4"))
+  assert_true(mo_bool(mo_get(st, "caf_memory"), "bad_json"))
+}
+
+// ===== OFM fallback_chain 跨模型重试（T0r4）=====
+//
+// 端点无法从状态文件播种（router_state 明确「端点属部署环境配置，不随用量状态走」），
+// 测试经 @env.set_env_var 播 FIST_OFM_ENDPOINT 指向本机必然拒绝连接的端口
+// （127.0.0.1:9 discard）⇒ 每次尝试确定性拿到 status=0 → NetworkError，零外网依赖。
+// 直调 ofm_execute_http（同包白盒）：这是**实现路径格**——变异实现里的切换逻辑，
+// 下面 ofm_fb_2 会红；只改 ofm_fallback_eligible 本体的话 ofm_fb_1 会红。
+
+///|
+/// 读 retried 数组第 i 个元素（非字符串自爆，测试不静默）。
+fn mo_elem_str(a : Array[Json], i : Int32) -> String {
+  match a[i] {
+    Json::String(s) => s
+    _ => abort("retried[\{i}] 应为字符串")
+  }
+}
+
+///|
+/// 手工播种含指定模型的免费池 + 拒连端点 env。走完必须 unset env（防泄漏给同进程后续测试）。
+fn ofm_fb_prep(ns : String, models : Array[String]) -> String {
+  @env.unset_env_var("FIST_OFM_ENDPOINT")
+  let d = mo_prep(ns)
+  let dir = "temp/mo_ops/.fist-mbt/data"
+  @fs.create_dir(dir) catch {
+    _ => ()
+  }
+  let path = dir + "/model-router-" + ns + ".json"
+  let pool = fn(name : String) -> Json {
+    Json::object({
+      "name": Json::string(name),
+      "limit": Json::number(9.0),
+      "used": Json::number(0.0),
+      "window_start": Json::string(""),
+    })
+  }
+  let raw = Json::object({
+    "schema": Json::number(1.0),
+    "current_tier": Json::string("free"),
+    "free_idx": Json::number(0.0),
+    "paid_idx": Json::number(0.0),
+    "switch_count": Json::number(0.0),
+    "last_switch_at": Json::string(""),
+    "last_reason": Json::string(""),
+    "last_pick": Json::string(""),
+    "window_seconds": Json::number(18000.0),
+    "threshold_pct": Json::number(95.0),
+    "free_pool": Json::array(models.map(fn(x) { pool(x) })),
+    "paid_pool": Json::array([pool("ofm_fb_paid")]),
+  })
+  let _ = @fs.write_string_to_file(path, raw.stringify(), encoding="utf8") catch {
+    _ => abort("预写路由状态文件失败：" + path)
+  }
+  @env.set_env_var("FIST_OFM_ENDPOINT", "http://127.0.0.1:9")
+  d
+}
+
+///|
+/// 白名单格：只有换一次模型可能改变结论的两档（UpstreamDown/NetworkError）可行；
+/// 401/403 换模型不解决 key 问题，429 配额是端点级，4xx 是请求体问题——都不换。
+test "ofm_fb_1_白名单档位_只有上下游与网络两档可切" {
+  // enum 构造器跨包只读，值经纯函数 classify_ofm_failure 产出（同一真源，不手造）
+  let upstream = @router.classify_ofm_failure(502, "")
+  let network = @router.classify_ofm_failure(0, "ECONNREFUSED")
+  let cred = @router.classify_ofm_failure(401, "")
+  let rate = @router.classify_ofm_failure(429, "")
+  let badreq = @router.classify_ofm_failure(400, "")
+  let unknown = @router.classify_ofm_failure(200, "")
+  assert_true(ofm_fallback_eligible(upstream))
+  assert_true(ofm_fallback_eligible(network))
+  assert_false(ofm_fallback_eligible(cred))
+  assert_false(ofm_fallback_eligible(rate))
+  assert_false(ofm_fallback_eligible(badreq))
+  assert_false(ofm_fallback_eligible(unknown))
+}
+
+///|
+/// 变异对照主格：首选失败 → 记账+冷却 → 逐个切链上候选，链耗尽才失败；
+/// 首选模型不得重复命中（只出现在 retried 里），三个候选各记一笔失败账。
+async test "ofm_fb_2_跨模型重试_首选不重复命中_链耗尽才失败" {
+  let d = ofm_fb_prep("ofm_fb2", ["ofm_fb_a", "ofm_fb_b", "ofm_fb_c"])
+  let j = ofm_execute_http(
+    d,
+    ns="ofm_fb2",
+    prompt="探针",
+    model="ofm_fb_a",
+    2000,
+    false,
+    Json::null(),
+    true,
+    ["ofm_fb_b", "ofm_fb_c"],
+    3,
+  )
+  @env.unset_env_var("FIST_OFM_ENDPOINT")
+  assert_false(mo_bool(j, "ok"))
+  // 最终停在链上最后一个候选，且首选只被命中一次（切走后不再回头）
+  assert_eq(mo_str(j, "model"), "ofm_fb_c")
+  match mo_get(j, "retried") {
+    Json::Array(a) => {
+      assert_eq(a.length(), 2)
+      assert_eq(mo_elem_str(a, 0), "ofm_fb_a")
+      assert_eq(mo_elem_str(a, 1), "ofm_fb_b")
+    }
+    _ => abort("retried 应为数组")
+  }
+  // 拒连端口 ⇒ 确定性 NetworkError（status=0），且 hint 点名重试预算的 env 开关
+  assert_eq(mo_str(j, "failure_kind"), "NETWORK_ERROR")
+  assert_eq(mo_int(j, "http_status"), 0)
+  assert_true(mo_str(j, "hint").contains("FIST_MODEL_MAX_RETRIES"))
+  // 记账：a/b/c 三个候选各按 routed_by_pool 记一笔失败账
+  let st = mo_unwrap(model_router_status_impl(d, ns="ofm_fb2"))
+  assert_eq(mo_int(mo_get(st, "status"), "total_used"), 3)
+  assert_true(usage_has_model(st, "ofm_fb_a"))
+  assert_true(usage_has_model(st, "ofm_fb_b"))
+  assert_true(usage_has_model(st, "ofm_fb_c"))
+}
+
+///|
+/// 重试预算格：max_retries=1（默认档）⇒ 最多额外尝试 1 个候选（预算与候选链同时有
+/// 剩余才切）——链上还有 ofm3_c 也不许再切。预算耗尽的 retried 必须完整、model 停在 ofm3_b。
+async test "ofm_fb_3_重试预算耗尽_不多切_回执完整" {
+  let d = ofm_fb_prep("ofm_fb3", ["ofm3_a", "ofm3_b", "ofm3_c"])
+  let j = ofm_execute_http(
+    d,
+    ns="ofm_fb3",
+    prompt="探针",
+    model="ofm3_a",
+    2000,
+    false,
+    Json::null(),
+    true,
+    ["ofm3_b", "ofm3_c"],
+    1,
+  )
+  @env.unset_env_var("FIST_OFM_ENDPOINT")
+  assert_false(mo_bool(j, "ok"))
+  assert_eq(mo_str(j, "model"), "ofm3_b")
+  match mo_get(j, "retried") {
+    Json::Array(a) => {
+      assert_eq(a.length(), 1)
+      assert_eq(mo_elem_str(a, 0), "ofm3_a")
+    }
+    _ => abort("retried 应为数组")
+  }
+}
+
+///|
+/// dry_run 零网络零记账：端点已配置、链上还有候选，dry_run 也一个请求都不发、不动配额账。
+async test "ofm_fb_4_dry_run不发请求_零记账_链上候选同样不发" {
+  let d = ofm_fb_prep("ofm_fb4", ["ofm4_a"])
+  let j = ofm_execute_http(
+    d,
+    ns="ofm_fb4",
+    prompt="探针",
+    model="ofm4_a",
+    2000,
+    true,
+    Json::null(),
+    true,
+    ["ofm4_b"],
+    2,
+  )
+  @env.unset_env_var("FIST_OFM_ENDPOINT")
+  assert_true(mo_bool(j, "ok"))
+  assert_false(mo_bool(j, "executed"))
+  assert_true(mo_bool(j, "dry_run"))
+  assert_false(mo_bool(j, "quota_touched"))
+  assert_true(mo_str(j, "url").has_suffix("/chat/completions"))
+  let st = mo_unwrap(model_router_status_impl(d, ns="ofm_fb4"))
+  assert_eq(mo_int(mo_get(st, "status"), "total_used"), 0)
+}
+
+///|
+/// 端点未配置 fail-closed：env 与 config 都空 → 拒绝且不进重试循环（零回归锁）。
+async test "ofm_fb_5_端点未配置拒绝" {
+  @env.unset_env_var("FIST_OFM_ENDPOINT")
+  let d = mo_prep("ofm_fb5")
+  let j = ofm_execute_http(
+    d,
+    ns="ofm_fb5",
+    prompt="探针",
+    model="x",
+    1000,
+    false,
+    Json::null(),
+    false,
+    [],
+    1,
+  )
+  assert_false(mo_bool(j, "ok"))
+  assert_true(mo_str(j, "error").contains("端点未配置"))
+}
