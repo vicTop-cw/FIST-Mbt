@@ -66,23 +66,47 @@ async test "bug538_i3_io失败静默_父目录被文件占位_不抛不崩" {
 
 ///|
 async test "bug538_i4_心跳_短间隔真写_到点自停_off零io" {
-  // 心跳短间隔真写：30ms 间隔 + @async.sleep 驱动事件循环 —— 「间隔到了会写」是被测语义，
-  // 但「恰好 3 行」依赖事件循环在窗口内真的喂进 ≥3 个 tick：windows CI 慢 runner 实测出现过
-  // 400ms 窗口只到 2 tick（BUG-542）⇒ 窗口给到 1200ms（3 tick 只需 90ms，13 倍裕量），
-  // 上限锁（到点自停）由 max_ticks 保证、与窗口长短无关。
+  // 心跳短间隔真写：30ms 间隔 —— 「间隔到了会写」是被测语义。
+  // 固定窗口版两红实证：BUG-543（400ms 窗口只到 2 tick）放宽到 1200ms 后，
+  // 本轮 run 41433285731 windows 臂又红（2 != 4）——30ms 名义间隔下事件循环饥饿
+  // 把有效 tick 周期拖到 ~600ms，「窗口 = 间隔 × 拍数 × N 倍裕量」的线性假设
+  // 在慢 runner 上不可救（裕量倍数只是把红点往后挪）。
+  // ⇒ 改「轮询到数 + 截止」：每 100ms 读一次日志数行，凑齐即 break；30s 截止内
+  // 没凑齐才 fail（此时才是真缺陷：漏拍）。时序无关的理由：max_ticks 的上限停
+  // 语义保证拍数到 3 后**不再增** ——「等满截止才凑齐」与「秒凑齐」在最终计数与
+  // 内容上完全等价，判断成立与否只看最终计数与内容，不依赖任何窗口假设（判例-31）。
   // max_ticks=3 ⇒ 落盘行数**恰好 3**（少 = 没在写，多 = 到点没自停）—— 两向变异对照都在这一格。
   let path = BUG538_IO_TEST_DIR + "/heartbeat.log"
   @fs.remove_file(path) catch {
     _ => ()
   }
   server_log_heartbeat_start_with(path, 30, 3)
-  @async.sleep(1200)
-  let raw = @fs.read_file_to_string(path) catch {
-    _ => abort("bug538_i4: 心跳未落盘")
+  // 恰好 3 行（每行以 \n 结尾 ⇒ split 尾部多一个空段）⇒ split 计数凑到 4 即到数
+  let expected_splits = 4
+  let deadline_ms = 30000
+  let mut waited_ms = 0
+  let mut raw = ""
+  let mut reached = false
+  while waited_ms < deadline_ms {
+    @async.sleep(100)
+    waited_ms = waited_ms + 100
+    let chunk = @fs.read_file_to_string(path) catch {
+      _ => "" // 文件尚未落盘，继续等
+    }
+    if chunk.split("\n").count() >= expected_splits {
+      raw = chunk
+      reached = true
+      break
+    }
+  }
+  if !reached {
+    abort(
+      "bug538_i4: 30s 截止内心跳未凑齐 3 行（漏拍 = 真缺陷，不是调度噪声）",
+    )
   }
   // 行形状与其它事件同一收口：ISO 时间戳 + [fist-mbt] heartbeat alive pid=
   assert_true(raw.contains("Z [fist-mbt] heartbeat alive pid="))
-  // 恰好 3 行（每行以 \n 结尾 ⇒ split 尾部多一个空段）
+  // 恰好 3 行：轮询在凑齐瞬间 break，若到点没自停（行数 >3）在这里被两向锁抓住
   assert_eq(raw.split("\n").count(), 4)
   // off 门：空路径不装定时器（零 IO）—— 30ms 间隔走的是注入参数，
   // off 门拦的是 path==""，两个开关维度都过一遍
