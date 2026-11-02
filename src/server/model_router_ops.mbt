@@ -500,15 +500,48 @@ fn model_route_impl(
   } else {
     ""
   }
+  // CAF 真实 pick 侧接线（§2.3 第二件事）：use_caf_memory=true 时在普通 pick 决策之上
+  // 做 apply_caf 软性重排，并把 RouterConfig 的 caf_default_preference / caf_min_evidences
+  // 原样透传（与 dry_run 的 pick_caf_dry_run 共用同一「应用 CAF」路径 apply_caf）。
+  // 为什么不用 pick_caf：它不收 soldier_label，套上去会丢 §8.3 兵种档位提示；
+  // apply_caf 是纯重排（不再 pick、不推进游标），pick 的配额语义逐字节不动。
+  // use_caf_memory=false（默认）一个字节不多走，零回归；坏 JSON 记忆按空记忆处理并点名
+  // 告警（与 dry_run 同款纪律：坏状态是证据，不删不覆盖）。
+  let mut caf_pick_warns : Array[String] = []
   let dec = if consuming {
     r.record_call(model=record_model, now~)
   } else {
-    r.pick(
+    let base = r.pick(
       now~,
       unhealthy_ids~,
       laya_prefer_tier=laya_hint,
       soldier_label=resolved_pool,
     )
+    if r.config.use_caf_memory {
+      let (_caf_exists, caf_bad, caf_json) = mr_caf_read_diag(project_dir, ns)
+      let (mem, cfw) = @router.caf_memory_load(caf_json)
+      caf_pick_warns = if caf_bad {
+        cfw +
+        [
+          "CAF 记忆文件是坏 JSON，按空记忆处理（坏状态是证据，未删除）",
+        ]
+      } else {
+        cfw
+      }
+      let (with_caf, _reordered) = r.apply_caf(
+        base,
+        now~,
+        caf_memory=mem,
+        context~,
+        k=32,
+        unhealthy_ids~,
+        caf_default_preference=r.config.caf_default_preference,
+        caf_min_evidences=r.config.caf_min_evidences,
+      )
+      with_caf
+    } else {
+      base
+    }
   }
   let save_res = if consuming { mr_save(r, project_dir, ns) } else { seed_res }
   // BUG-530：persisted 必须如实反映"这次调用真的写了状态文件"。consuming 落账写盘、
@@ -549,7 +582,7 @@ fn model_route_impl(
         },
       ),
     ),
-    ("warnings", mr_warn_arr(warns + caf_push_warns)),
+    ("warnings", mr_warn_arr(warns + caf_pick_warns + caf_push_warns)),
     ("star_gate", gate.to_json()),
     ("persisted", Json::boolean(persisted)),
     (
@@ -588,13 +621,33 @@ fn model_route_impl(
 /// 只记账不做决策（BUG-61 的接线点：执行器真跑完，把这次用量记到路由账上）。
 /// 复用 model_route_impl 的"给了 record_model 才落盘"语义，避免两处各写一遍存盘逻辑。
 /// `ok` 是本次执行的成败：成功 true、失败 false，透传给 CAF 写半（失败也 push，ok=false）。
+/// `context` 是本次执行的请求上下文（executor_run 传 prompt）：CAF 写半用它做
+/// feature_hash——不传（默认空串）会让所有 evidence 全落同一个哈希桶，kNN 永远
+/// 看不出「哪类任务该用哪个模型」，等于记忆在积累但学不到东西。
+/// `config` 是调用方的 config_json（executor_run 已解析的那份）：记账侧与查询侧
+/// 同源透传，否则「executor_run 带 config 跑 CAF」时查询开了 CAF、记账那一笔却
+/// 拿默认配置（use_caf_memory=false）⇒ CAF push 永远不发生。
+/// ⚠️ 已知边界（本轮实测，见 iterate-1102/T0 submit）：`ModelRouter::to_state`
+/// 不持久化 use_caf_memory / caf_default_preference / caf_min_evidences，
+/// router_restore 只从调用方 config 读这三件——所以「播种一次、之后不带 config
+/// 的自动记账」这条流要等 src/router/router_state.mbt 补持久化才通（不在本车道边界内）。
 fn mr_record_only(
   project_dir : String,
   ns~ : String,
   model : String,
   ok~ : Bool = true,
+  context~ : String = "",
+  config~ : Json = Json::null(),
 ) -> Result[Unit, String] {
-  match model_route_impl(project_dir, ns~, record_model=model, ok~) {
+  match
+    model_route_impl(
+      project_dir,
+      ns~,
+      record_model=model,
+      ok~,
+      context~,
+      config~,
+    ) {
     Err(e) => Err(e)
     Ok(j) =>
       match j {
@@ -662,6 +715,13 @@ fn model_router_status_impl(
   }
   let path = mr_state_path(project_dir, ns)
   let (r, warns) = @router.router_restore(mr_read(project_dir, ns))
+  // CAF 记忆状态展示（§2.3 第三件事）：接线前先有可观测性——记忆在积累也要看得见。
+  // 只读零副作用：读 CAF 记忆文件（不存在=空记忆），不创建、不写盘；坏 JSON 如实
+  // 点名 bad_json=true（与 push/pick 侧同款纪律：坏状态是证据，不删不覆盖）。
+  // use_caf_memory=false（默认）时块照样出现（enabled=false / count=0），调用方
+  // 不必分辨「没开」与「开了但空」之外还有第三种「字段缺失」。
+  let (_caf_exists, caf_bad, caf_json) = mr_caf_read_diag(project_dir, ns)
+  let (caf_mem, _caf_warns) = @router.caf_memory_load(caf_json)
   Ok(
     Json::object({
       "status": r.usage_report(),
@@ -669,6 +729,14 @@ fn model_router_status_impl(
       "exists": Json::boolean(@fs.path_exists(path)),
       "stamped_at": Json::string(now_default()),
       "warnings": mr_warn_arr(warns),
+      "caf_memory": mr_obj([
+        ("enabled", Json::boolean(r.config.use_caf_memory)),
+        ("count", Json::number(caf_mem.count.to_double())),
+        ("max_size", Json::number(caf_mem.max_size.to_double())),
+        ("status_text", Json::string(@router.caf_memory_status_text(caf_mem))),
+        ("bad_json", Json::boolean(caf_bad)),
+        ("state_path", Json::string(mr_caf_state_path(project_dir, ns))),
+      ]),
     }),
   )
 }
@@ -821,6 +889,8 @@ fn model_router_reset_impl(
 /// 本层读进 fetch 头、**不回显**；`dry_run=true` 只回显将发送的请求体，一个网络请求都不发。
 /// 失败走 `classify_ofm_failure` 归因（status<=0 → NetworkError，401 → InvalidCredential，
 /// 5xx → UpstreamDown），不猜、不降级、不静默成功。
+/// 失败后按 `ofm_fallback_eligible` 白名单决定是否跨模型重试：可行则记冷却、切
+/// `fallback_models` 下一候选，直到成功或候选/重试预算（`max_retries`）耗尽。
 async fn ofm_execute_http(
   project_dir : String,
   ns~ : String,
@@ -830,6 +900,9 @@ async fn ofm_execute_http(
   dry_run : Bool,
   route_json : Json,
   routed_by_pool : Bool,
+  fallback_models : Array[String],
+  max_retries : Int32,
+  config~ : Json = Json::null(),
 ) -> Json {
   let fail = fn(msg : String, extra : Array[(String, Json)]) -> Json {
     mr_obj(
@@ -860,13 +933,13 @@ async fn ofm_execute_http(
       head,
     )
   }
-  let body = match @router.build_ofm_chat_request_json_simple(model, prompt) {
-    Err(e) =>
-      return fail("ofm: 请求体构建失败（fail-closed）：" + e, head)
-    Ok(b) => b
-  }
   let url = ofm_chat_url(endpoint)
   if dry_run {
+    let body = match @router.build_ofm_chat_request_json_simple(model, prompt) {
+      Err(e) =>
+        return fail("ofm: 请求体构建失败（fail-closed）：" + e, head)
+      Ok(b) => b
+    }
     return mr_obj(
       [("ok", Json::boolean(true))] +
       head +
@@ -879,106 +952,206 @@ async fn ofm_execute_http(
         (
           "hint",
           Json::string(
-            "dry_run 未发任何网络请求；密钥只从 server 进程环境变量读，不在此回显",
+            "dry_run 未发任何网络请求；重试链上的后续候选同样一个请求都不发；密钥只从 server 进程环境变量读，不在此回显",
           ),
         ),
       ],
     )
   }
-  let call_res = ofm_chat_http(url, body, timeout_ms)
-  let (http_status, raw_body, net_error) = match call_res {
-    Err(e) => (0, "", e)
-    Ok(j) =>
-      match j {
-        Json::Object(m) =>
-          (
-            mr_json_int(m, "status"),
-            mr_json_str(m, "body"),
-            mr_json_str(m, "error"),
-          )
-        _ => (0, "", "ofm_chat_http 返回体非对象")
-      }
-  }
-  // status==0 且带网络错误文本：没拿到 HTTP 响应（网络/超时/DNS），解析它归因
-  let to_parse = if http_status == 0 && net_error.length() > 0 {
-    net_error
-  } else {
-    raw_body
-  }
-  let resp = @router.parse_ofm_chat_response(to_parse, http_status)
-  // 非 JSON 二次重试：回体不可解析时，追加 system 提示后重发一次
-  let (http_status, resp) = if @router.should_retry_on_invalid_json(resp) {
-    match @router.append_retry_prompt(body) {
-      Ok(body2) => {
-        let call_res2 = ofm_chat_http(url, body2, timeout_ms)
-        let (hs2, rb2, ne2) = match call_res2 {
-          Err(e) => (0, "", e)
-          Ok(j) =>
-            match j {
-              Json::Object(m) =>
-                (
-                  mr_json_int(m, "status"),
-                  mr_json_str(m, "body"),
-                  mr_json_str(m, "error"),
-                )
-              _ => (0, "", "ofm_chat_http 返回体非对象")
-            }
+  // 跨模型重试循环（对齐 CLI 通道 P1.1 的既有模式）：一次尝试失败 → 记账 + 冷却 →
+  // 切下一候选，直到成功或候选/重试预算耗尽。invalid-json 的追加提示重发是
+  // 同一候选模型内的请求语义修正，保留在候选内、不跨模型。
+  let mut attempt_model = model
+  let mut attempt_idx = -1
+  let mut retried : Array[String] = []
+  let mut cooldown_errors : Array[String] = []
+  let mut should_retry = true
+  while should_retry {
+    should_retry = false
+    let head : Array[(String, Json)] = [
+        ("executor", Json::string("ofm")),
+        ("model", Json::string(attempt_model)),
+        ("route", route_json),
+      ] +
+      [("retried", Json::array(retried.map(fn(x) { Json::string(x) })))]
+    let body = match
+      @router.build_ofm_chat_request_json_simple(attempt_model, prompt) {
+      Err(e) =>
+        return fail("ofm: 请求体构建失败（fail-closed）：" + e, head)
+      Ok(b) => b
+    }
+    let call_res = ofm_chat_http(url, body, timeout_ms)
+    let (http_status, raw_body, net_error) = match call_res {
+      Err(e) => (0, "", e)
+      Ok(j) =>
+        match j {
+          Json::Object(m) =>
+            (
+              mr_json_int(m, "status"),
+              mr_json_str(m, "body"),
+              mr_json_str(m, "error"),
+            )
+          _ => (0, "", "ofm_chat_http 返回体非对象")
         }
-        let tp2 = if hs2 == 0 && ne2.length() > 0 { ne2 } else { rb2 }
-        let resp2 = @router.parse_ofm_chat_response(tp2, hs2)
-        (hs2, resp2)
+    }
+    // status==0 且带网络错误文本：没拿到 HTTP 响应（网络/超时/DNS），解析它归因
+    let to_parse = if http_status == 0 && net_error.length() > 0 {
+      net_error
+    } else {
+      raw_body
+    }
+    let resp = @router.parse_ofm_chat_response(to_parse, http_status)
+    // 非 JSON 二次重试：回体不可解析时，追加 system 提示后重发一次（同一候选内，不跨模型）
+    let (http_status, resp) = if @router.should_retry_on_invalid_json(resp) {
+      match @router.append_retry_prompt(body) {
+        Ok(body2) => {
+          let call_res2 = ofm_chat_http(url, body2, timeout_ms)
+          let (hs2, rb2, ne2) = match call_res2 {
+            Err(e) => (0, "", e)
+            Ok(j) =>
+              match j {
+                Json::Object(m) =>
+                  (
+                    mr_json_int(m, "status"),
+                    mr_json_str(m, "body"),
+                    mr_json_str(m, "error"),
+                  )
+                _ => (0, "", "ofm_chat_http 返回体非对象")
+              }
+          }
+          let tp2 = if hs2 == 0 && ne2.length() > 0 { ne2 } else { rb2 }
+          let resp2 = @router.parse_ofm_chat_response(tp2, hs2)
+          (hs2, resp2)
+        }
+        Err(_) => (http_status, resp)
       }
-      Err(_) => (http_status, resp)
+    } else {
+      (http_status, resp)
     }
-  } else {
-    (http_status, resp)
-  }
-  let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
-  let quota_note = if routed_by_pool {
-    match mr_record_only(project_dir, ns~, model, ok=!resp.is_error) {
-      Ok(_) => "recorded(\{model})"
-      Err(e) => "record_failed: \{e}"
+    let fail_kind = @router.classify_ofm_failure(http_status, resp.error_type)
+    if resp.is_error {
+      // 失败归因过滤（白名单见 ofm_fallback_eligible）：只有换一次模型可能改变结论的
+      // 档位才切换候选；重试条件与 CLI 通道同构（预算与候选链同时有剩余才切）。
+      if ofm_fallback_eligible(fail_kind) &&
+        attempt_idx + 1 < max_retries &&
+        attempt_idx + 1 < fallback_models.length() {
+        if routed_by_pool {
+          let note = mr_retry_note(
+            attempt_model,
+            mr_record_only(
+              project_dir,
+              ns~,
+              attempt_model,
+              ok=false,
+              context=prompt,
+              config~,
+            ),
+          )
+          if note != "" {
+            cooldown_errors = cooldown_errors + [note]
+          }
+        }
+        let note = mr_retry_note(
+          attempt_model,
+          mr_record_failure(project_dir, ns~, attempt_model),
+        )
+        if note != "" {
+          cooldown_errors = cooldown_errors + [note]
+        }
+        retried = retried + [attempt_model]
+        attempt_idx = attempt_idx + 1
+        attempt_model = fallback_models[attempt_idx]
+        should_retry = true
+        continue
+      }
+      // 最终失败（归因不换模型 / 预算耗尽 / 候选耗尽）：本次尝试记账并返回
+      let quota_note = if routed_by_pool {
+        match
+          mr_record_only(
+            project_dir,
+            ns~,
+            attempt_model,
+            ok=false,
+            context=prompt,
+            config~,
+          ) {
+          Ok(_) => "recorded(\{attempt_model})"
+          Err(e) => "record_failed: \{e}"
+        }
+      } else {
+        "not_routed(调用方显式指定 model，不代记账)"
+      }
+      let tried = (retried + [attempt_model]).join(" -> ")
+      return mr_obj(
+        [("ok", Json::boolean(false))] +
+        head +
+        mr_opt_arr_field("cooldown_errors", cooldown_errors) +
+        [
+          ("executed", Json::boolean(true)),
+          ("quota", Json::string(quota_note)),
+          ("http_status", Json::number(http_status.to_double())),
+          ("error_type", Json::string(resp.error_type)),
+          ("error", Json::string(resp.error_message)),
+          ("failure_kind", Json::string(fail_kind.label())),
+          (
+            "hint",
+            Json::string(
+              "OFM 通道未拿到成功正文（已按序尝试：\{tried}）。可用 FIST_MODEL_MAX_RETRIES 提高重试次数；" +
+              "key 只在 server 进程环境变量里，本回执不回显。",
+            ),
+          ),
+        ],
+      )
     }
-  } else {
-    "not_routed(调用方显式指定 model，不代记账)"
-  }
-  if resp.is_error {
+    let quota_note = if routed_by_pool {
+      match
+        mr_record_only(
+          project_dir,
+          ns~,
+          attempt_model,
+          ok=true,
+          context=prompt,
+          config~,
+        ) {
+        Ok(_) => "recorded(\{attempt_model})"
+        Err(e) => "record_failed: \{e}"
+      }
+    } else {
+      "not_routed(调用方显式指定 model，不代记账)"
+    }
     return mr_obj(
-      [("ok", Json::boolean(false))] +
+      [("ok", Json::boolean(true))] +
       head +
       [
         ("executed", Json::boolean(true)),
         ("quota", Json::string(quota_note)),
         ("http_status", Json::number(http_status.to_double())),
-        ("error_type", Json::string(resp.error_type)),
-        ("error", Json::string(resp.error_message)),
-        ("failure_kind", Json::string(fail_kind.label())),
+        ("content", Json::string(resp.content)),
         (
           "hint",
           Json::string(
-            "OFM 通道未拿到成功正文（上游/网络/凭据）。故障面见 failure_kind；" +
-            "key 只在 server 进程环境变量里，本回执不回显。",
+            "OFM 通道返回成功正文；仍是外部模型输出，按证据梯 L4 用 output_validate 到文件系统验证",
           ),
         ),
       ],
     )
   }
-  mr_obj(
-    [("ok", Json::boolean(true))] +
-    head +
-    [
-      ("executed", Json::boolean(true)),
-      ("quota", Json::string(quota_note)),
-      ("http_status", Json::number(http_status.to_double())),
-      ("content", Json::string(resp.content)),
-      (
-        "hint",
-        Json::string(
-          "OFM 通道返回成功正文；仍是外部模型输出，按证据梯 L4 用 output_validate 到文件系统验证",
-        ),
-      ),
-    ],
-  )
+  // 不可达（每个分支要么 return，要么把 should_retry 置 true 继续循环）
+  fail("ofm: 重试循环不可达退出（内部异常）", [])
+}
+
+///|
+/// OFM 跨模型 fallback 的失败档白名单：只有「换一次模型可能改变结论」的档位才切换——
+/// `UpstreamDown`（5xx，上游回话了但没办好）与 `NetworkError`（压根没拿到 HTTP 响应）。
+/// `InvalidCredential`（401/403）**不** fallback：换模型不解决 key 问题，直接返回原错误回执，
+/// 避免把凭据故障掩盖成「已经重试过」；`RateLimit`（429，配额是端点级的）与
+/// `BadRequest`（4xx，请求体问题）同理不换模型。invalid-json 的追加提示重发发生在
+/// 当前候选内，与本判定无关。
+fn ofm_fallback_eligible(kind : @router.OfmFailure) -> Bool {
+  match kind {
+    @router.UpstreamDown | @router.NetworkError => true
+    _ => false
+  }
 }
 
 ///|
@@ -1073,7 +1246,7 @@ async fn executor_run_impl(
   // 由 `cli_argv.atomcode_argv` 省略 `--model`，让 atomcode 走自身 config 的
   // default_model。aider 不同（空模型=绕过路由决策，维持拒绝），仍走路由。
   if chosen.is_empty() && executor != "atomcode" && !custom_cli {
-    match model_route_impl(project_dir, ns~, config=cfgj) {
+    match model_route_impl(project_dir, ns~, config=cfgj, context=prompt) {
       Err(e) => return fail(e, [])
       Ok(j) =>
         match j {
@@ -1143,6 +1316,8 @@ async fn executor_run_impl(
     _ => ()
   }
   // OFM 走并存 HTTP 通道（不经 build_command / spawn）；CLI spawn（aider/atomcode）保留。
+  // fallback_models / max_retries 一并传入：OFM 通道内部按白名单档位做跨模型重试，
+  // 与 CLI 通道的 P1.1 备用模型自动切换同构（通道间能力对齐）。
   if executor == "ofm" {
     return ofm_execute_http(
       project_dir,
@@ -1153,6 +1328,9 @@ async fn executor_run_impl(
       dry_run,
       route_json,
       routed_by_pool,
+      fallback_models,
+      max_retries,
+      config=cfgj,
     )
   }
   let (bin, args) : (String, Array[String]) = if custom_cli {
@@ -1291,7 +1469,14 @@ async fn executor_run_impl(
           if routed_by_pool {
             let note = mr_retry_note(
               attempt_model,
-              mr_record_only(project_dir, ns~, attempt_model, ok=false),
+              mr_record_only(
+                project_dir,
+                ns~,
+                attempt_model,
+                ok=false,
+                context=prompt,
+                config=cfgj,
+              ),
             )
             if note != "" {
               cooldown_errors = cooldown_errors + [note]
@@ -1311,7 +1496,15 @@ async fn executor_run_impl(
         } else {
           // 最终尝试（成功或已用尽重试）：记账并返回
           let quota_note = if routed_by_pool {
-            match mr_record_only(project_dir, ns~, attempt_model, ok=okk) {
+            match
+              mr_record_only(
+                project_dir,
+                ns~,
+                attempt_model,
+                ok=okk,
+                context=prompt,
+                config=cfgj,
+              ) {
               Ok(_) => "recorded(\{attempt_model})"
               Err(e) => "record_failed: \{e}"
             }
