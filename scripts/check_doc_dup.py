@@ -15,8 +15,30 @@ R136 重建当天实测：1144 行 / 247KB 里 **341 个登记块中 232 块是�
 - 散文引子 `- `check_plugin_sync.py` 的索引缺口补齐登记（…）：` 不是登记块——
   反引号名后面不是 `—`/`（` 的直接形态，按内容跳过（R48 记过的假阳形状，不许回潮）。
 - 表格行、`**` 段落、`##` 标题都不参与判定（合法的表头/说明不该被当重复）。
-- 同一脚本名被 **> 1 个块**登记 ⇒ 计为重复；rc：0 = 干净；1 = 有重复（点名行号 + 浪费字节）；
+- 同一脚本名被 **> 1 个块**登记 ⇒ 计为重复；rc：0 = 干净；1 = 有重复或断头孤行（逐条点名行号）；
   2 = 扫描面为空（没有文件、或所有文件里一个登记块都没有——判据无法自证）。
+
+**D2 断头孤行检测（BUG-539，2026-11-02 立）**：合并机器人把条目**抬头行**整行吃掉后，残留的
+后续行成为无头孤行——它既不构成重复块（D1 判定面要求「带抬头完整条目 ≥2 份」），也不触发自拒
+⇒ 脏面在绿灯位静默存活（实证：scripts/README 曾有 6 条 `ist-mbt-js-v0.3.4.zip` 落在 R1… 孤行，
+清理前后本尺同 rc=0；残留由 commit 9b1e3fafd 手工修掉）。D2 判定面（纯文本形状，不做内容判断）：
+- 形状A（**缩进外孤行**）：顶格非空行，非条目头、非覆盖正文、非合法结构行
+  （标题 `#` / 表格 `|` / 围栏 ` ``` ` / 引用 `>` / 加粗段 `**` / 列表项 `- * +` / 编号项 `N.`），
+  且**上方最近非空行是条目块行**（头或其覆盖正文），向下越过未覆盖内容（孤行自己的续行 /
+  连续孤行）后**能到达条目块行**——两头钉在条目列表 fabric 里 ⇒ 违例。
+- 形状B（**断头续行**）：缩进非空行不在覆盖面内，且其上方最近非空行**不存在或是标题行**
+  ——缩进正文失去了唯一可能的宿主（条目头或散文锚点都没有）⇒ 违例（含链式传播：已判孤行
+  之下连续的缩进行一并点名）。
+- 形状C（**断头码 span 残段**）：顶格非空行（非头/覆盖/合法结构行），本行反引号数为**奇数**
+  （行内有一段 code span 没闭合），且**紧邻上一非空行**反引号成对（偶数——没有跨行开 span
+  能认领这个闭引号）⇒ 闭引号的开头在被吃掉的那一行里 ⇒ 违例。合法的跨行懒续行是
+  「奇承奇」（上一行行尾开着 span，实证 README 末行），不落进这一格。
+- 刻意不判（fail-open，防误伤实证形状）：覆盖面内的缩进正文（含被吃头后并入前一条目的残段
+  ——形状上与合法长正文不可区分，留给人工）；EOF 单侧懒续行（实证 712 行形状）；bullet /
+  编号锚定的缩进散文（实证 226/421-425 行形状）；条目之间的合法列表项（实证 85 行形状）；
+  撞上合法结构行（标题/表格等）边界的单侧可疑行；三行及以上的跨行 code span（中段为
+  偶数反引号顶格行时，末行会被形状C 误点名——现状面零实证，出现即人工复核）。孤行
+  **不自动修**（`--fix` 只做机械去重，删孤行属内容裁决），但孤儿在场时 rc=1 不放行。
 
 `--fix` 做机械去重：每个名字保留**最长**那块（同长取靠前者——更可能含较新读数），
 **整块删除**其余（含续行；R48 只删首行会把续行留成孤儿，2026-10-22 实测出现过
@@ -28,7 +50,7 @@ R136 重建当天实测：1144 行 / 247KB 里 **341 个登记块中 232 块是�
   python scripts/check_doc_dup.py --paths scripts/README.md,AGENTS.md
   python scripts/check_doc_dup.py --fix
   python scripts/check_doc_dup.py --selftest
-退出码：0 = 干净 / 1 = 有重复 / 2 = 判据无法自证 / 4 = 尺子自己坏了（未捕获异常）。
+退出码：0 = 干净 / 1 = 有重复或断头孤行 / 2 = 判据无法自证 / 4 = 尺子自己坏了（未捕获异常）。
 """
 import argparse
 import io
@@ -46,6 +68,8 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 # `- `a.py` — …` / `- `a.py`（…` / `- `a.py` / `b.py` — …` / `- `a.py` + `b.md` — …`
 HEAD_RE = re.compile(r"^- (`[^`]+`(?:\s*[/+]\s*`[^`]+`)*)\s*(?:—|（)")
 NAME_RE = re.compile(r"`([^`]+)`")
+# 合法结构行（D2 不判）：标题 / 表格 / 围栏 / 引用 / 加粗段 / 列表项 / 编号项
+STRUCT_LEGAL_RE = re.compile(r"^(?:#{1,6}\s|\||```|>|\*\*|[-*+]\s|\d+[.、)])")
 
 
 def parse_blocks(lines):
@@ -83,6 +107,70 @@ def scan_text(text):
         dups.append((name, len(group), [b["start"] + 1 for b in group], waste))
     dups.sort(key=lambda d: (-d[3], d[0]))
     return lines, blocks, dups
+
+
+def scan_orphans(lines, blocks):
+    """D2（BUG-539）断头孤行/断头续行。返回 [(行号(1-based), 行文本)]，按文件顺序。
+
+    文法口径见模块 docstring「D2 断头孤行检测」。纯文本形状判定：
+    覆盖面 = 条目头 + 其连续缩进正文（与 parse_blocks 同一口径）。
+    """
+    covered = [False] * len(lines)
+    for b in blocks:
+        for k in range(b["start"], b["end"]):
+            covered[k] = True
+    nbs = [k for k, ln in enumerate(lines) if ln.strip()]
+    at = {k: i for i, k in enumerate(nbs)}
+
+    def nb(k, step):
+        i = at[k] + step
+        return nbs[i] if 0 <= i < len(nbs) else None
+
+    flagged, out = set(), []
+    for k, ln in enumerate(lines):
+        if not ln.strip() or covered[k]:
+            continue
+        if ln[:1] in (" ", "\t"):
+            # 形状B：缩进正文失去宿主（上方最近非空行不存在/是标题/是已判孤行）
+            p = nb(k, -1)
+            if p is None or p in flagged or lines[p][:1] == "#":
+                flagged.add(k)
+                out.append((k + 1, ln))
+            continue
+        if STRUCT_LEGAL_RE.match(ln):
+            continue
+        # 形状A：顶格可疑行。上方必须钉在条目块行上；向下越过未覆盖内容
+        # （孤行自己的缩进续行 / 连续孤行）后必须到达条目块行，撞上合法结构
+        # 行或 EOF 即不判（fail-open）。
+        p = nb(k, -1)
+        if p is not None and p in flagged:
+            flagged.add(k)
+            out.append((k + 1, ln))
+            continue
+        # 形状C：断头码 span 残段——本行反引号奇数（行内有一段 span 没闭合），
+        # 而紧邻上一非空行反引号成对（没有跨行开 span 能认领这个闭引号）
+        # ⇒ 闭引号的开头在被吃掉的那一行里。实证：7 条 wild 孤行里 5 条落在
+        # 散文 bullet 之后，形状A 的覆盖面三明治够不着它们；合法的跨行懒续行
+        # 是「奇承奇」（实证 712 行，上一行行尾开着 code span），不落进这一格。
+        if (k > 0 and lines[k - 1].strip() and ln.count("`") % 2 == 1
+                and lines[k - 1].count("`") % 2 == 0):
+            flagged.add(k)
+            out.append((k + 1, ln))
+            continue
+        if p is None or not covered[p]:
+            continue
+        n = nb(k, +1)
+        while n is not None:
+            if covered[n]:
+                break
+            if STRUCT_LEGAL_RE.match(lines[n]):
+                n = None
+                break
+            n = nb(n, +1)
+        if n is not None and covered[n]:
+            flagged.add(k)
+            out.append((k + 1, ln))
+    return out
 
 
 def fix_text(text):
@@ -175,13 +263,67 @@ def selftest():
     shared = "- `a.py` / `c.py` — 共用\n- `a.py` — " + "长" * 40 + "\n"
     cell("fix-keeps-unique-multi-name", "c.py" in fix_text(shared)[0], True)
 
+    # ---- D2 断头孤行（BUG-539）----
+    orphan_fx = "- `a.py` — 头\nist-mbt 孤行尾巴落在 R1\n- `b.py` — 另一条\n"
+    _, oblocks, odups = scan_text(orphan_fx)
+    # 实证形状：D1（重复门）对孤行盲——同款清理前后同 rc=0 的根因
+    cell("orphan-dup-blind", len(odups), 0)
+    # 变异对照（必红面）：合成孤行夹具必须被点名
+    cell("orphan-column0-detected", [n for n, _ in scan_orphans(orphan_fx.splitlines(), oblocks)], [2])
+    # 变异对照（必绿面）：修复后（缩进进块 / 删除）必须不红
+    fixed_ind = "- `a.py` — 头\n  ist-mbt 孤行尾巴落在 R1\n- `b.py` — 另一条\n"
+    _, fb, _ = scan_text(fixed_ind)
+    cell("orphan-fixed-by-indent", scan_orphans(fixed_ind.splitlines(), fb), [])
+    fixed_rm = "- `a.py` — 头\n- `b.py` — 另一条\n"
+    _, rb, _ = scan_text(fixed_rm)
+    cell("orphan-fixed-by-removal", scan_orphans(fixed_rm.splitlines(), rb), [])
+    # 孤行带自己的缩进续行：整段一起点名
+    orphan_run = "- `a.py` — 头\n孤行尾巴\n  孤行续行\n- `b.py` — 另一条\n"
+    _, ob2, _ = scan_text(orphan_run)
+    cell("orphan-run-detected",
+         [n for n, _ in scan_orphans(orphan_run.splitlines(), ob2)], [2, 3])
+    # 合法结构行不误伤（标题/表格/引用/编号/bullet/加粗段夹在条目之间）
+    legal_fx = ("- `a.py` — 头\n\n## 小节\n\n| t | u |\n| --- | --- |\n"
+                "> 引用行\n1. 编号项\n- 普通 bullet\n**加粗段落**\n- `b.py` — 另一条\n")
+    _, lb, _ = scan_text(legal_fx)
+    cell("orphan-legal-structure-pass", scan_orphans(legal_fx.splitlines(), lb), [])
+    # EOF 单侧懒续行不误伤（实证：真 README 末行，顶格续上文）
+    lazy_fx = "- `a.py` — 头：正文…\n懒继续行（顶格）\n"
+    _, zlb, _ = scan_text(lazy_fx)
+    cell("orphan-eof-lazy-cont-pass", scan_orphans(lazy_fx.splitlines(), zlb), [])
+    # 形状B：缩进断头续行（宿主被吃后前面只剩标题）+ 链式传播
+    ind_fx = "## 小节\n  断头续行A\n  断头续行B\n- `b.py` — 头\n"
+    _, ib, _ = scan_text(ind_fx)
+    cell("orphan-indented-beheaded-detected",
+         [n for n, _ in scan_orphans(ind_fx.splitlines(), ib)], [2, 3])
+    # 形状B 变异对照（必绿面）：宿主恢复后必绿
+    ind_ok = "- `a.py` — 头\n  断头续行A\n  断头续行B\n- `b.py` — 头\n"
+    _, iob, _ = scan_text(ind_ok)
+    cell("orphan-indented-host-restored-pass", scan_orphans(ind_ok.splitlines(), iob), [])
+    # 形状B 反向对照（不误伤）：bullet 锚定的缩进散文（实证 226/421-425 行形状）
+    prose_anchor = "- whisperer.py — 巡检自动化（TASK-009）：步骤…\n  issue 扫描）；旗标 --scan-only。\n"
+    _, pab, _ = scan_text(prose_anchor)
+    cell("orphan-indented-prose-anchor-pass", scan_orphans(prose_anchor.splitlines(), pab), [])
+    # 形状C：断头码 span 残段（实证：wild 孤行 5/7 落在散文 bullet 之后，覆盖面三明治够不着）
+    span_fx = "- `check_x.py` 的索引缺口补齐登记（历史欠账）：\n" + \
+              "ist-mbt-js-v0.3.4.zip` 落在 R1 与 J4 之间，照抄离线线就 404\n- `b.py` — 另一条\n"
+    _, sb, _ = scan_text(span_fx)
+    cell("orphan-span-fragment-after-bullet-detected",
+         [n for n, _ in scan_orphans(span_fx.splitlines(), sb)], [2])
+    # 形状C 变异对照（必绿面）：跨行懒续行「奇承奇」（实证 712 行形状）不误伤
+    lazy_span = "- `a.py` — 回执 `malformed JSON-RPC response: '[fist-mbt] auth_mode = off\n" + \
+                "'` ⇒ 整个 server 不可用，而测试全绿。\n"
+    _, lsb, _ = scan_text(lazy_span)
+    cell("orphan-span-lazy-cont-pass", scan_orphans(lazy_span.splitlines(), lsb), [])
+
     bad = [(n, w) for n, ok, w in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK: %d 格（短条目/整块/散文排除/多名字/--fix 整块删与幂等，全部真断言）"
+    print("SELFTEST OK: %d 格（短条目/整块/散文排除/多名字/--fix 整块删与幂等/"
+          "D2 断头孤行双向对照，全部真断言）"
           % len(cells))
     return 0
 
@@ -209,6 +351,7 @@ def main(argv=None):
         return selftest()
     paths = [p.strip() for p in args.paths.split(",") if p.strip()]
     total_dups, total_dropped, scanned, blocks_seen = 0, 0, 0, 0
+    total_orphans = 0
     for rel in paths:
         p = os.path.join(ROOT, rel)
         if not os.path.isfile(p):
@@ -228,6 +371,7 @@ def main(argv=None):
                 print("    %-34s x%-2d 行号 %s…  浪费 %d 字节" % (name[:34], n, wl[:6], waste))
         else:
             print("  %s：%d 行，登记块 %d，无重复登记" % (rel, len(lines), len(blocks)))
+        orphans = scan_orphans(lines, blocks)
         if args.fix and dups:
             new_text, dropped, residual = fix_text(text)
             with io.open(p, "w", encoding="utf-8", newline="\n") as f:
@@ -236,18 +380,39 @@ def main(argv=None):
             print("    --fix：整块删除 %d 行（每名保留最长块）" % dropped)
             if residual:
                 print("    ⚠ --fix 后仍有 %d 个名字重复（多名字块交叉，需人工裁决）" % residual)
+            # 修后重算（行号按修后文件），孤儿不自动修但要如实重报
+            lines, blocks = scan_text(new_text)[:2]
+            orphans = scan_orphans(lines, blocks)
+        if orphans:
+            total_orphans += len(orphans)
+            print("  %s：%d 行断头孤行/断头续行（BUG-539 D2：条目文法外且不隶属任何条目块）"
+                  % (rel, len(orphans)))
+            for ln_no, txt in orphans[:8]:
+                print("    行 %d：%s" % (ln_no, txt.strip()[:60]))
+            if len(orphans) > 8:
+                print("    …其余 %d 行省略" % (len(orphans) - 8))
     if scanned == 0 or blocks_seen == 0:
         print("FATAL 扫描面为空 —— 判据无法自证，拒绝出结论")
         return 2
     if args.fix:
         print("\n修复完成：共删除 %d 行（请复跑本尺复核）" % total_dropped)
+        if total_orphans:
+            print("⚠ --fix 只做机械去重，不删孤行（内容裁决）——仍有 %d 行断头孤行需人工处置"
+                  % total_orphans)
+            return 1
         return 0
+    verdict = 0
     if total_dups:
         print("\n⚠ 共 %d 块冗余登记：合并流程会把旧快照整段拼回来（2026-10-22 实测半小时内回涨）。"
               % total_dups)
         print("  处置：`python scripts/check_doc_dup.py --fix` 机械去重后复跑。")
-        return 1
-    return 0
+        verdict = 1
+    if total_orphans:
+        print("\n⚠ 共 %d 行断头孤行（BUG-539 D2）：条目抬头行被合并吃掉后的残留，"
+              "既不构成重复块也无人认领。" % total_orphans)
+        print("  处置：人工核对后并入宿主条目（缩进进块）或删除；--fix 不代做这一步。")
+        verdict = 1
+    return verdict
 
 
 if __name__ == "__main__":
