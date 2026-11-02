@@ -19,8 +19,12 @@ rc 契约：0=绿；1=漂移/失锚；2=自拒（读不到真源或读不到 USA
 
 import argparse
 import importlib.util as _ilu
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -138,8 +142,29 @@ def selftest():
     else:
         print("SELFTEST RED 失锚态未被点名", file=sys.stderr)
 
-    if ok == 4:
-        print(f"SELFTEST PASS（4/4，真源={real}）")
+    # ⑤ CALLFACE（check_selftest_call_face J2）：selftest 的调用图要够得着调用面锚点。
+    # 本件 main() 无参、真跑读 USAGE/真源 ⇒ 进程内直调会把真仓读取拖进自检（hermetic R 档）。
+    # 改走「自 spawn 拒未知旗标」（锚点③形：subprocess 起 sys.executable + 自身脚本名）：
+    # argparse 天生即拒 rc=2；cwd 落系统临时目录 ⇒ hermetic S 档（跑真尺子、打合成输入，
+    # 记账不进棘轮）。
+    _face_dir = tempfile.mkdtemp(prefix="usage_tc_face_")
+    try:
+        _p = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "--definitely-not-real"],
+            cwd=_face_dir, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60)
+        _face_ok = _p.returncode == 2
+    except Exception:
+        _face_ok = False
+    finally:
+        shutil.rmtree(_face_dir, ignore_errors=True)
+    if _face_ok:
+        ok += 1
+    else:
+        print("SELFTEST RED 调用面自 spawn 未按 rc=2 拒未知旗标", file=sys.stderr)
+
+    if ok == 5:
+        print(f"SELFTEST PASS（5/5，真源={real}）")
         return 0
     return 1
 

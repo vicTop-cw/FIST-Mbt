@@ -89,8 +89,10 @@
   —— **判据认不出，会误红**。出现这种情形时**在白名单行尾加 `# 引用形态特殊：<说明>`**，
   判据见到该注释即降为 WARN（**不静默放行，也不硬红**）。
 
-**⚠️ 未进白名单的 `_` 文件照样算 N1 债** —— 例如 `check_new_script_hygiene.py` / `check_t0r21.py`
-**是可独立执行的判据**（只是名字带 `_`），它们的正确归宿是改名 `check_*.py`，不是进白名单。
+**⚠️ 未进白名单的 `_` 文件照样算 N1 债** —— `check_new_script_hygiene.py` / `check_t0r21.py`
+就曾是可独立执行的判据（只是名字带 `_`）。**R115（2026-10-31）已把这两份改名落地**；判例-39
+「改名会静默失去按前缀匹配的豁免」正是这次还债实测出来的——改名后 `check_hardcoded_paths` 的
+`_*.py` 豁免消失，才暴露出脚本里内嵌的本机绝对路径。正确归宿是改名 `check_*.py`，不是进白名单。
 
 ## 判定面（共用棘轮，只许下降）
 
@@ -123,22 +125,28 @@ python scripts/check_scripts_naming.py --selftest    # 合成夹具自证 + 真�
 
 ## 债清单（N1，改名建议按定律 1）
 
-| 现名 | 角色缺位 | 建议 | 活面引用 |
-|---|---|---|---|
-| `check_t0r21.py` | 下划线开头 + 轮次号烤进文件名 | 临时件，移出 `scripts/` 或 `check_t0r21.py` | 0 |
-| `_tool_registry.py` | 数据件混在脚本宇宙 | 移入 `scripts/data/` 或 `registry_data.py` 并登记豁免 | 53（含归档） |
-| `run_calibrate_goal_drift.py` | 动词没在表里 | `run_run_calibrate_goal_drift.py` | 低 |
-| `fist_gate.py` | N1+N2 双债 | `check_fist_gate.py`（它本是合入门） | 70 |
-| `run_fist_mbt_http.py` / `run_fist_mbt_web.py` | N1+N2 | `run_http_panel.py` / `run_web_panel.py` | 58 / 26 |
-| `fist_pr_automator.py` | N1+N2（`_automator` 后缀被 `-` 隔断） | `fist_pr_automator.py` | 26 |
-| `fist.py` | 主入口无角色 | `run_fist_cli.py`（入口搬家要同步 `check_entry_paths`） | 175 |
-| `fist_mbt_mcp_client.py` | 名词串 | `mcp_client_probe.py` | 低 |
-| `issue_scan.py` | 与 MCP 工具同名但只是 helper | `run_issue_scan_helper.py` | 36 |
-| `laya_decide.py` | 名词 | `run_laya_decide.py` | 32 |
-| `run_mcp_bug_loop.py` | 名词 | `run_run_mcp_bug_loop.py` | 低 |
-| `check_output_validate.py` | 名词化的验收件 | `check_check_output_validate.py` | 低 |
-| `pentad_fist.py` | 驱动另一项目的件，名字两头都猜不出 | `run_pentad_fist.py` | 低 |
-| `simulate_head_commit.py` | 动词不在表里 | `_verify` 族：`simulate_head_commit_verify.py` | 低 |
-| `whisperer.py` | 编排件用人名命名 | `run_whisperer.py`（它与 `whisperer_patrol.py` 的分工见 scripts/README） | 74 |
+| 现名（改名后的真名） | 角色缺位 | 建议 | 活面引用 | 状态 |
+|---|---|---|---|---|
+| `check_t0r21.py`（原 `_run_check_t0r21.py`） | 下划线开头 + 轮次号烤进文件名 | 改名 `check_t0r21.py` | 0 | **已还（R115）** |
+| `_tool_registry.py` | 数据件混在脚本宇宙 | 移入 `scripts/data/` 或 `registry_data.py` 并登记豁免 | 53（含归档） | 白名单豁免中，不计债 |
+| `run_calibrate_goal_drift.py`（原 `calibrate_goal_drift.py`） | 动词没在表里 | `run_*` 前缀 | 低 | **已还（R115）** |
+| `fist_gate.py`（原 `fist-gate.py`） | N1+N2 双债 | 去 `-`（它本是合入门） | 70 | **已还（R115）** |
+| `run_fist_mbt_http.py` / `run_fist_mbt_web.py`（原 `fist-mbt-http.py` / `fist-mbt-web.py`） | N1+N2 | `run_*` 前缀 | 58 / 26 | **已还（R115）** |
+| `fist_pr_automator.py`（原 `fist-pr-automator.py`） | N1+N2（`_automator` 后缀被 `-` 隔断） | 去 `-` 恢复后缀可见 | 26 | **已还（R115）** |
+| `fist.py` | 主入口无角色 | `run_fist_cli.py`（入口搬家要同步 `check_entry_paths`） | 175 | **仍欠** |
+| `fist_mbt_mcp_client.py` | 名词串 | `mcp_client_probe.py` | 低 | **仍欠** |
+| `issue_scan.py` | 与 MCP 工具同名但只是 helper | `run_issue_scan_helper.py` | 36 | **仍欠** |
+| `laya_decide.py` | 名词 | `run_laya_decide.py` | 32 | **仍欠** |
+| `run_mcp_bug_loop.py`（原 `mcp_bug_loop.py`） | 名词 | `run_*` 前缀 | 低 | **已还（R115）** |
+| `check_output_validate.py`（原 `output_validate.py`） | 名词化的验收件 | `check_*` 前缀 | 低 | **已还（R115）** |
+| `pentad_fist.py` | 驱动另一项目的件，名字两头都猜不出 | `run_pentad_fist.py` | 低 | **仍欠** |
+| `simulate_head_commit.py` | 动词不在表里 | `_verify` 族：`simulate_head_commit_verify.py` | 低 | **仍欠** |
+| `whisperer.py` | 编排件用人名命名 | `run_whisperer.py`（它与 `whisperer_patrol.py` 的分工见 scripts/README） | 74 | **仍欠** |
+
+> ⚠️ **本表是 2026-10-22 立表时的快照 + R115 还债的逐行更新，不是 live 名单** —— N1 的权威读数
+> 是 `python scripts/check_scripts_naming.py --show`（当前 16/16，正好压在上限）。表里「仍欠」的行
+> **没有覆盖**当时没列进来的名（如 `git_env.py` / `install_git_hooks.py` / `moon_test_env.py` /
+> `pol_keeper_run.py` / `refresh_dist.py` / `render_dsh_patch.py` / `tmp_audit_preservation_scan.py` /
+> `audit_branch_delete.py` / `whisperer_patrol.py`）；**动谁之前先跑 `--show`**，别拿本表当完整清单。
 
 > 表里的「活面引用」只是**成本档**，不是改名许可。动哪个文件名，先量它自己的活面/归档面命中数再决定。
