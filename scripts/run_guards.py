@@ -186,6 +186,13 @@ SPECIAL_CASES = [
     # 与 `check_scripts_index` 那次「文档写进被检文件名」是同一族：**登记红面的文字本身就是被检面**。
     case("check_doc_surface.py"),
     case("check_doc_surface.py", "--selftest"),
+    # —— R121：判例库（docs/AGENTS-precedents.md，R119 迁出）的形态尺。R119 把判例-32~38 搬出
+    #    AGENTS.md 后那份文档没有任何尺在看：R120 实际发生过指针句滞后（内容到 42、指针仍写 38，
+    #    BUG-514「自述滞后于现状」同族）。三判全从正文反解：R1 编号从 32 起连续无跳号 / R2 AGENTS.md
+    #    指针句「判例-32~N 已搬出」的 N == 实测最大编号 / R3 每条标题带日期戳；权威面空或指针被删
+    #    一律 rc=2 自拒不报绿。手写两格（本体 + selftest）挨着同族的 check_doc_surface。
+    case("check_precedents_doc.py"),
+    case("check_precedents_doc.py", "--selftest"),
     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
     #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（24 格合成树：2026-10-28 补
     #    D4 文件级自述落后 2 格 + B6 整份文件无记号 2 格，其中 B6b 是抗漂移的**反向对照**）。
