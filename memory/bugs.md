@@ -15117,3 +15117,26 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   是已知残差：不经 uncaughtException，只能判区间不能拿堆栈）。两半齐（owner 重连 + 判因面
   实测过一次）才翻 FIXED。
 - **计数面连锁**：+8 白盒格 ⇒ 全现状面 2020→2028 同批同步（9 文档，权威读数同日复测）。
+
+## BUG-539 [2026-11-02T09:10:00Z] [low] OPEN
+- summary: `check_doc_dup.py`（scripts/README 登记块重复门）对**断头孤行**盲——
+  被合并机器人整行吃掉**条目抬头**（`- \`xxx.py\` —` 行）后，残留的后续行成为无头孤行，
+  该守卫的判定面是「同一条目正文 ≥2 份」的带抬头形状，孤行既不构成重复块也不报自拒 ⇒
+  脏面在绿灯位静默存活多轮
+- detail: ## 实证（2026-11-02 scripts/README.md 清理车道）
+  1. `scripts/README.md` 里 6 条 `ist-mbt-js-v0.3.4.zip` 落在 R1… 形状的孤行（~124/298/366/
+     413/579/649 行）= 历史合并把 `check_release_asset_names.py` 等条目的抬头行吃掉后留下的
+     断头尾巴；清理前 `check_doc_dup.py` rc=0、清理后仍 rc=0 —— **同绿**，证明形状在判定面之下。
+  2. 车道人工核对（grep 前缀 `ist-mbt-js`）才定位；`check_selftest_inventory_doc.py` 与
+     `check_battery_count_doc.py` 也不看这一格（它们对表计数/格数，不校条目结构完整性）。
+  3. 修复已手工完成（commit 9b1e3fafd：6 孤行删除 + 520 行处重复条目并入活体条目，
+     junction 恢复在 R13 正文内，条目数 170 不变，三守卫亲跑绿）——本单登记的是**守卫盲区**
+     不是残留脏面。
+- 根因：check_doc_dup 的 D1 判据只识别「完整条目（抬头行起首）逐字节重复 ≥2」，没有
+  「条目语法外的孤儿内容行」检测格 —— 与 J10 型「守卫覆盖面窄于主张」同族。
+- 修复出路：给 `check_doc_dup.py`（或 `check_selftest_inventory_doc.py` 的判定面派生器）
+  加一格「缩进外孤行/断头续行」检测——`- \`xxx.py\` —` 文法之外的正文行若不隶属任何条目
+  块 ⇒ 违例逐条点名；必须配变异对照（孤行合成夹具必红 + 干净现状面不误红）。
+- 证据：当日日志 统帅批·续13（scripts/README 清理收口段）；diff 1+/8- 在 9b1e3fafd。
+- 关闭条件：守卫补上孤行检测格且 `--selftest` 含必然红对照，CI 全绿一次。
+- reported_by: lead（2026-11-02 批次三 · scripts/README 清理车道回传建议，统帅终审采纳）
