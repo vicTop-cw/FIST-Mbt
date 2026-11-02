@@ -1,10 +1,13 @@
 id: TASK-006
 title: "docs 结构规范 — 609 个 md 文件散落四处"
 priority: P2
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "T0r8（ns iterate-1102，已归档）：方案甲收敛执行——docs/README.md 索引（76 链接全实存）+ DOCS-STRUCTURE.md 分流规则段（新计划→plans/、新提案→proposals/、skill 说明→skills/ 今后落位、归档→archive/）；check_doc_paths rc=0、check_doc_surface rc=0（J15 未红）。方案乙（移动 ~50 文件）否决：撞 6+ 处钉死路径守卫，裁决素材见 lane-f-docs-audit 回传。"
 
 problem: >
   风语者首轮巡检统计：全仓 609 个 md 文件
