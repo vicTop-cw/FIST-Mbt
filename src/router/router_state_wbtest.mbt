@@ -189,3 +189,116 @@ test "rs_6_负 used 真进 JSON 并被夹紧为 0（补 rs_3 的假绿）" {
   }
   assert_eq(r.pick(now="2026-09-27T00:00:00Z").model_name, "neg-used")
 }
+
+///|
+/// T0r11 白盒锁：CAF 三字段（use_caf_memory / caf_default_preference /
+/// caf_min_evidences）纳入 to_state 序列化面 + restore 读回面后，
+/// 「播种 → 落盘 → 无 config 读回」往返三字段逐字存活。
+/// 机制格（判例-29）：直接断言序列化 JSON 里的三把钥匙——只测「往返后还在」时，
+/// to_state 丢字段 + restore 回落默认可能碰巧同值；钥匙名钉在 JSON 面上，
+/// 变异对照：任一字段不再序列化 ⇒ 本格当场 abort（锁必红）。
+test "rs_7_caf三字段to_state序列化_restore读回_往返逐字存活" {
+  let cfg = qj([
+    ("window_seconds", qn(18000)),
+    ("threshold_pct", Json::number(95.0)),
+    ("use_caf_memory", Json::boolean(true)),
+    ("caf_default_preference", Json::array([qs("free-a"), qs("free-b")])),
+    ("caf_min_evidences", qn(3)),
+    ("free_pool", Json::array([ent("f1", 10)])),
+    ("paid_pool", Json::array([])),
+  ])
+  let (r0, _) = router_restore(Json::null(), config=cfg)
+  assert_true(r0.config.use_caf_memory)
+  let sm : Map[String, Json] = match r0.to_state() {
+    Json::Object(m) => m
+    _ => abort("to_state 应返回 JSON 对象")
+  }
+  // 变异对照面：三把钥匙必须真的在序列化 JSON 里
+  match sm.get("use_caf_memory") {
+    Some(Json::True) => ()
+    _ =>
+      abort("use_caf_memory 必须出现在 to_state 序列化面且为 true")
+  }
+  match sm.get("caf_default_preference") {
+    Some(Json::Array(a)) => {
+      assert_eq(a.length(), 2)
+      match (a[0], a[1]) {
+        (Json::String(s0), Json::String(s1)) => {
+          assert_eq(s0, "free-a")
+          assert_eq(s1, "free-b")
+        }
+        _ =>
+          abort("caf_default_preference 序列化面必须是字符串数组")
+      }
+    }
+    _ => abort("caf_default_preference 必须出现在 to_state 序列化面")
+  }
+  match sm.get("caf_min_evidences") {
+    Some(Json::Number(n, ..)) => assert_eq(n.to_int(), 3)
+    _ =>
+      abort("caf_min_evidences 必须出现在 to_state 序列化面且为 3")
+  }
+  // 往返格：无 config 的 restore（= model_router_status 的读回路径）
+  let (r1, w1) = router_restore(r0.to_state())
+  assert_eq(w1.length(), 0)
+  assert_true(r1.config.use_caf_memory)
+  assert_eq(r1.config.caf_default_preference.length(), 2)
+  assert_eq(r1.config.caf_default_preference[0], "free-a")
+  assert_eq(r1.config.caf_default_preference[1], "free-b")
+  assert_eq(r1.config.caf_min_evidences, 3)
+}
+
+///|
+/// T0r11 兼容格：旧格式状态文件（schema v1、无 CAF 三字段）回读不崩、零噪音告警，
+/// 三字段回落 config 缺省；旧格式状态 + config 显式给了 CAF ⇒ config 生效
+/// （与池定义「config 覆盖定义」同语义）。
+test "rs_8_旧格式状态文件缺CAF字段_回读不崩_兼容回落" {
+  let legacy = qj([
+    ("schema", qn(1)),
+    ("current_tier", qs("free")),
+    ("free_pool", Json::array([ent("f1", 10)])),
+    ("paid_pool", Json::array([])),
+  ])
+  // 无 config（= model_router_status 读回路径）：三字段回落缺省，零告警
+  let (r, w) = router_restore(legacy)
+  assert_false(r.config.use_caf_memory)
+  assert_eq(r.config.caf_default_preference.length(), 0)
+  assert_eq(r.config.caf_min_evidences, 10)
+  assert_eq(w.length(), 0)
+  // 旧格式状态 + 显式 config：config 的 CAF 三件生效
+  let cfg = qj([
+    ("use_caf_memory", Json::boolean(true)),
+    ("caf_default_preference", Json::array([qs("free-a")])),
+    ("caf_min_evidences", qn(2)),
+  ])
+  let (r2, w2) = router_restore(legacy, config=cfg)
+  assert_eq(w2.length(), 0)
+  assert_true(r2.config.use_caf_memory)
+  assert_eq(r2.config.caf_default_preference.length(), 1)
+  assert_eq(r2.config.caf_default_preference[0], "free-a")
+  assert_eq(r2.config.caf_min_evidences, 2)
+}
+
+///|
+/// T0r11 坏类型兜底格：状态文件里 CAF 字段类型坏了 ⇒ 回落 config 缺省且点名，
+/// 不静默采纳（与 rs_3「坏状态逐项兜底且不静默」同纪律）。
+test "rs_9_CAF字段坏类型_兜底且不静默" {
+  let bad = qj([
+    ("schema", qn(1)),
+    ("current_tier", qs("free")),
+    ("free_pool", Json::array([ent("f1", 10)])),
+    ("paid_pool", Json::array([])),
+    ("use_caf_memory", qs("yes")),
+    ("caf_default_preference", Json::array([qn(1), qs("free-a")])),
+    ("caf_min_evidences", qs("abc")),
+  ])
+  let (r, w) = router_restore(bad)
+  assert_false(r.config.use_caf_memory)
+  assert_eq(r.config.caf_default_preference.length(), 1)
+  assert_eq(r.config.caf_default_preference[0], "free-a") // 非字符串元素被忽略
+  assert_eq(r.config.caf_min_evidences, 10)
+  let wt = w.join(" | ")
+  assert_true(wt.contains("use_caf_memory"))
+  assert_true(wt.contains("caf_default_preference"))
+  assert_true(wt.contains("caf_min_evidences"))
+}

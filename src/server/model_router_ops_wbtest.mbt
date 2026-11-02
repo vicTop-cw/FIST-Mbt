@@ -1056,9 +1056,9 @@ test "caf_ops_2_记账context特征化_status_count可见" {
   let caf0 = mo_get(st0, "caf_memory")
   assert_eq(mo_int(caf0, "count"), 0)
   // 记一笔账，带 context + config：push 的 feature_hash 必须是它的归一化哈希。
-  // ⚠️ config 必须随账走：to_state 不持久化 use_caf_memory（router_state.mbt 边界，
-  // 见 iterate-1102/T0 submit 缺口段），不带 config 的记账恢复出 use_caf_memory=false，
-  // CAF push 永不发生——这就是 executor_run 侧记账要透传调用方 config 的原因。
+  // config 随账走是双保险：T0r11 起 to_state 已持久化 CAF 三字段（不带 config
+  // 的记账也会从状态文件读回 use_caf_memory=true，见 caf_ops_3），显式透传
+  // config 则保证「调用方显式关掉 CAF」时记账那一笔立即跟随新值。
   let ctx = "修复 ts 类型解析器的边界情况"
   let rec = mr_record_only(
     d,
@@ -1153,6 +1153,32 @@ test "caf_ops_4_真实pick坏记忆JSON降级点名不覆盖" {
   // status 同步点名 bad_json=true
   let st = mo_unwrap(model_router_status_impl(d, ns="caf_ops4"))
   assert_true(mo_bool(mo_get(st, "caf_memory"), "bad_json"))
+}
+
+///|
+/// T0r11 收口锁：播种（查询带 config 开 CAF）之后，**不带 config** 的记账
+/// （executor_run 自动记账的真实形状）必须仍然走 CAF push——to_state 已持久化
+/// CAF 三字段，router_restore 从状态文件读回 use_caf_memory=true。修前此格红
+/// （读回 use_caf_memory=false ⇒ count=0）；status 的 enabled=true 同时锁住读回面。
+test "caf_ops_5_播种后无config记账CAF仍然生效" {
+  let d = caf_prep("caf_ops5")
+  let _ = mo_unwrap(model_route_impl(d, ns="caf_ops5", config=caf_cfg(true)))
+  let rec = mr_record_only(
+    d,
+    "caf_free_a",
+    ns="caf_ops5",
+    ok=true,
+    context="ctx-t0r11",
+  )
+  match rec {
+    Ok(_) => ()
+    Err(e) => abort("记账应成功：" + e)
+  }
+  // 无 config 的 status 读回也认得 CAF 开着（restore 读回面同步生效）
+  let st = mo_unwrap(model_router_status_impl(d, ns="caf_ops5"))
+  let caf = mo_get(st, "caf_memory")
+  assert_true(mo_bool(caf, "enabled"))
+  assert_eq(mo_int(caf, "count"), 1)
 }
 
 // ===== OFM fallback_chain 跨模型重试（T0r4）=====

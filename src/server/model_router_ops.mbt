@@ -627,10 +627,10 @@ fn model_route_impl(
 /// `config` 是调用方的 config_json（executor_run 已解析的那份）：记账侧与查询侧
 /// 同源透传，否则「executor_run 带 config 跑 CAF」时查询开了 CAF、记账那一笔却
 /// 拿默认配置（use_caf_memory=false）⇒ CAF push 永远不发生。
-/// ⚠️ 已知边界（本轮实测，见 iterate-1102/T0 submit）：`ModelRouter::to_state`
-/// 不持久化 use_caf_memory / caf_default_preference / caf_min_evidences，
-/// router_restore 只从调用方 config 读这三件——所以「播种一次、之后不带 config
-/// 的自动记账」这条流要等 src/router/router_state.mbt 补持久化才通（不在本车道边界内）。
+/// T0r11（iterate-1102）已补持久化缺口：`ModelRouter::to_state` 现在序列化
+/// use_caf_memory / caf_default_preference / caf_min_evidences，router_restore
+/// 从状态文件读回（config 显式给了该字段仍以 config 为准）——「播种一次、之后
+/// 不带 config 的自动记账」这条流已通，server 侧 caf_ops_3 白盒锁钉住。
 fn mr_record_only(
   project_dir : String,
   ns~ : String,

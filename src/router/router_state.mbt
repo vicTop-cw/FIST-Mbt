@@ -4,9 +4,10 @@
 /// 构造他包类型**。把"状态 ↔ 对象"的映射放在类型定义包内，IO 层（src/server）只负责读文件/写文件，
 /// 这样状态 schema 的真源与类型的真源是同一处（一源四态 r2）。
 ///
-/// 状态 JSON schema v1：
+/// 状态 JSON schema v1（T0r11 起含 CAF 三字段；旧文件缺这三键按 config 缺省回落，兼容读）：
 /// { schema:1, current_tier:"free"|"paid", free_idx, paid_idx, switch_count,
 ///   last_switch_at, last_reason, last_pick, window_seconds, threshold_pct,
+///   use_caf_memory, caf_default_preference, caf_min_evidences,
 ///   free_pool:[{name,limit,used,window_start}], paid_pool:[{...}] }
 
 ///|
@@ -24,6 +25,13 @@ pub fn ModelRouter::to_state(self : ModelRouter) -> Json {
     "last_pick": Json::string(self.last_pick),
     "window_seconds": Json::number(cfg.window_seconds.to_double()),
     "threshold_pct": Json::number(cfg.threshold_pct),
+    // T0r11：CAF 三字段纳入序列化面——否则「播种一次、之后无 config 的
+    // executor_run 自动记账」读回 use_caf_memory=false，CAF 永不生效。
+    "use_caf_memory": Json::boolean(cfg.use_caf_memory),
+    "caf_default_preference": Json::array(
+      cfg.caf_default_preference.map(fn(s) { Json::string(s) }),
+    ),
+    "caf_min_evidences": Json::number(cfg.caf_min_evidences.to_double()),
     "free_pool": Json::array(cfg.free_models.map(fn(m) { m.to_json() })),
     "paid_pool": Json::array(cfg.paid_models.map(fn(m) { m.to_json() })),
   })
@@ -209,6 +217,67 @@ pub fn router_restore(
   } else {
     (base_free, base_paid)
   }
+  // T0r11：CAF 三字段读回面。语义与池定义同族——config 显式给了某字段 ⇒ config 为准
+  // （解析与告警口径与 RouterConfig::from_json 逐字一致）；否则状态文件里的持久化值
+  // 生效；状态缺字段（旧格式）/null ⇒ 回落 config 缺省、不告警（旧格式是兼容面不是坏状态），
+  // 坏类型 ⇒ 回落且点名（与 rs_3「兜底且不静默」同纪律）。
+  let cm : Map[String, Json] = match config {
+    Json::Object(m) => m
+    _ => Map([])
+  }
+  let caf_use = if cm.contains("use_caf_memory") {
+    cfg.use_caf_memory
+  } else {
+    match sm.get("use_caf_memory") {
+      Some(Json::True) => true
+      Some(Json::False) => false
+      Some(Json::Null) | None => cfg.use_caf_memory
+      Some(_) => {
+        warns = warns + ["use_caf_memory 非布尔，按 config 缺省处理"]
+        cfg.use_caf_memory
+      }
+    }
+  }
+  let caf_pref = if cm.contains("caf_default_preference") {
+    cfg.caf_default_preference
+  } else {
+    match sm.get("caf_default_preference") {
+      Some(Json::Array(items)) => {
+        let mut models : Array[String] = []
+        let mut bad = false
+        for it in items {
+          match it {
+            Json::String(s) => models = models + [s]
+            _ => bad = true
+          }
+        }
+        if bad {
+          warns = warns +
+            ["caf_default_preference 含非字符串元素，已忽略"]
+        }
+        models
+      }
+      Some(Json::Null) | None => cfg.caf_default_preference
+      Some(_) => {
+        warns = warns +
+          ["caf_default_preference 非数组，按 config 缺省处理"]
+        cfg.caf_default_preference
+      }
+    }
+  }
+  let caf_min = if cm.contains("caf_min_evidences") {
+    cfg.caf_min_evidences
+  } else {
+    match sm.get("caf_min_evidences") {
+      Some(Json::Number(n, ..)) => n.to_int()
+      Some(Json::Null) | None => cfg.caf_min_evidences
+      Some(_) => {
+        warns = warns +
+          ["caf_min_evidences 非数字，按 config 缺省处理"]
+        cfg.caf_min_evidences
+      }
+    }
+  }
   let merged : RouterConfig = {
     window_seconds: ws,
     threshold_pct: tp,
@@ -217,9 +286,9 @@ pub fn router_restore(
     // 端点属部署环境配置，不随用量状态走：一律以调用方 config 为准（状态文件里不存端点）。
     ofm_endpoint: cfg.ofm_endpoint,
     use_laya: cfg.use_laya,
-    use_caf_memory: cfg.use_caf_memory,
-    caf_default_preference: cfg.caf_default_preference,
-    caf_min_evidences: cfg.caf_min_evidences,
+    use_caf_memory: caf_use,
+    caf_default_preference: caf_pref,
+    caf_min_evidences: caf_min,
   }
   let r = ModelRouter::from_config(merged)
   let tier_str = st_str(sm, "current_tier")
