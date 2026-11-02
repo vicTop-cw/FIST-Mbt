@@ -77,6 +77,14 @@
 - cl7 守卫（`scripts/check_plugin_sync.py`）只保证「等于投影」，**不保证「宿主可用」**。
 - 四宿主的真实装载验证不在 CI 覆盖范围内。
 
+### 3.3 宿主副本 ledger 计数滞后于仓内真源（BUG-542）
+
+- **现象**：本机宿主技能副本（`~/.atomcode/skills/fist-mbt/SKILL.md` / `~/.codeartsdoer/skills/fist-mbt/SKILL.md`）是**快照式拷贝**（上次写入 mtime 2026-11-01 11:12，9910 字节），不是实时投影。仓内账本在此期间新增 BUG-539/540/541 并批量 FIXED，宿主副本的 ledger 行仍停在 `BUG-1~531 共 516 条 / 8 待修`，而仓内真源已是 `BUG-1~541 共 526 条 / 2 待修`。
+- **为什么比 §3.1 更严重**：§3.1 的文档计数已由判据逐份守住（`check_tools_sync` R3b/R7）。宿主副本这面**没有任何守卫**——`check_plugin_sync`（cl7）只校验「仓内四投影 == gen_plugins.py 重跑产物」，不覆盖宿主真目录；`gen_plugins.py` 头部注释第 6 行明说"宿主目录没人守卫"。
+- **实际伤害**：harness 每个会话把宿主副本当 skill 注入系统提示 ⇒ 统帅读到的 ledger 是滞后面（显示 8 待修，实际 2 待修）。据此做全局判断会**高估工作量、低估已修事实**——与 BUG-9 同族，只是漂在宿主仓外。
+- **出路两档**（需 owner 裁决）：A) 写 `scripts/sync_host_skills.py` 在 `gen_plugins.py` 后同步宿主真目录（代价：本机耦合、不可 CI 自证）；B) 在边界文档明写"宿主副本滞后是已知面"，承认不可控（当前实际状态）。
+- **本仓不抄快照数**：需要 ledger 计数请跑 `python scripts/fist.py list` 或逐条 grep `^## BUG-` memory/bugs.md，不据宿主副本自述。
+
 ---
 
 ## 4. 守卫与判据
