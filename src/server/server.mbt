@@ -9177,7 +9177,7 @@ pub async fn run_server() -> Unit {
           "后者能让下一个人改回去时当场红。存量不追溯。",
         ),
       },
-      ["project_dir", "bug_ids"],
+      ["project_dir", "bug_ids", "evidence"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
       let project_dir = get_str(args, "project_dir")
