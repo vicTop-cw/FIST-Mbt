@@ -205,6 +205,48 @@ def find_moved(p, universe):
     return sorted(hits)
 
 
+def rename_candidate(git_text, p, tracked_set):
+    """P5 扩展·改名态（R123）**纯解析器**：喂 `git log --follow --name-status --format=%h -n 1 -- <p>`
+    的 stdout，若最后一次触及提交把 p **R 改名**到 tracked_set 里存在的路径 ⇒ 返回 (新路径, 短sha)。
+    删除（D）/新增（A）/普通修改（M）都不是改名 ⇒ None（删除有据与否属 BUG-367 A/B/C 裁决，
+    本判据不替人裁决 ⇒ 维持 missing）。新路径不在跟踪面（改名后又删）同样 None——
+    「曾经改名」证不了「现在还在」。实现路径拆缝：git 外壳在 find_renamed（不经 selftest 静态图，
+    hermetic 不添 subprocess 面）；本纯函数吃合成输出即可考。"""
+    lines = [l for l in git_text.splitlines() if l.strip()]
+    if len(lines) < 2:
+        return None
+    sha = lines[0].strip()
+    for l in lines[1:]:
+        parts = l.split("\t")
+        if len(parts) >= 3 and parts[0].startswith("R") and parts[1] == p and parts[2] in tracked_set:
+            return parts[2], sha
+    return None
+
+
+def find_renamed(p, tracked_set, root=None):
+    """P5 扩展·改名态（R123）git 外壳，两步：
+    ① `git log --format=%h -n 1 -- <p>` 取 p 最后一次被触及的提交；
+    ② 对该提交跑 `git diff-tree -M --name-status -r <sha>`（**整提交**改名检测，不带 pathspec），
+       交给 rename_candidate 找 `R<score>  p → 在跟踪面的新路径`。
+    为什么不一步 `git log --follow -- <p>`：实测（6c18cd0c7，R115 改名批）pathspec 过滤会把
+    R 对拆成 D 展示——`--follow --name-status -- 旧路径` 给 `D`，整提交 `-M` 才给 `R098`。
+    无历史 / 非改名 / 新路径未跟踪 ⇒ None。只从 main（真跑路径）可达：selftest 的 judge
+    不传 rename_lookup，hermetic 静态图不添 subprocess。"""
+    root = root or ROOT
+    r = subprocess.run(["git", "-C", root, "log", "--format=%h", "-n", "1", "--", p],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        return None
+    sha = r.stdout.strip().splitlines()[0].strip() if r.stdout.strip() else ""
+    if not sha:
+        return None
+    r2 = subprocess.run(["git", "-C", root, "diff-tree", "-M", "--name-status", "-r", sha],
+                        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r2.returncode != 0:
+        return None
+    return rename_candidate(r2.stdout, p, tracked_set)
+
+
 def ratchet(n, ceiling):
     """P6 纯判据：判定面 n 条 vs 上限 ceiling。返回 (是否并红, 打印文本)。
     n > ceiling ⇒ 并红并写清多出几条；n < ceiling ⇒ **只给收紧建议、不阻断**；相等 ⇒ 无话。
@@ -350,7 +392,8 @@ def mode_fatal(gate, all_faces):
 
 
 def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None,
-          daily_logs_ignored=None, proposal_prefix=PROPOSAL_DOC_PREFIX):
+          daily_logs_ignored=None, proposal_prefix=PROPOSAL_DOC_PREFIX,
+          rename_lookup=None):
     """doc_paths = {文档: [点名路径]}。返回 (诊断条目, 检查过的路径数)。
     非 tracked 的才进诊断；disk_set 用来区分「在工作树磁盘上」与「都没有」；都没有时先问一次
     find_moved，有搬家证据就落 moved（P5），否则落 missing。
@@ -394,6 +437,16 @@ def judge(doc_paths, tracked_set, disk_set, tracked_dirs=None,
                                  "跟踪面存在同名件、父目录在点名父目录之下 ⇒ 事实是**搬家**（多为归档之后），"
                                  "不是未落地。实际位置见本条候选；moved 只证同名+前缀、不证同一份内容，由人确认",
                                  face, mv))
+            elif rename_lookup is not None and rename_lookup(p) is not None:
+                # P5 扩展·改名态（R123）：git log --follow 证实最后一次触及是 R 改名到在跟踪面的新路径。
+                # 与搬家同走 moved 出口（不进判定面），证据更硬（git 记录的真改名，非同名启发）；
+                # 但同样只证「路径延续」不证「文档语义仍指这份内容」，由人确认。
+                rn = rename_lookup(p)
+                findings.append((doc, p, "moved",
+                                 "git log --follow 证实该路径最后一次触及提交（%s）把它**改名**到在跟踪面的新路径"
+                                 " ⇒ 点名是旧名（判例-39 族：改名没扫到活文档面），不是未落地；删除有据与否仍归 "
+                                 "BUG-367 A/B/C 裁决，本判据不代裁" % rn[1],
+                                 face, [rn[0]]))
             else:
                 findings.append((doc, p, "missing",
                                  "跟踪面与磁盘都没有 ⇒ 若计划已说'已完成'则是**虚报**；若说'将新增'则属正常未做",
@@ -564,6 +617,28 @@ def selftest():
     f7, _ = judge({"a.md": ["docs/plans"]}, {"docs/archive/plans/p.md"}, set(), td2)
     cell("moved-dir-form", len(f7) == 1 and f7[0][2] == "moved", True)
     print("  ok  moved-dir-form（目录形态点名 docs/plans → docs/archive/plans 认搬家）")
+
+    # 8b) P5 扩展·改名态（R123）：rename_candidate 纯解析器，5 格全合成输出（判例-29 拆缝——
+    # git 外壳 find_renamed 只从 main 可达，selftest 不喂真仓）。
+    _rn_ok = ("abc1234\nR100\tscripts/fist-mbt-http.py\tscripts/run_fist_mbt_http.py\n")
+    _tracked = {"scripts/run_fist_mbt_http.py"}
+    got = rename_candidate(_rn_ok, "scripts/fist-mbt-http.py", _tracked)
+    cell("rename-found",
+         got == ("scripts/run_fist_mbt_http.py", "abc1234"), True)
+    print("  ok  rename-found（R100 到在跟踪面的新路径 ⇒ (新路径, 短sha)）")
+    cell("rename-to-untracked-rejected",
+         rename_candidate(_rn_ok, "scripts/fist-mbt-http.py", set()) is None, True)
+    print("  ok  rename-to-untracked-rejected（改名后又删 ⇒ 新路径不在跟踪面 ⇒ 维持 missing）")
+    cell("delete-not-rename",
+         rename_candidate("abc1234\nD\tscripts/fix_esm_require.py\n",
+                          "scripts/fix_esm_require.py", set()) is None, True)
+    print("  ok  delete-not-rename（D ⇒ 删除有据与否归 BUG-367 A/B/C，不代裁）")
+    cell("add-not-rename",
+         rename_candidate("abc1234\nA\tsome/path.mbt\n", "some/path.mbt", set()) is None, True)
+    print("  ok  add-not-rename（A ⇒ 无改名证据）")
+    cell("rename-empty-history",
+         rename_candidate("", "any/path", set()) is None, True)
+    print("  ok  rename-empty-history（无历史输出 ⇒ None）")
 
     # 9) P5 的下游：搬家态不进判定面（split_faces 是纯函数，故这条律有夹具而非只在打印里）
     mixed = [("l.md", "docs/x.md", "moved", "", "活文档", ["docs/archive/x.md"]),
@@ -763,7 +838,10 @@ def main():
         for d in dn:
             disk_set.add(os.path.relpath(os.path.join(dp, d), ROOT).replace("\\", "/"))
 
-    findings, n = judge(doc_paths, tracked_set, disk_set, tracked_dirs)
+    # P5 扩展·改名态（R123）只在真跑路径接线：selftest 的 judge 不传 rename_lookup ⇒
+    # hermetic 静态图不添 subprocess 面（find_renamed 只从 main 可达）。
+    findings, n = judge(doc_paths, tracked_set, disk_set, tracked_dirs,
+                        rename_lookup=lambda p: find_renamed(p, tracked_set))
     # 三条空转判据收进 fatal_reason 一次出（顺序=枚举→可读→条数）。原来这里是两处
     # `raise SystemExit("FATAL …")`，实测发现那样只会给出 rc=1 ⇒ docstring 承诺的 rc=2 是幻影。
     fr = fatal_reason(len(docs), len(doc_paths), n)
