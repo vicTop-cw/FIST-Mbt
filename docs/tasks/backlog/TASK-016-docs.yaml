@@ -2,7 +2,7 @@ id: TASK-016
 title: "治理主题散落需收敛到规范真源"
 dedupe_key: "cf4ccf6971b1be0a"
 priority: P3
-status: backlog
+status: done
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
@@ -12,3 +12,14 @@ problem: >
 
 evidence: |
   whisperer probe_docs() 现读：['docs\\2026-10-11-multi-agent-lock-design-v3.md', 'docs\\2026-10-21-fist-governance-tier2-plan.md', 'docs\\DOCS-STRUCTURE.md', 'reports\\2026-09-20-pipeline-watchdog-state-machine.md', 'reports\\2026-09-25-award-enhancement-r15-cleanup-report.md', 'reports\\2026-09-26-award-enhancement-r106-english-readme-report.md', 'reports\\2026-09-26-selfloop-round2-report.md', 'reports\\2026-10-11-r12-cycle10-report.md', 'reports\\2026-10-11-r12-cycle11-report.md', 'reports\\2026-10-13-multilane-lock-mechanism-report.md']
+
+# ── 终审盖章（lead / 2026-11-02，T0r9 车道 lane-i-task016 + T0r8 docs 索引）──
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: >
+  逐份现核（报告 reports/2026-11-02-task016-governance-pointer-report.md）：窄口径命中 56 份
+  （旧快照 21 的 10/10 名录全在其中，差值为 2026-10-22 后新增报告/日志，非旧账恶化）；
+  「自成治理规则却无真源指针」的 c 类为空——讲规则的文件（proposal-process §6、
+  docs/plans/README、项目申报书）落笔时已带真源指针；历史陈述面按 DOCS-STRUCTURE
+  明文口径豁免。收敛面已由 T0r8 落地（docs/README.md 索引 + DOCS-STRUCTURE 分流规则），
+  真源唯一性由 J6/J7 守。check_doc_paths rc=0（8 文档/47 引用）。⇒ 盖 done。

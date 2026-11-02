@@ -1,7 +1,7 @@
 id: TASK-004
 title: "反向 diff 检测 — 删远多于增 = 自动拒绝"
 priority: P3
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T19:15:00+08:00"
@@ -52,3 +52,14 @@ acceptance_met:
   - "REVERT-PATTERN 进 failed/、不进 claimable 队列：✅（端到端实测两目录分流）"
   - "日志写明哪几个文件删远多于增 + 差值：✅（汇总行 + worst_deletions 字段 + yaml）"
 pr_branch: fix/task-004-revert-diff-detector-v2
+
+# ── 终审盖章（lead / 2026-11-02，T0r7 车道 lane-h-revdiff）──
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: >
+  独立判据 scripts/check_reverse_diff.py 落地（T0r7，ns=iterate-1102 已归档）：阈值基线取本仓
+  git log -300 numstat 实测（排除整文件删除后 max=2.88/p99=1.32 ⇒ del>=100 且 删/增比>=10）；
+  --selftest 15 格含变异对照（S2 改删0增1 必绿）统帅复现 rc=0；--commit HEAD rc=0；
+  电池同批登记（battery 109→110，check_battery_count_doc 逐键一致）。
+  与 R39 的 fist-gate.py REVERT-PATTERN（分支扫描面）互补：本尺管提交面，不接 commit_scoped
+  由统帅留待另议。

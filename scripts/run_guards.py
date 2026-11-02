@@ -193,6 +193,13 @@ SPECIAL_CASES = [
     #    一律 rc=2 自拒不报绿。手写两格（本体 + selftest）挨着同族的 check_doc_surface。
     case("check_precedents_doc.py"),
     case("check_precedents_doc.py", "--selftest"),
+    # —— T0r7（iterate-1102 / TASK-004）：反向 diff 检测——删远多于增的提交自动拒绝
+    #    （删>=100 且 删/增比>=10，阈值基线=本仓 300 笔实测分布，见该尺 docstring）。
+    #    电池面取 --commit HEAD（历史不可变 ⇒ 读数确定；裸跑 pending 会吃进并发车道的
+    #    工作树 WIP，读数随时窗漂移，不进电池）。手写两格（本体 + selftest）：
+    #    自动补格只补裸跑，自检格必须点名（本文件既有纪律）。
+    case("check_reverse_diff.py", "--commit", "HEAD"),
+    case("check_reverse_diff.py", "--selftest"),
     # —— R126：副机认领入口（docs/2026-10-20-slave-tasks.md）的自证尺。裸跑判「证据锚点指不指
     #    得到真源 + 文首计数自述对不对」，--selftest 判「这把尺能不能发红」（24 格合成树：2026-10-28 补
     #    D4 文件级自述落后 2 格 + B6 整份文件无记号 2 格，其中 B6b 是抗漂移的**反向对照**）。
