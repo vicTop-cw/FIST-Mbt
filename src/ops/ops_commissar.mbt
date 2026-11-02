@@ -197,7 +197,10 @@ fn commissar_rhop_write(
   let text = @rhop.RhopEnvelope::encode(1, c.alg_name(), ct)
   let path = shared_path + "/" + filename + ".rhop"
   @fs.write_string_to_file(path, text, encoding="utf8") catch {
-    e => eprintln("commissar: 写事件文件失败 \{path}: \{@debug.Debug::to_repr(e)}")
+    e =>
+      eprintln(
+        "commissar: 写事件文件失败 \{path}: \{@debug.Debug::to_repr(e)}",
+      )
   }
 }
 
