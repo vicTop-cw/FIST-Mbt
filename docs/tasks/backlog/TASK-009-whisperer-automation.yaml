@@ -1,7 +1,7 @@
 id: TASK-009
 title: "风语者自动化 — 巡检脚本写 yaml 进 docs/tasks/ 让下游 agent 处理"
 priority: P2
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
@@ -57,3 +57,7 @@ verification:
   - "`whisperer.py --self-test` 与 `--selftest` 均 rc=0（修前 rc=2）"
   - "`fist-gate.py --scan` 在 worktree 里 rc=0，task yaml 落到真实 gitdir `.git/worktrees/<name>/fist/tasks/backlog/`"
   - "从任意目录（C:\）跑 `whisperer.py --selftest` 仍 rc=0（ROOT 修正生效）"
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"

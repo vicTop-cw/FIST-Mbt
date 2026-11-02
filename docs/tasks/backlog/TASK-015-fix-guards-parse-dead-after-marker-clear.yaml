@@ -2,7 +2,7 @@ id: TASK-015
 title: "清理分支 fix/guards-parse-dead-after-marker-clear 的未解冲突标记"
 dedupe_key: "42b78b76c9818f4b"
 priority: P1
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
@@ -17,3 +17,7 @@ status_note: |
   'origin/fix/guards-parse-dead-after-marker-clear' into trial/merge-order"，该提交是 master 祖先；
   且 gitcode/origin 两端 refs/heads/fix/guards-parse-dead-after-marker-clear 均已不存在。
   无标记可解，转 in_review 待 owner 盖章；R4 STALE-BRANCH 已能拦住同类形状。
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"

@@ -1,7 +1,7 @@
 id: TASK-002
 title: "cherry-pick 黑名单 — src/ops/moon.pkg + rhop_poll.mbt"
 priority: P1
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T17:30:00+08:00"
@@ -50,3 +50,7 @@ acceptance_met:
   - "cherry-pick 后自动 reset 这些文件：✅（Restore-Blacklisted 在 pick 后立即调用）"
   - "rhop_poll.mbt 出现即 rm + git rm + 告警：✅（行为测试实测）"
 pr_branch: fix/task-002-cherry-pick-blacklist
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"
