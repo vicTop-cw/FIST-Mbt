@@ -292,16 +292,18 @@ S3 九段全落地 + BUG-466 取票窗口 + 本段软强制后，**该条件技�
 
 ### native 目标构建环境要求
 
-> **BUG-527 现状（2026-11-01 回滚收口，工具链版本语义分歧，单仍 OPEN）**：native 链接 flag
+> **BUG-527 现状（2026-11-02 追记3 改判：与版本无关，单仍 OPEN）**：native 链接 flag
 > `options(link: {"native": {"cc-link-flags": "-lsqlite3"}})` **保留在库包**（src/** 与根级 moon.pkg / atgc / atgc-old / omega）
 > 与可执行包（`cmd/cli`、`cmd/main`）及 native 测试消费方（`tests/smoke`、`tests/external_executor`）。
 > **为什么不能摘**：CI nightly moon 的 native 测试可执行文件链接需要库包把 `-lsqlite3` 传下去
 > （src/store/ops/engine/server 的 test exe 链 `.mooncakes` 里 daqing/sqlite 的 stub.c 调 `sqlite3_*`）——
 > A/B 实证：带 link 的 8da9f920b 两条 native 臂绿（runs 41284830056/60），摘 link 的 d43a06a28
 > 测试 exe 链接即死 `undefined reference to sqlite3_*`（runs 41305804775/54，04775 的 JS 臂另因
-> battery 登记漂移红，与本单无关）。代价：**本地 moon 0.1.20261021 仍把带 link 的库包当可执行目标去链
-> ⇒ 本机全项目 native build/test 必崩**（WSL 复现）——这是 moon 新版与 CI nightly 的语义分歧，
-> 出路（上游 issue / 观测臂降级）等下一轮裁决，账本 BUG-527 持续跟踪。
+> battery 登记漂移红，与本单无关）。代价：**本地 Windows 全项目 native build/test 必崩，与版本无关**——
+> ≥钉版 0.1.20261016 两代实测均崩（WSL 0.1.20261021 + Windows 钉版 0.1.20261016，rc=127，
+> 同根：带 link 库包被当可执行目标去链 LNK2019/LNK1120，MSVC 另静默丢弃 GCC 风格 `-lsqlite3`）；
+> CI nightly（Linux）两条 native 臂是唯一在绿的 native 面。出路②（上游 issue，文本已备）维持唯一主行动，
+> 账本 BUG-527 持续跟踪。
 > Linux 下可执行包统一链接系统 SQLite；Windows 下按下列要求配置 sqlite3.h/sqlite3.lib 与 MSVC 环境即可。
 > **JS 后端**：`moon test --target js` = **2004/2004**（2026-11-01 Windows 本机实测 + Linux(WSL) 干净树复测，四模式流水线自我迭代 Round 1~3 收口 + 黑客松拒收六项整改（BUG-501~507） + 一源四态 cl7 + 模型路由与外部执行器合并 + 多管家/supervisor 工具 + web 面板 M0 + 五语言接入示例 + CAF 属性测试与边界探针 + BUG-333 默认降噪锁等后续追加）。
 > **Native 后端**：2026-10-01 在 WSL(Linux ubuntu-22.04) 实测 `moon test --target native -j 1` = **572/572**（工作树带既往构建残留时）；
