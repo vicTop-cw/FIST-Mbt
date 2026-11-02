@@ -501,6 +501,11 @@ Invoke-RestMethod -Uri "http://127.0.0.1:18326/v1/models" -Headers @{ Authorizat
 拿到清单后，把选定的模型 ID 写进 `free_pool` 并给每条 `lane` 一个显式值；空 `lane` 保持未标注，
 不要从 id 猜。
 
+> **探活 rc=1 不是代码缺陷（2026-11-02 澄清）**：探活判据 `scripts/check_ofm_endpoint.py`
+> 返回 rc=1（`WinError 10061` 连接被拒）= relay 服务**没起**的部署状态，非代码缺陷；
+> OFM relay 由 DSH 插件面板 / 用户侧启动，server 不代拉（见
+> `reports/2026-10-31-ofm-relay-fullchain-report.md`）。先起 relay，再重试探活。
+
 > **联调状态（诚实标注）**：配置与 env 接线层 + **`executor_run` 的 OFM HTTP 通道**均已实现
 > 并被白盒锁钉住（`src/router/router_config_wbtest.mbt` 的 `cfg_ofm_1..5`、`ofm_models_wbtest.mbt`
 > 的 `ofm_m_1..5`、`ofm_chat_wbtest.mbt` 的 `ofm_c_1..6`、`ofm_failure_wbtest.mbt` 的
