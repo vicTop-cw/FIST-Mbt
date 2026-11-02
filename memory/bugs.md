@@ -15118,6 +15118,21 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   实测过一次）才翻 FIXED。
 - **计数面连锁**：+8 白盒格 ⇒ 全现状面 2020→2028 同批同步（9 文档，权威读数同日复测）。
 
+### 追记2（2026-11-02 / 心跳调用面黑盒 e2e 判据落地）
+
+- **常驻判据**：`scripts/blackbox/e2e_server_log_heartbeat.py`（统帅终审本笔入库）——真 spawn
+  `node cli.js serve`，`FIST_DB_PATH`+`FIST_SERVER_LOG` 双指沙箱 `temp/slh-heartbeat-box/`，
+  等窗 100s；整行锚定正则（`^\d{4}-…Z \[fist-mbt\] heartbeat alive pid=\d+$`）判形状 + pid
+  对上子进程；`--selftest` 15 格含正则本体变异对照（判例-30）；rc 契约 0/1/2。
+- **首跑读数（2026-11-02 10:59Z）**：PASS rc=0——等 62.5s，实测首拍间隔 **60s**
+  （server.start → 首拍，与源码常量 SERVER_LOG_HEARTBEAT_MS=60_000 一致），
+  心跳行 `2026-11-02T10:59:06Z [fist-mbt] heartbeat alive pid=15900`，pid=15900 与子进程双对。
+- **「无 env 调间隔」实锤**：源码明注没有 FIST_HEARTBEAT_MS env（过度设计防线），判据只能
+  等 60s 真拍——判据 docstring 已记录该约束，改间隔需改源码常量（本单不扩此面）。
+- 判据与接线两侧照到的缺陷面不同（车道自述）：接线缺陷（env 名拼错 / off 门写反 / pid 取错
+  进程）在 wbtest 假间隔夹具下全绿照不出，唯有这条调用面 e2e 能红——工程半「接线真的通了」
+  自此有常驻尺。电池锚点同批 150→151 / 110→111 / 122→123（check_battery_count_doc 亲证漂移后落锚）。
+
 ## BUG-539 [2026-11-02T09:10:00Z] [low] FIXED
 - summary: `check_doc_dup.py`（scripts/README 登记块重复门）对**断头孤行**盲——
   被合并机器人整行吃掉**条目抬头**（`- \`xxx.py\` —` 行）后，残留的后续行成为无头孤行，
