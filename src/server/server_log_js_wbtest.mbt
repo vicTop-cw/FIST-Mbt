@@ -82,7 +82,7 @@ async test "bug538_i4_心跳_短间隔真写_到点自停_off零io" {
   // 行形状与其它事件同一收口：ISO 时间戳 + [fist-mbt] heartbeat alive pid=
   assert_true(raw.contains("Z [fist-mbt] heartbeat alive pid="))
   // 恰好 3 行（每行以 \n 结尾 ⇒ split 尾部多一个空段）
-  assert_eq(raw.split("\n").length(), 4)
+  assert_eq(raw.split("\n").count(), 4)
   // off 门：空路径不装定时器（零 IO）—— 30ms 间隔走的是注入参数，
   // off 门拦的是 path==""，两个开关维度都过一遍
   server_log_heartbeat_start_with("", 30, 3)
