@@ -450,7 +450,7 @@ def rpc(method, **payload):
 
 | 工具 | 说明 | 参数 |
 |---|---|---|
-| `executor_register` | 为执行者登记能力标签集合（如 [编排,json]）并持久化到 store（跨进程可复现） | name(必) abilities(选) |
+| `executor_register` | 为执行者登记能力标签集合（如 [编排,json]）并持久化到 store（跨进程可复现）；machine_id 非空时追加 `machine_id:<id>` 标签 | name(必) abilities(选) machine_id(选) |
 | `executor_route` | 能力路由推荐：按 { 能力覆盖 desc → 历史信任(验收通过率,无历史 0.5 中性) desc → 负载 asc } 排序，返回候选 + 最佳执行者 + basis | need(必) |
 | `executor_auction` | 置信度校准拍卖（Agora 蒸馏）：按出价竞拍，校准系数 1-\|出价-验收通过率\| 防胜者诅咒，乘负载折扣得拍卖分；能力覆盖>0 方可竞拍，返回 bids + winner | need(必) bid(选,{执行者:0..1}) |
 | `executor_clear` | 清空全部执行者能力注册（重置/整洁） | 无 |
