@@ -82,6 +82,27 @@ fn server_log_path() -> String {
 }
 
 ///|
+/// BUG-538 心跳间隔常量（毫秒）：每 60 秒一行 `heartbeat` —— node 的 OOM 硬崩
+/// 不经过 uncaughtException ⇒ 崩溃钩子抓不到死亡时刻；心跳让**任何形式**的死亡
+/// 都留下「最后还活着」的时间戳，死亡窗口从「未知」收窄到「最后心跳之后」。
+/// 间隔写死常量、不给配置面（过度设计防线：没有 FIST_HEARTBEAT_MS env）。
+const SERVER_LOG_HEARTBEAT_MS : Int32 = 60_000
+
+///|
+/// 心跳 tick 上限：生产语义是「随进程死亡消亡」，不接 stop；但 setInterval
+/// 在句柄活着时会让 node 事件循环永不排空（测试运行器挂死实测），所以 FFI
+/// 带一个 tick 上限、到点自清。生产给天文数字（60s × 20 亿 ≈ 3800 年，
+/// Int32 上限内），等效于无限；测试给小数字拿「到点自停」的确定性。
+const SERVER_LOG_HEARTBEAT_TICKS_MAX : Int32 = 2_000_000_000
+
+///|
+/// 心跳行 detail（纯，可测）：pid 一并入行 —— server.log 可能被同目录多个
+/// server 进程共享，pid 让「最后还活着」的归属可判。
+fn server_log_heartbeat_detail(pid : String) -> String {
+  "alive pid=" + pid
+}
+
+///|
 /// 一行日志（纯，可测）：`<ISO> [fist-mbt] <event> <detail>` + 换行。
 /// ts_iso 由调用方给（now_default()），本函数不做时钟 IO，保持纯。
 fn server_log_line(ts_iso : String, event : String, detail : String) -> String {

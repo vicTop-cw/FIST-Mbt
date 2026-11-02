@@ -57,3 +57,20 @@ test "bug538_p5_截断与净化_超长带标记_换行压平" {
   // 净化先于截断：换行不占截断预算、也不会混进截断面
   assert_eq(server_log_cap("a\nbcdef", 3), "a b...(capped)")
 }
+
+///|
+test "bug538_p6_心跳_常量与行构造同一收口" {
+  // 间隔常量：60 秒一行（低频；写死常量、不给配置面）
+  assert_eq(SERVER_LOG_HEARTBEAT_MS, 60_000)
+  // tick 上限：生产等效无限（60s × 20 亿 ≈ 3800 年，Int32 内）
+  assert_eq(SERVER_LOG_HEARTBEAT_TICKS_MAX, 2_000_000_000)
+  // 心跳行构造走 server_log_line（与其它事件同一收口），detail 带 pid
+  assert_eq(
+    server_log_line(
+      "2026-11-02T08:00:00Z",
+      "heartbeat",
+      server_log_heartbeat_detail("4242"),
+    ),
+    "2026-11-02T08:00:00Z [fist-mbt] heartbeat alive pid=4242\n",
+  )
+}

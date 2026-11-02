@@ -15153,3 +15153,23 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - **落点**：守卫修复 5b8f37d4b（scripts/check_doc_dup.py + README 条目自述同批）；判例-43
   3faed9f94（补格验收=合成夹具双向对照 + 干净面 + 修前真 blob 回放三件齐）；CI 双轨绿
   （runs 41422741847/41422741823 rc=0 ×2）。
+
+### 追记（2026-11-02 / BUG-538 心跳半落地 —— 死亡窗口收窄）
+
+- **60s 心跳已接线**（车道实现 + 统帅终审亲读 diff）：`run_server` 在 slog_path≠"" 时
+  `server_log_heartbeat_start`（src/server/server.mbt:2072-2080）；每 60s 落一行
+  `<ISO> [fist-mbt] heartbeat alive pid=<pid>`。node OOM 硬崩不经 uncaughtException ⇒
+  崩溃钩子抓不到死亡时刻；心跳让**任何形式**的死亡都留下「最后还活着」时间戳，
+  死亡窗口从「未知」收窄到「最后心跳之后」。off（path==""）/interval≤0/ticks≤0 三半门
+  在 MoonBit 层零开销；行构造复用 `server_log_line`+`now_default()` 同一收口；
+  native 维持 no-op 桩（已登记边界）。
+- **关键形状（车道实测，入档）**：活跃 setInterval 句柄会让 node 事件循环永不排空 ⇒
+  `moon test` 测试运行器挂死（无汇总行 rc=2）。修法：FFI 带 `max_ticks` 到点自清，
+  生产传 20 亿 tick（≈3800 年）等效无限——无 stop API、零配置面（不给 FIST_HEARTBEAT_MS）。
+  心跳 IO 走 FFI 内 appendFileSync（async `server_log_write` 无法从同步 timer 回调 await，
+  沿崩溃钩子先例，语义同形）。
+- **测试锁**：p6（常量+行构造同收口，纯面）+ i4（30ms 真写 + 恰好 3 行到点自停——
+  少=没写、多=没自停，两向变异对照一格锁 + off/零间隔/零 ticks 零 IO 三半）。
+- **终审读数**：src/server `Total tests: 586, passed: 586`（+2 格，待终审批注后以此为准）；
+  check_mcp_stdio_purity rc=0；check_fmt_gate PASS；.mbti 零 diff。
+- 关闭条件不变：两半齐（owner 重连连接器 + server.log 判因面实测过一次）才翻 FIXED。

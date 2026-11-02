@@ -2072,6 +2072,10 @@ pub async fn run_server() -> Unit {
   let slog_path = server_log_path()
   if slog_path != "" {
     server_log_install_crash_hooks(slog_path)
+    // BUG-538 心跳（60s 一行）：OOM 硬崩不经过 uncaughtException ⇒ 崩溃钩子
+    // 抓不到死亡时刻；心跳让任何形式的死亡都留下「最后还活着」的时间戳，
+    // 死亡窗口从「未知」收窄到「最后心跳之后」。off（path==""）⇒ 不装，零开销。
+    server_log_heartbeat_start(slog_path)
   }
   ignore(
     server_log_write_to(

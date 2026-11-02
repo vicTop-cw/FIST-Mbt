@@ -22,3 +22,19 @@ fn server_log_pid() -> String {
 fn server_log_install_crash_hooks(_path : String) -> Unit {
   ()
 }
+
+///|
+/// native 无 node 定时器面，心跳 no-op（签名与 js 版一致；与「native 不落日志」
+/// 的已登记边界一致，不假装成功）。
+fn server_log_heartbeat_start_with(
+  _path : String,
+  _interval_ms : Int32,
+  _max_ticks : Int32,
+) -> Unit {
+  ()
+}
+
+///|
+fn server_log_heartbeat_start(_path : String) -> Unit {
+  ()
+}
