@@ -569,6 +569,12 @@ SPECIAL_CASES = [
     #    --auto-merge / 写任务池，那是不可逆面，不在判据面里。
     case("whisperer.py", "--selftest"),
     case("whisperer_patrol.py", "--selftest"),
+    # —— T0r5（iterate-1102 / Tier2 PR2）：`run_fist_task_pool.py` 补自检执行面 ——
+    #    它本体在 REGISTRY（任务池 CLI，多机认领文件协议，「在册但不自动跑」不变——裸跑会写
+    #    .git/fist 池）。落仓时只有裸跑面没有 --selftest；本轮按 R207/判例-29/30 补 argparse
+    #    参数面 + 自检（16 格，含 owner_guard / dup_guard 两处**变异对照**：把锁改坏行为必须
+    #    翻转）。自检全程在 tempfile 沙箱自建池，零真仓读写 ⇒ 只跑自检格，REGISTRY 登记理由照旧。
+    case("run_fist_task_pool.py", "--selftest"),
     # ── R118：`audit_branch_delete.py`（分支删除硬门）落仓时漏接线——`run_guards --list` 现读
     #    「缺面清单：audit_branch_delete.py」，它连带 check_battery_count_doc / selftest-inventory
     #    两格一起红。本脚本裸跑要分支参数且会写 <git-dir>/fist/delete-audit.jsonl，只有 --selftest
