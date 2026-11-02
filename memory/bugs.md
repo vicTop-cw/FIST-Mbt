@@ -15118,7 +15118,7 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   实测过一次）才翻 FIXED。
 - **计数面连锁**：+8 白盒格 ⇒ 全现状面 2020→2028 同批同步（9 文档，权威读数同日复测）。
 
-## BUG-539 [2026-11-02T09:10:00Z] [low] OPEN
+## BUG-539 [2026-11-02T09:10:00Z] [low] FIXED
 - summary: `check_doc_dup.py`（scripts/README 登记块重复门）对**断头孤行**盲——
   被合并机器人整行吃掉**条目抬头**（`- \`xxx.py\` —` 行）后，残留的后续行成为无头孤行，
   该守卫的判定面是「同一条目正文 ≥2 份」的带抬头形状，孤行既不构成重复块也不报自拒 ⇒
@@ -15140,3 +15140,16 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - 证据：当日日志 统帅批·续13（scripts/README 清理收口段）；diff 1+/8- 在 9b1e3fafd。
 - 关闭条件：守卫补上孤行检测格且 `--selftest` 含必然红对照，CI 全绿一次。
 - reported_by: lead（2026-11-02 批次三 · scripts/README 清理车道回传建议，统帅终审采纳）
+
+### FIXED(2026-11-02 / BUG-539 守卫补格落地)
+
+- **守卫补格已交付**（车道实现 + 统帅终审亲跑）：`check_doc_dup.py` 新增 D2 断头孤行检测
+  （`scan_orphans()`），三种形状——缩进外顶格孤行（上下钉在条目 fabric）/ 断头缩进续行
+  （含链式传播）/ 断头码 span 残段（奇承偶）；fail-open 面如实声明（并入前条目的缩进残段
+  形状上不可判，留人工）。`--selftest` 21→33 格，孤行双向变异对照齐。
+- **wild 回放读数（判例-43 的由来）**：修前 blob（9b1e3fafd^）真实孤行 **7 条**（记忆里只有
+  6 条）全数点名 rc=1（旧尺同 blob rc=0）；干净现状面 rc=0；邻尺亲跑绿（selftest_inventory
+  / battery_count / doc_surface / scripts_index 全 rc=0）。
+- **落点**：守卫修复 5b8f37d4b（scripts/check_doc_dup.py + README 条目自述同批）；判例-43
+  3faed9f94（补格验收=合成夹具双向对照 + 干净面 + 修前真 blob 回放三件齐）；CI 双轨绿
+  （runs 41422741847/41422741823 rc=0 ×2）。
