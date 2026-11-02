@@ -14,7 +14,8 @@ init 建池骨架 → publish 把 yaml 收进 backlog → claim 移入 claimed/<
          证明守卫格盯的真是这把锁（判例-30：改坏的是代码行为，不是注释）；
       M2 dup_guard 变异：把「同 task_id 重复 publish 必拒」同样做一遍（判例-29：
          机制格要按机制注入，不靠正则翻自己的源码）。
-退出码：0 = 正常 / 自检全绿；1 = 操作失败（die）；2 = argparse 拒绝（未知旗标 / 缺参数）。
+退出码：0 = 正常 / 自检全绿；1 = 操作失败（die）；2 = argparse 拒绝（未知旗标 / 缺参数）；
+4 = 工具自身异常（判据无法自证，不冒用 1）。
 """
 import argparse
 import io
@@ -168,8 +169,17 @@ class Pool:
         p.write_text(dump_yaml(d), encoding="utf-8")
 
 
+class _Parser(argparse.ArgumentParser):
+    # argparse 默认 error() 走内部 sys.exit(2)，ast 出口面看不见 ⇒ 承诺 rc=2 会被
+    # check_exit_code_contract 判成模块面幻影（R1）。显式字面 sys.exit(2) 把码改真（R42-44 同法）。
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        sys.stderr.write("%s: error: %s\n" % (self.prog, message))
+        sys.exit(2)
+
+
 def build_parser():
-    ap = argparse.ArgumentParser(
+    ap = _Parser(
         prog="run_fist_task_pool.py",
         description="任务池 yaml 管理器（.git/fist/tasks/，Tier2 PR2）")
     ap.add_argument("--root", metavar="DIR", default=None,
