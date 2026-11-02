@@ -15217,6 +15217,11 @@ J18（README 快速开始注释抄数==实测）的三格自检格被误贴在 c
 - 关闭条件：owner 裁决 A/B；若选 A —— 同步脚本落地 + 跑一次宿主 diff 实测 0；若选 B —— `docs/known-boundaries.md` §3 追加登记，且 harness 注入面实测文案与边界文档一致。
 - reported_by: lead（2026-11-02 收口轮 · 宿主副本漂移缺口核实）
 
+- **追记（2026-11-02 · 统帅会话，即时症状半处置）**：宿主四个技能副本
+  （~/.atomcode 与 ~/.codeartsdoer 各自的 fist-mbt + fist-commander SKILL.md）已用仓内投影
+  手工刷新并 diff -rq 逐字一致（fist-mbt ledger 行 516→528）。这只是**症状半**——投影式同步
+  （出路 A）与软链/Junction（出路 B）仍挂 owner 裁决，单保持 OPEN。
+
 ## BUG-543 [2026-11-02T10:45:00Z] [low] FIXED
 BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：30ms 间隔 + 400ms 窗口，
 慢 runner 上事件循环 400ms 只喂进 2 个 tick（`2 != 4`，run 41428792317）。「少 = 没在写」半边
