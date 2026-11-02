@@ -15198,3 +15198,21 @@ J18（README 快速开始注释抄数==实测）的三格自检格被误贴在 c
 ### FIXED(2026-11-02 / BUG-541 J18 自检格归位)
 自检格搬回 j_selftest（fails 在场、--selftest 真执行），main() 只留真接线；补真实现状面
 对照（先判尺子再判被测）。亲证：--selftest 反解清单含 J18，selftest rc=0。
+
+## BUG-542 [2026-11-02T14:45:00Z] [medium] OPEN
+- summary: 本机宿主技能副本（atomcode/codearts 的 `fist-mbt` SKILL.md）ledger 计数滞后于仓内真源，且被 harness 每个会话注入为 skill 描述
+- detail: ## 实证（2026-11-02 收口轮）
+  1. **atomcode 宿主副本** `~/.atomcode/skills/fist-mbt/SKILL.md`（mtime 2026-11-01 11:12，9910 字节）：ledger 行 `BUG-1~531 共 516 条入账：8 条待修 / 469 条已修 / 13 重复并入 / 26 误报`。
+  2. **codearts 宿主副本** `~/.codeartsdoer/skills/fist-mbt/SKILL.md`（同 mtime，同 9910 字节）：ledger 行逐字一致，同样 516/8。
+  3. **仓内投影真源** `plugins/atomcode/skills/fist-mbt/SKILL.md`：`BUG-1~541 共 526 条入账：2 条待修 / 485 条已修 / 13 重复并入 / 26 误报`。
+  4. **差距**：条目数落后 10 条（516 vs 526），待修数多 6 条（8 vs 2）——仓内已 FIXED 的 6 条（BUG-539/540/541/others）在宿主副本仍是 OPEN。
+  5. **harness 实际读取**：本会话系统注入的 fist-mbt skill 描述 ledger 行与宿主副本**逐字一致**（516/8）⇒ 证明 harness 每轮读的是宿主本地拷贝，而非仓内真源。
+  6. **为什么没守卫**：`scripts/check_plugin_sync.py`（cl7）只校验「仓内四宿主投影 == gen_plugins.py 重跑产物」，**不覆盖宿主真目录**（`~/.atomcode/skills/` / `~/.codeartsdoer/skills/`）。`gen_plugins.py` 头部注释点名"宿主目录没人守卫"（第 6 行），但那句只说了"数字漂成 41 个工具"，没点名**ledger 计数面**。
+- 根因：宿主副本的写入路径只有 INSTALL.md 教的"手动拷贝"和 `cp -r` / 软链——没有任何机制在仓内账本推进时同步宿主真目录。宿主副本是 **快照式** 而非 **投影式**：上次拷贝停在 Nov 1 11:12，此后仓内账本新增 BUG-539/540/541 并批量 FIXED 条目，宿主一侧完全不知。
+- 二次伤害：harness 把宿主副本当 skill 注入本提示 ⇒ 每个会话统帅读到的 ledger 是滞后面（显示 8 条待修，实际仅 2 条）。统帅据此做"有多少 bug 待修"的全局判断会**高估工作量**、**低估已修事实**——与 BUG-9 同族的"把已修的说成待修"，只是这次漂在宿主仓外而非账本内。
+- **可执行出路两档**（需 owner 裁决）：
+  - **A. 宿主同步脚本**：写 `scripts/sync_host_skills.py`，每次 `gen_plugins.py` 跑完仓内投影后，把 `plugins/<host>/skills/` 的 diff 同步到 `~/.atomcode/skills/` / `~/.codeartsdoer/skills/`（需处理软链 vs 真目录、权限、跨盘符三个面）。代价：本机耦合（每台机器一套路径）、不可 CI 自证。
+  - **B. 仓外豁免 + 明确边界**：不在本仓自证宿主同步，但在 `docs/known-boundaries.md` §3 明写"宿主副本滞后是已知面、harness 注入的是宿主本地仓、与仓内真源可能不一致"，让读到 skill 描述的人不被 516/8 骗。代价：承认不可控。
+- 证据：本会话 git status 后收口轮亲测（atomcode 516/8 Nov 1 11:12 / codearts 516/8 / 仓内 526/2 / harness 注入 516/8）。
+- 关闭条件：owner 裁决 A/B；若选 A —— 同步脚本落地 + 跑一次宿主 diff 实测 0；若选 B —— `docs/known-boundaries.md` §3 追加登记，且 harness 注入面实测文案与边界文档一致。
+- reported_by: lead（2026-11-02 收口轮 · 宿主副本漂移缺口核实）
