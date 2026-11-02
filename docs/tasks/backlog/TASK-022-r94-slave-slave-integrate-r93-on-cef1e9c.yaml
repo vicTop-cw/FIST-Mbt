@@ -2,7 +2,7 @@ id: TASK-022
 title: "裁定四支同伴分支与 r94 集成分支的合序（TASK-004 与电池面各两份实现）"
 dedupe_key: "0307e8a849535dbb"
 priority: P1
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:44:46+00:00"
@@ -18,3 +18,7 @@ problem: >
 
 evidence: |
   git merge-tree --write-tree --name-only HEAD <ref> 逐支实测（rc=1 即冲突，逐条点名）：vs bdedc73 ⇒ memory/2026-10-21.md、scripts/fist-gate.py；vs 2be0c89 ⇒ memory/2026-10-21.md、scripts/README.md（run_guards.py auto-merge）；vs a457aea ⇒ memory/2026-10-21.md、scripts/README.md；vs 4da1126（两条 ref 同提交）⇒ memory/2026-10-22.md(add/add)、scripts/README.md（fist-gate.py auto-merge）。各支 delta：bdedc73 3 文件 +147/-16；2be0c89 3 文件 +105/-5；a457aea 7 文件 +225/-17；4da1126 5 文件 +75/-8。
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 审计 + T0r3 双面核验：r94 集成分支 slave/slave-integrate-r93-on-cef1e9c 本地 cat-file -e fatal、git branch -a/for-each-ref 零命中、gitcode 与 origin ls-remote 全量无 integrate 系，三面均不存在）"

@@ -36,3 +36,10 @@ TASK-010~015（清理 6 支分支的未解冲突标记）：六支目标分支 `
 ## 五、盖章执行追记（2026-11-02，统帅代 owner 盖章）
 
 14 条已全部盖 done（提交 2d1e3b4fd，reviewed_by: lead）：TASK-002、TASK-003、TASK-005、TASK-008、TASK-009、TASK-018、TASK-019、TASK-021（第一节 8 条已落地）与 TASK-010、TASK-011、TASK-012、TASK-013、TASK-014、TASK-015（第二节 6 条对象分支已消失）。TASK-004、TASK-006、TASK-022 维持 open；TASK-022 由 ns iterate-1102 根任务 T0r3 车道双面核验中，核验后按结论处置。
+
+
+## 六、TASK-022 终结核验追记（2026-11-02，车道 T0r3 三面实证）
+
+第三节 3 条中 **TASK-022 已核结并盖 done**（本追记同批盖章，reviewed_by: lead）：r94 集成分支 `slave/slave-integrate-r93-on-cef1e9c` 三面均不存在——本地 `git cat-file -e` fatal、`git branch -a` 与 `git ls-files` 面 for-each-ref 零命中、gitcode `ls-remote` 全量 66 条 slave/* 无 integrate 系（origin ls-remote 同空），与 R111 对账（四支同伴分支已分别收口）互证。核验任务 ns iterate-1102 T0r3（verify→archive 已走完）。
+
+**至此 23 条巡检队列：15 条 done、TASK-004 与 TASK-006 维持 open**（TASK-004 判据面已由 ns iterate-1102 T0r7 派单进行中；TASK-006 等 docs 结构裁决）。
