@@ -1,7 +1,7 @@
 id: TASK-019
 title: "TASK-009 出现两份 scripts/whisperer.py 实现，合入前须裁决真源"
 priority: P1
-status: in_review
+status: done
 assignee: commander
 discovered_by: slave-agent-r90
 discovered_at: "2026-10-22T01:12:30+00:00"
@@ -28,3 +28,7 @@ evidence: |
 
 status_note: "R111 对账转 in_review：双活解已落地并接线——whisperer_patrol.py 存在、fist-gate 第 6 查指 patrol、run_guards 两格均 --selftest；但 scripts/README.md 仍写「等 TASK-019 裁决」、owner 裁决未落字 ⇒ 不冒 done，待补正式裁决并把该句改成既成事实。"
 
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"

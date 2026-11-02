@@ -2,7 +2,7 @@ id: TASK-013
 title: "清理分支 feat/guard-check-merge-markers 的未解冲突标记"
 dedupe_key: "11a2d9333c67b0e3"
 priority: P1
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer-script
 discovered_at: "2026-10-22T01:10:13+00:00"
@@ -17,3 +17,7 @@ status_note: |
   （git ls-remote 现读 rc=1），无标记可解；该分支的目标能力已在主线：scripts/blackbox/check_merge_markers.py
   （510b1ff0 落尺、R74 接 CI、电池两格），冲突标记处置记于 TASK-001（done）。
   转 in_review 待 owner 裁决是否 done——分支已消失但无同名 merge subject，R4 看不见它。
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"

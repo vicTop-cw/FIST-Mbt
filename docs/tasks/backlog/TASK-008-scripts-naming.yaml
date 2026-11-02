@@ -1,7 +1,7 @@
 id: TASK-008
 title: "scripts/ 命名规范化 — ~50 个无前缀脚本"
 priority: P3
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: whisperer
 discovered_at: "2026-10-21T20:12:00+08:00"
@@ -53,3 +53,7 @@ delivery_r95: |
   因此本单剩余面不是「机械改 50 个名字」，而是一个范围裁决：改名是否只动活面（引用留在归档面的旧名，靠 NAMING.md 的映射表解释），
   还是连归档面一起回写（记录失真换一致性）。副机倾向：只动活面 + 在 NAMING.md 留一张「旧名 → 新名」映射，等 owner 定档后按 N1 棘轮逐批改。
   债清单与每份的改名建议已写在 scripts/NAMING.md 末节（含每档活面引用数，改名前按档量它自己的成本）。
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"

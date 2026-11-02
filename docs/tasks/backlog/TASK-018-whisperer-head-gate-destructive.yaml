@@ -1,7 +1,7 @@
 id: TASK-018
 title: "主机版 whisperer 的 Step 0 HEAD 安全门会 reset --hard + force push 到 main/master"
 priority: P1
-status: in_review
+status: done
 assignee: commander
 discovered_by: slave-agent-r90
 discovered_at: "2026-10-22T01:12:30+00:00"
@@ -42,3 +42,7 @@ evidence: |
 
 status_note: "R111 对账转 in_review（等 commander 裁决）：危险面仍在——step0_head_safety(full=True) 在 --scan-only/--auto-merge 之前执行，判「篡改」后仍 reset --hard + 双远端 --force；但电池面已封（run_guards 对 whisperer.py 只点名 --selftest，另有危险无参格普查），已无无人值守触发路径。"
 
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"

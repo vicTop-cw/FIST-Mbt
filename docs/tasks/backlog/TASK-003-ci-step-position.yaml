@@ -1,7 +1,7 @@
 id: TASK-003
 title: "CI 步骤位置门禁 — Migrate 之前才是安全区"
 priority: P2
-status: in_review
+status: done
 assignee: atomcode
 discovered_by: lead
 discovered_at: "2026-10-21T19:15:00+08:00"
@@ -47,3 +47,7 @@ acceptance_met:
 followup:
   - "ratchet gate（check_plan_landing --gate）当前仍不在 master 的 CI 里；如要接，按本尺规则必须排在 Migrate 之前"
 pr_branch: fix/task-003-ci-step-position
+
+reviewed_by: lead
+reviewed_at: "2026-11-02"
+review_evidence: "reports/2026-11-02-backlog-queue-audit.md（R124 队列真值审计，逐条 grep/git cat-file 实证）"
