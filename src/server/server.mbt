@@ -2060,6 +2060,36 @@ pub async fn run_server() -> Unit {
   // 另外把生效档位也报一次 —— 合法值下 warning 是空串，但「现在是什么档」本身要可见。
   eprintln("[fist-mbt] auth_mode = " + @engine.auth_mode().to_string())
 
+  // ══ BUG-538（工程半）：server 落盘日志 ══════════════════════════════════
+  // server 的 stdout/stderr 被宿主连接器吞掉 ⇒ 任何一次进程死亡都永远不可判因
+  // （BUG-538：2026-11-02 server 消失，进程面取证只能证明「进程已死」）。
+  // 关键生命周期事件写 `<db 目录>/server.log`（FIST_SERVER_LOG 可显式覆盖路径；
+  // =off 关闭）。铁律：只写文件，绝不碰 stdout/stderr（stdio 纯净性，
+  // scripts/check_mcp_stdio_purity.py）；IO 失败静默降级，零致命。
+  // 这里记 server.start（版本 / pid / auth_mode / db 路径 / 日志落点）并安装
+  // 崩溃钩子（uncaughtException / unhandledRejection / exit，只加记录不改退出行为）；
+  // spawn 生命周期在 run_check_external（run_check/executor_run/ocr_scan 的单一收口点）。
+  let slog_path = server_log_path()
+  if slog_path != "" {
+    server_log_install_crash_hooks(slog_path)
+  }
+  ignore(
+    server_log_write_to(
+      slog_path,
+      "server.start",
+      "version=" +
+      project_version +
+      " pid=" +
+      server_log_pid() +
+      " auth_mode=" +
+      @engine.auth_mode().to_string() +
+      " db_path=" +
+      @store.SqliteStore::default_db_path() +
+      " log_path=" +
+      slog_path,
+    ),
+  )
+
   // BUG-21：握手版本曾是硬编码 "0.1.0"，与 moon.mod / project_version / 文档三处口径分裂——
   // 客户端 tools/list 之外的唯一自报身份就是它，必须与单一真源一致。
   let mut s1 = @mcp.MCPServer::MCPServer("fist-mbt", project_version)
