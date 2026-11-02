@@ -40,3 +40,14 @@ templates/*.md  text eol=lf
 #   安全边界（沿用本文件既有口径）：HEAD 里 `.mbti` blob 实测纯 LF（`git cat-file` CR=0），
 #   加 `eol=lf` 不会触发 renormalize 把已在跟踪的文件刷脏；也**不加** `* text=auto`。
 *.mbti   text eol=lf
+
+# `.mbt` 与 `moon.pkg` 必须 LF（2026-11-02 加，R121；同 `*.mbti` 2026-10-23 前例）：
+#   Windows 侧 `core.autocrlf=true` 把 checkout 出的文本转成 CRLF，而这两类的 git blob
+#   本来就是纯 LF（`git grep -I $'\r' HEAD -- '*.mbt'` = 0/434、`-- '*moon.pkg'` = 0/29，实测），
+#   于是「没改任何语义」的工作树常年挂着 38~65 个幻影脏文件：每个 agent/巡检轮都要花调用分辨
+#   真假脏（BUG-527 调查实干扰），`check_test_sync` 的 N4 信号也长期把幻影算进 dirty 数 ⇒
+#   降级成 ADVISORY。钉 `text eol=lf` 后 clean 过滤把 CRLF 工作树归一回 LF、与 index 一致 ⇒
+#   幻影消失，且 blob 本就是 LF ⇒ 不触发 renormalize、不产生任何内容变更提交。
+#   安全边界（沿用本文件既有口径）：只加「HEAD blob 实测纯 LF」的类型；仍**不加** `* text=auto`。
+*.mbt    text eol=lf
+moon.pkg text eol=lf
