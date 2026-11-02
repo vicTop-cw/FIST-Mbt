@@ -79,12 +79,25 @@ CI 看不见这条：CI 不发 Release，也不跑安装器。
       （与 ci.yml:510-519 已跑通的形状同源）；作业段跑了 moon 却没有安装步也红（安装步被整个摘掉）。
       不碰 moon 的 windows 臂不判（R9 的「不跑 moon 的 workflow 不判」同口径）。
 
+  R16 发布后资产集合比对（BUG-513 出路③）：BUG-513 的关闭条件不是「资产数现在对了」
+      （数一数就绿的那格不是锁，判例-36），而是「有判据在发布后自动比对臂声明与实际资产，
+      少一枚即红」——本仓 Release 事故：少一枚资产，靠人查 API 才发现，而 CI 全绿。
+      离线判据只能钉「运行时比对步在不在」，真正的那一红发生在 release.yml 运行时。
+      四个子判据（全部只看 release 作业段剔注释后的代码面）：
+      (a) 比对步在（步名锚 `Verify published assets`）；
+      (b) `gh api …/releases/tags/` 取实际资产清单的远端真值枚举在；
+      (c) 逐名双向比对在（`comm -23` 本地有远端无 + `comm -13` 远端有本地无——数个数不是锁）；
+      (d) 不等分支有非零退出（比对起点到 exit 1 之间 800 字内——窗口要容得下两侧清单的
+      诊断 echo，判据第一版 400 字被自己的回显行撑爆，干净面误红）。
+      读不到 release.yml ⇒ 自拒不报绿（沿用本文件既有自拒档）。
+
 自证：写死默认值必红 / 缺 moon.mod 解析必红 / 资产名漂移必红 / 空值不失败必红 /
 无扩展名 shim 被摘掉必红 / 不做 HTML 与魔数检查必红 / 文档首选线漂到 main 必红 /
 自检退化成空 catch 或无条件 ✅ 或去掉 stderr 隔离必红 /
 发布作业 needs 退回顶掉 native 或摘掉 meta 或摘掉 native 容错必红 /
 moon 不交给下一步或安装 URL 少 `.sh` 必红 / 文档线退回裸 `irm | iex` 必红 /
-源码版本常量落后或真源搬家或基线读不到必红 + 干净输入不误红。
+源码版本常量落后或真源搬家或基线读不到必红 + 干净输入不误红 /
+比对步被摘或改名、远端枚举被摘、逐名比对退化、不等分支退出被改成 0 必红 + 合法比对步不误红。
 """
 import argparse, io, os, re, sys
 
@@ -269,6 +282,31 @@ def judge(texts):
                             "却仍然顶掉发布）")
     else:
         problems.append("R8 读不到 release.yml ⇒ 发布链判据无法自证（不报绿）")
+    # R16 发布后资产集合比对（BUG-513 出路③，见模块 docstring）：离线钉「运行时比对步在不在」，
+    # 真正的那一红发生在 release.yml 运行时。只看 release 作业段剔注释后的代码面
+    # （R9/R15 前科：注释里的针会喂绿自己）；release 作业段的切分沿用「两空格缩进作业键」边界。
+    if yml:
+        yml_code = code_face_text(yml)
+        rel_start = re.search(r'\n  release:\n', yml_code)
+        if not rel_start:
+            problems.append("R16 release.yml（剔注释后）反解不到 release 作业 ⇒ 资产比对格没有着落（自拒，不报绿）")
+        else:
+            rest = yml_code[rel_start.end():]
+            nxt = re.search(r'\n  [A-Za-z_][\w-]*:\s*\n', rest)
+            seg = rest if not nxt else rest[:nxt.start()]
+            if "Verify published assets" not in seg:
+                problems.append("R16 release 作业缺「Verify published assets」比对步"
+                                "（BUG-513 出路③：上传后无人比对 ⇒ 少一枚资产只能靠人查 API）")
+            if "gh api" not in seg or "releases/tags/" not in seg:
+                problems.append("R16 release 作业缺「gh api …/releases/tags/」远端真值枚举"
+                                "（拿不到实际挂上的资产清单，比对无从谈起）")
+            if "comm -23" not in seg or "comm -13" not in seg:
+                problems.append("R16 release 作业缺逐名双向比对（comm -23 本地有远端无 / comm -13 远端有本地无）"
+                                "——数个数不是锁（判例-36）")
+            if not re.search(r'comm -23[\s\S]{0,800}?exit 1', seg):
+                problems.append("R16 比对不等的分支没有非零退出（exit 1）⇒ 比对成了装饰，少一枚资产照样绿")
+    else:
+        problems.append("R16 读不到 release.yml ⇒ 发布后资产比对格无法核对（自拒，不报绿）")
     # R7 装完的自检不许假绿（BUG-109，端到端镜像安装实测）：
     # 顶部 $ErrorActionPreference="Stop" + 原生命令的 stderr ⇒ NativeCommandError（终止错误）。
     # node:sqlite 每次启动都打 ExperimentalWarning ⇒ 旧写法里 `& node … 2>&1` 必进 catch，
@@ -484,6 +522,18 @@ def selftest():
         ("wf:release.yml", ' | Out-File -Append $env:GITHUB_PATH', ' | Out-Null', "R15"),
         ("wf:release.yml", "irm https://cli.moonbitlang.com/install/powershell.ps1 | iex",
          "Write-Host (Get-Date)", "R15"),
+        # R16 五支（BUG-513 出路③ 的退化面，变异打在 release_yml 键——R16 与 R8 同读该键；
+        # 全部落在剔注释后的代码面）：比对步被改名摘锚 / gh api 远端枚举被摘 /
+        # 单向逐名比对被摘（-23）/ 另一向被摘（-13）/ 不等分支的 exit 1 退成 exit 0
+        ("release_yml", "Verify published assets", "Renamed-verify-step", "R16"),
+        ("release_yml", 'gh api "repos/${{ github.repository }}/releases/tags/${{ env.TAG }}"',
+         'echo "no-remote-query"', "R16"),
+        ("release_yml", "comm -23 _local_assets.txt _remote_assets.txt",
+         'echo "count-only" > /dev/null', "R16"),
+        ("release_yml", "comm -13 _local_assets.txt _remote_assets.txt",
+         'echo "count-only" > /dev/null', "R16"),
+        ("release_yml", '            echo "$missing_local"\n            exit 1',
+         '            echo "$missing_local"\n            exit 0', "R16"),
     ]
     executed = []
     for key, old, new, want in checks:
@@ -599,6 +649,37 @@ def selftest():
         fails.append("R15 对不碰 moon 的 windows 臂误红：%s" % probs[:1])
     executed.append("R15")
 
+    # R16 反向对照：合成一个带完整比对步的 release.yml 不许误红（注意该夹具会触发 R8 的
+    # needs 缺失等其它规则 ⇒ 只看有没有 R16 前缀的问题）。
+    r16_ok = chr(10).join([
+        "jobs:",
+        "  release:",
+        "    steps:",
+        "      - name: Verify published assets vs local artifacts (BUG-513 出路③)",
+        "        run: |",
+        "          ls -1 _artifacts/*.zip | xargs -n1 basename | sort > _local_assets.txt",
+        "          gh api \"repos/o/r/releases/tags/v1\" --jq '.assets[].name' | sort > _remote_assets.txt",
+        "          missing_remote=\"$(comm -23 _local_assets.txt _remote_assets.txt)\"",
+        "          missing_local=\"$(comm -13 _local_assets.txt _remote_assets.txt)\"",
+        "          if [ -n \"$missing_remote\" ] || [ -n \"$missing_local\" ]; then",
+        "            exit 1",
+        "          fi",
+        "  next-job:",
+        "    steps:",
+        "      - run: echo hi",
+    ])
+    d = dict(base); d["release_yml"] = r16_ok
+    probs = judge(d)
+    if any(p.startswith("R16") for p in probs):
+        fails.append("R16 对合法比对步误红（四件齐的比对步必须是绿的）：%s" % probs[:1])
+    executed.append("R16")
+    # R16 自拒：release.yml 里反解不到 release 作业必须自拒，不许报绿
+    d = dict(base); d["release_yml"] = "jobs:\n  a:\n    steps:\n      - run: echo hi"
+    probs = judge(d)
+    if not any(p.startswith("R16") for p in probs):
+        fails.append("R16 release 作业缺席时不自拒（比对格没有着落 ≠ 没有问题）")
+    executed.append("R16")
+
     from collections import Counter
     cnt = Counter(executed)
     inventory = " / ".join("%s×%d" % (k, v) if v > 1 else k for k, v in sorted(
@@ -628,7 +709,7 @@ def main():
     print("PASS 分发面同源（判据范围从正文反解：%s）：资产名三处一致 + 版本真源 moon.mod + 空值即失败 + "
           "命令名两类 shell 都可见 + 200/HTML/魔数检查 + 安装自检不假绿 + 发布作业不顶掉分发 + "
           "工具链 bootstrap 与 CI 同源 + 文档线 BOM 安全 + 源码版本常量与 moon.mod 同源 + "
-          "windows 臂安装形状与 ci.yml 同源" % rule_inventory())
+          "windows 臂安装形状与 ci.yml 同源 + 发布后资产逐名比对步在位（BUG-513 出路③）" % rule_inventory())
     return 0
 
 

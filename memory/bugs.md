@@ -13928,6 +13928,23 @@ tag-push 路径 meta 走 `REF#v` 剥 v，dispatch 路径漏了同一语义 ⇒ `
 （`d95817c1a`，单文件 +7 行）；实证 run `41281168161` 四 build 作业全 success、
 Package native artifact success、三枚 artifact 齐全。详见账 BUG-534。
 
+### 追记4（2026-11-02 / BUG-513 出路③ 落地 —— 资产集合自动比对双保险）
+
+- **runtime 格**：`release.yml` 的 `release` 作业在 softprops 上传之后新增
+  `Verify published assets vs local artifacts (BUG-513 出路③)` 步——本地真值
+  （`_artifacts/*.zip` 文件名集合）↔ 远端真值（`gh api repos/.../releases/tags/$TAG
+  --jq '.assets[].name'`）**逐名双向 comm 比对**，任一方向差一枚即红并打印两侧清单
+  （判例-36：数个数不是锁）。受作业级 tag-push 守卫约束，与发布面同口径。
+- **offline 判据 R16**：`check_release_asset_names.py` 新增 R16 四子判据（比对步锚 /
+  远端枚举在 / comm 双向在 / 不等分支非零退出），只看 release 作业段剔注释后的代码面；
+  读不到 release.yml 自拒不报绿。`--selftest` 增 7 格（5 变异全打代码面 + 1 反向 + 1 自拒）。
+- **终审读数（统帅亲跑）**：`--selftest` rc=0（反解清单含 R16×7）；全量 rc=0，PASS 行
+  点名「发布后资产逐名比对步在位（BUG-513 出路③）」。车道另做真实文件变异实验
+  （exit 1→0 ⇒ rc=1；摘 gh api ⇒ rc=1，做完还原）。
+- **状态维持 OPEN**：出路③的关闭条件按原文读是「有判据在发布后自动比对」——判据已存在；
+  但**运行时红面从未真实发生过**（判例文化：runtime 主张要实测）。剩余核对点收窄为一条：
+  下一次真实 tag 发布时该比对步实际执行且给出读数。届时可全单翻 FIXED。
+
 ## BUG-514 [2026-10-31T06:50:00Z] [medium] FIXED
 - summary: `mcp_tool_tour.py` 的自述面**夹具** `surface_fixture()` 只读 `AGENTS.md`，而 `Resources:` 那一行
   早已随 R212 搬到 `docs/AGENTS-mcp-inventory.md` ⇒ `re.search(...)` 回 None、`.group(1)` 当场

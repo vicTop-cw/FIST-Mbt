@@ -501,3 +501,30 @@ jobs:
           prerelease: ${{ contains(env.TAG, '-') }}
           generate_release_notes: true
           files: _artifacts/*.zip
+
+      # BUG-513 出路③：上传之后必须自动比对「臂声明」与「实际资产」——少一枚即红，
+      # 不靠人查 API（判例-36：数个数不是锁，必须逐名双向 diff）。
+      # env.TAG 在本作业可见：它定义在文件顶层 env（github.ref_name），softprops 同作业已在用。
+      - name: Verify published assets vs local artifacts (BUG-513 出路③)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 本地真值：merge-multiple 落到 _artifacts 的 zip 文件名集合（排序，comm 只吃排序列）
+          ls -1 _artifacts/*.zip | xargs -n1 basename | sort > _local_assets.txt
+          # 远端真值：Release 实际挂上的资产名集合
+          gh api "repos/${{ github.repository }}/releases/tags/${{ env.TAG }}" --jq '.assets[].name' | sort > _remote_assets.txt
+          echo "--- local (_artifacts) ---"; cat _local_assets.txt
+          echo "--- remote (release assets) ---"; cat _remote_assets.txt
+          # 集合级逐名双向比对：comm -23 = 本地有而 Release 缺；comm -13 = Release 有而本地无
+          missing_remote="$(comm -23 _local_assets.txt _remote_assets.txt)"
+          missing_local="$(comm -13 _local_assets.txt _remote_assets.txt)"
+          if [ -n "$missing_remote" ] || [ -n "$missing_local" ]; then
+            echo "::error::BUG-513 出路③：Release 资产集合 != 本地工件集合（逐名比对）"
+            echo "本地有而 Release 缺（missing_remote）："
+            echo "$missing_remote"
+            echo "Release 有而本地无（missing_local）："
+            echo "$missing_local"
+            exit 1
+          fi
+          echo "逐名比对通过：Release 资产集合 == 本地 _artifacts 集合"
