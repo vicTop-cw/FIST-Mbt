@@ -1285,6 +1285,37 @@ fn executor_persist_note(res : Result[String, String]) -> (Bool, String) {
 }
 
 ///|
+/// executor_register 的机器注册表合并（Tier2 PR3，真源
+/// docs/2026-10-21-fist-governance-tier2-plan.md PR3 节）：capabilities（abilities）
+/// 接受 machine_id——机器 agent 用它把执行者登记成「有主的机器」，让
+/// .git/fist/tasks 的分支卡（PR2 的 run_fist_task_pool.py 认领面）有主可认领。
+/// 机器标识以 `machine_id:<id>` 能力标签入注册表与 store executors 表
+/// （复用既有持久化面，零 schema 变更，跨重启可复现）。
+/// 纯函数语义：
+/// - machine_id 为空 → 原样返回 abs（零回归：不传 machine_id 时与旧行为逐字一致）；
+/// - 非空且未带该标签 → 追加 `machine_id:<id>`（幂等：已在则不重复追加）。
+fn executor_machine_merge(
+  abs : Array[String],
+  machine_id : String,
+) -> Array[String] {
+  if machine_id == "" {
+    return abs
+  }
+  let tag = "machine_id:" + machine_id
+  for a in abs {
+    if a == tag {
+      return abs
+    }
+  }
+  let out : Array[String] = []
+  for a in abs {
+    out.push(a)
+  }
+  out.push(tag)
+  out
+}
+
+///|
 /// 项目自述版本（BUG-16 修复：对外版本单一真源）。
 /// 此前 status_summary / project_health / fist://overview 三处各写一遍上一版版本号字面量，
 /// 升版时漏改 → 对外自述落后一整版（违反规范 r1「文档即实现」/ r2「一源四态·单真源优先」；
@@ -6005,19 +6036,27 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "executor_register",
-    "Marketplace·执行者能力注册（Dynamic/Marketplace 雏形，R30）：为执行者登记能力标签集合（如 [编排,json]），供 executor_route 按任务所需能力做专长路由。参数：name 执行者标识(必)、abilities 能力标签数组(可选)。返回 {name, abilities, executors, persisted}；persisted 如实反映能力标签是否已落 store（跨重启可复现），写盘失败时 persisted=false 并附 persist_error（BUG-232：不再谎报落库）。",
+    "Marketplace·执行者能力注册（Dynamic/Marketplace 雏形，R30）：为执行者登记能力标签集合（如 [编排,json]），供 executor_route 按任务所需能力做专长路由。Tier2 PR3 扩展（机器注册表）：可选 machine_id 把执行者登记成有主的机器——机器标识以 machine_id:<id> 能力标签入注册表与 store executors 表（跨重启可复现），与 PR2 的 run_fist_task_pool.py 认领面（.git/fist/tasks 分支卡按 machine_id 认领）对齐，让分支卡有主可认领。参数：name 执行者标识(必)、abilities 能力标签数组(可选)、machine_id 机器标识(可选，空=不登记机器，行为与旧版逐字一致)。返回 {name, abilities, executors, persisted}；传了 machine_id 时另带 machine_id 字段且回执 abilities 含 machine_id:<id> 标签；persisted 如实反映能力标签是否已落 store（跨重启可复现），写盘失败时 persisted=false 并附 persist_error（BUG-232：不再谎报落库）。",
     schema(
       {
         "name": string_prop("执行者标识（如 executor-A，必填）"),
         "abilities": array_prop(
           "能力标签数组（如 [\"编排\",\"json\"]）",
         ),
+        "machine_id": string_prop(
+          "可选：机器标识（Tier2 PR3 机器注册表，如 worker-1）；非空时以 machine_id:<id> 能力标签入注册表与 store（幂等），与 .git/fist/tasks 分支卡认领面对齐；缺省/空=纯能力注册（零回归）",
+        ),
       },
       ["name"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let name = get_str(args, "name")
-      let abs = strlist(get_array(args, "abilities"))
+      let mid = get_str(args, "machine_id")
+      // Tier2 PR3：machine_id 以能力标签并入注册表（空=原样，零回归）
+      let abs = executor_machine_merge(
+        strlist(get_array(args, "abilities")),
+        mid,
+      )
       // 先把持久化的既有注册回灌进进程内注册表，再登记（跨进程可复现）
       sync_db_executors()
       ignore(exec_reg.add_ability(name, abs))
@@ -6036,6 +6075,10 @@ pub async fn run_server() -> Unit {
       m.set("name", Json::string(name))
       m.set("abilities", Json::array(abs.map(fn(s) { Json::string(s) })))
       m.set("executors", Json::number(exec_reg.list().length().to_double()))
+      if mid != "" {
+        // Tier2 PR3：仅在显式登记机器时出现（缺省路径回执与旧版逐字一致）
+        m.set("machine_id", Json::string(mid))
+      }
       m.set("persisted", Json::boolean(persisted))
       if persist_error != "" {
         m.set("persist_error", Json::string(persist_error))
