@@ -96,20 +96,91 @@ extern "js" fn js_run_command(
   #| }
 
 ///|
+/// BUG-538：把参数数组拼成一个可读串（逗号分隔）供日志面用。
+fn spawn_args_for_log(args : Array[String]) -> String {
+  let sb = StringBuilder()
+  let mut first = true
+  for a in args {
+    if !first {
+      sb.write_string(", ")
+    }
+    first = false
+    sb.write_string(a)
+  }
+  sb.to_string()
+}
+
+///|
 /// 真实执行外部命令并返回结果 JSON（ok/code/error/stdout/stderr）。
 /// 签名与 native 桩（run_check_native.mbt）一致，供共享层按同一名字调用。
 /// 永不 abort：调度失败、结果解析失败均以 Err 返回。
+///
+/// BUG-538：子进程生命周期落盘（server.log）。run_check / executor_run / ocr_scan
+/// （以及 git / 模型路由等其它 spawn 方）全部复用本入口 —— 单一收口点接线，
+/// 三个 spawn 点一次覆盖。只写文件、绝不碰 stdout/stderr；写不进静默降级，零致命。
 pub async fn run_check_external(
   cmd : String,
   args : Array[String],
   workdir : String,
   timeout_ms : Int32,
 ) -> Result[Json, String] {
+  let t0 = @env.now().reinterpret_as_int64()
+  ignore(
+    server_log_write(
+      "spawn.start",
+      "cmd=" +
+      cmd +
+      " args=[" +
+      server_log_cap(spawn_args_for_log(args), 300) +
+      "] timeout_ms=" +
+      timeout_ms.to_string(),
+    ),
+  )
   let raw = js_run_command(cmd, args, workdir, timeout_ms).wait() catch {
-    _ => return Err("run_check: 子进程调度失败（js 运行时异常）")
+    _ => {
+      ignore(
+        server_log_write(
+          "spawn.end",
+          "cmd=" + cmd + " ok=false error=dispatch_failed",
+        ),
+      )
+      return Err("run_check: 子进程调度失败（js 运行时异常）")
+    }
   }
   let parsed = @json.parse(raw) catch {
-    _ => return Err("run_check: 子进程结果 JSON 解析失败")
+    _ => {
+      ignore(
+        server_log_write(
+          "spawn.end",
+          "cmd=" + cmd + " ok=false error=json_parse_failed",
+        ),
+      )
+      return Err("run_check: 子进程结果 JSON 解析失败")
+    }
   }
+  let ms = (@env.now().reinterpret_as_int64() - t0).to_int()
+  let ok = get_bool(parsed, "ok", default=false)
+  let code = get_int(parsed, "code", default=-1)
+  let err = get_str(parsed, "error")
+  let scap = get_bool(parsed, "stdout_capped", default=false)
+  let ecap = get_bool(parsed, "stderr_capped", default=false)
+  ignore(
+    server_log_write(
+      "spawn.end",
+      "cmd=" +
+      cmd +
+      " ok=" +
+      (if ok { "true" } else { "false" }) +
+      " code=" +
+      code.to_string() +
+      " ms=" +
+      ms.to_string() +
+      " stdout_capped=" +
+      (if scap { "true" } else { "false" }) +
+      " stderr_capped=" +
+      (if ecap { "true" } else { "false" }) +
+      (if err != "" { " error=" + server_log_cap(err, 200) } else { "" }),
+    ),
+  )
   Ok(parsed)
 }

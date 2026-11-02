@@ -15101,3 +15101,19 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - 关闭条件：①（前置）owner 在 Qoder 重连 fist-mbt MCP 连接器恢复服务面（运维半）；
   ② serve 入口有落盘日志且下次死亡（若有）可从日志判因（工程半）——两半齐才翻 FIXED。
 - reported_by: lead（2026-11-02 统帅批·续6~续8，双统帅并流期间观测）
+
+### 追记（2026-11-02 当日 / BUG-538 工程半落地）
+
+- **serve 落盘日志已接线**（车道实现 + 统帅终审）：新 `src/server/server_log{,_js,_native}.mbt` +
+  两份 wbtest（5+3 格）；`run_server` 记 `server.start`（version/pid/auth_mode/db_path/log_path）并装
+  uncaughtException / unhandledRejection / exit 钩子（只加记录不改退出语义）；
+  spawn 生命周期接在 `run_check_external` **单一收口点**（run_check / executor_run / ocr_scan
+  与 git、模型路由的 spawn 一次覆盖）。默认 `<db 目录>/server.log`，`FIST_SERVER_LOG` 可覆盖 /
+  `=off` 关闭；只写文件零 stdout 占用（check_mcp_stdio_purity rc=0），IO 失败静默降级。
+- **终审读数**：src/server 584/584（+8）；全仓 js 2028/2028 failed 0（temp/full_js_2028.log）；
+  冒烟实录 server.start / spawn.start / spawn.end / server.exit 四行；off 开关零文件；
+  native typecheck 0 error + wbtest manifest 实证 js-only 格不进 native 面。
+- **关闭条件②改判**：工程半已具备——下次进程死亡（若有）可从 server.log 判因（node 原生 OOM
+  是已知残差：不经 uncaughtException，只能判区间不能拿堆栈）。两半齐（owner 重连 + 判因面
+  实测过一次）才翻 FIXED。
+- **计数面连锁**：+8 白盒格 ⇒ 全现状面 2020→2028 同批同步（9 文档，权威读数同日复测）。

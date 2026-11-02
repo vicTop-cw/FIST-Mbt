@@ -42,6 +42,9 @@ options(
     "github_js.mbt": [ "js" ],
     "ofm_http_native.mbt": [ "native" ],
     "ofm_http_js.mbt": [ "js" ],
+    "server_log_native.mbt": [ "native" ],
+    "server_log_js.mbt": [ "js" ],
+    "server_log_js_wbtest.mbt": [ "js" ],
   },
   link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )
