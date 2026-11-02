@@ -4146,7 +4146,7 @@ pub async fn run_server() -> Unit {
           "开发模式(可选默认 advance)：advance | polish | verify | bugfind | fix_and_merge | tidy | explore。BUG-76：本工具的 mode **只作为标签写进台账**，不读模式模板（接线只在 watchdog_tick 上做了）；要按模式取 templates/pipeline_mode_<mode>.md 请用 watchdog_tick(mode=) 或自己把路径传给 meta_prompt_path。",
         ),
       },
-      [],
+      ["project_dir"],
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ts = now_default()
