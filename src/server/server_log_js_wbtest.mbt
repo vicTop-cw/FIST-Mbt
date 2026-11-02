@@ -66,16 +66,17 @@ async test "bug538_i3_io失败静默_父目录被文件占位_不抛不崩" {
 
 ///|
 async test "bug538_i4_心跳_短间隔真写_到点自停_off零io" {
-  // 心跳短间隔真写：30ms 间隔 + @async.sleep 驱动事件循环 —— 这里等待本身就是
-  // 被测语义（「间隔到了会写」），不是判例-31 反对的「sleep 抢时序竞态锁」。
-  // max_ticks=3：30ms 间隔 400ms 窗口里 tick 远多于 3 个 ⇒ 落盘行数**恰好 3**
-  // （少 = 没在写，多 = 到点没自停）—— 两向变异对照都在这一格。
+  // 心跳短间隔真写：30ms 间隔 + @async.sleep 驱动事件循环 —— 「间隔到了会写」是被测语义，
+  // 但「恰好 3 行」依赖事件循环在窗口内真的喂进 ≥3 个 tick：windows CI 慢 runner 实测出现过
+  // 400ms 窗口只到 2 tick（BUG-542）⇒ 窗口给到 1200ms（3 tick 只需 90ms，13 倍裕量），
+  // 上限锁（到点自停）由 max_ticks 保证、与窗口长短无关。
+  // max_ticks=3 ⇒ 落盘行数**恰好 3**（少 = 没在写，多 = 到点没自停）—— 两向变异对照都在这一格。
   let path = BUG538_IO_TEST_DIR + "/heartbeat.log"
   @fs.remove_file(path) catch {
     _ => ()
   }
   server_log_heartbeat_start_with(path, 30, 3)
-  @async.sleep(400)
+  @async.sleep(1200)
   let raw = @fs.read_file_to_string(path) catch {
     _ => abort("bug538_i4: 心跳未落盘")
   }
