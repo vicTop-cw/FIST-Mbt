@@ -14,13 +14,14 @@ R120 内容到判例-42 时 AGENTS.md 指针仍写「判例-32~38」（BUG-514 �
 自拒契约（rc=2，与 J15 同族）：判例库读不到 / 一条判例都解析不到 / AGENTS.md 指针句缺失
 ——「权威被删空必红」，绝不因读不到而出绿灯。
 """
-import io
 import os
 import re
 import sys
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOC_PATH = os.path.join(ROOT, "docs", "AGENTS-precedents.md")
