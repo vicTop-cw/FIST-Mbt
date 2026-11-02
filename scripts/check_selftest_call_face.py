@@ -54,7 +54,9 @@ EXIT_SHAPE_NAMES = ("exit", "SystemExit")
 SUBPROCESS_NAMES = ("Popen", "check_output", "call", "run", "check_call")
 FATAL_PROMISE_KEYS = ("4=", "4 =", "FATAL", "尺子自己坏了")
 # 棘轮上限：只许下降。存量属别的单元的文件，本单不代修，故钉在基点现读而不是 0。
-J2_GAP_CEILING = 30
+# R118：BUG-537/525 两份新脚本补上 CALLFACE 格（ofm 进程内 argparse 拒旗 / usage 自 spawn），
+# 缺口 31→29，上限随实绩同批收紧 30→29。
+J2_GAP_CEILING = 29
 J1_GAP_CEILING = 0
 PRINT_CAP = 30
 

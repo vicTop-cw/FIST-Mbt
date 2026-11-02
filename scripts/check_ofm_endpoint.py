@@ -85,6 +85,15 @@ def selftest():
     # 退出码映射锁：ok->0 / down->1 / unauthorized&error->2 / skip->3
     checks.append(("rc map", [RC_OF[k] for k in ("ok", "down", "unauthorized", "error", "skip")]
                    == [0, 1, 2, 2, 3]))
+    # CALLFACE（check_selftest_call_face J2）：从 selftest 出发的调用图要够得着
+    # 调用面锚点（main）。合成 argv 走「argparse 拒未知旗标」档——argparse 天生即拒
+    # （SystemExit 2），解析发生在一切 IO 之前 ⇒ 不碰真仓、不起网络（hermetic 干净）。
+    try:
+        main(["--definitely-not-real"])
+        face_got = None
+    except SystemExit as e:
+        face_got = e.code
+    checks.append(("callface main rejects unknown flag rc=2", face_got == 2))
     bad = [name for name, ok in checks if not ok]
     if bad:
         print("SELFTEST FAIL: %s" % ", ".join(bad))
