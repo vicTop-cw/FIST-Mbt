@@ -15074,3 +15074,30 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   接线验证：check_scripts_index PASS / check_py_stdout_encoding 48/48 / run_guards --selftest 44 格 OK 缺面 0。
 - **探活首跑即抓到现行实例**：本机 `FIST_OFM_ENDPOINT` 仍指旧死端点 18899（rc=1 down，WinError 10061）
   ——判据会咬的直接证据；环境变量改道 18326 属用户 env，留人终审。回归锁 = 判据本体 + 电池格。
+
+## BUG-538 [2026-11-02T07:40:00Z] [medium] OPEN
+- summary: fist-mbt MCP server（Qoder 插件连接器拉起的 node cli.js serve）进程**消失**——
+  全机进程面扫不到任何 fist server 实例，连接器对一切工具调用（含琐碎 get/call_log）回
+  -32603 "MCP tool invocation did not complete" 持续 >60 分钟
+- detail: ## 观测链（全部盘面/进程面证据，2026-11-02 当日）
+  1. 06:34:28Z 本会话发起 T0r6 全量 `run_check`（moon_test_env 全仓 js 套件），客户端侧折叠为
+     -32603（长调用折叠历史行为）；此后**一切** MCP 调用（get/call_log/status_summary）均
+     -32603，无参数校验差异（参照「-32603 两种相反局面」旧账：这次连琐碎 get 都挂 = 非参数面）。
+  2. 07:20Z~07:36Z 进程面取证（Get-CimInstance Win32_Process）：
+     全部 node.exe 中只有 basedpyright；按 'cli|serve|fist' 过滤**零命中**；
+     全进程 CommandLine 含 'fist' 的只有取证进程自己（bash/powershell）。
+     ⇒ 「server 卡死」假说**被进程面否决**：没有可卡死的进程，server 已死。
+  3. 旁证：`iterate-1102.db-shm` mtime 在 server 应死时段仍被触碰（15:02 local）——与并行
+     统帅会话的存在重叠，不能单独归因；子进程面查无 moon/python 测试进程残留。
+- 根因：**不可判**（负面主张分级自证：本条为「进程面清单级证据」，无 server 日志可读——
+  server stdout/stderr 被宿主连接器吞掉，无落盘日志面）。候选假说不判序：
+  (a) T0r6 重型 run_check 期间堆 OOM（BUG-91 同族——但输出上限已修，另一路径的内存增长
+  未排除）；(b) 宿主连接器重启/回收策略杀掉子进程；(c) 机器级事件（休眠/资源压力）。
+- 为什么这是本仓缺陷而不是纯运维事件：server 无落盘日志 ⇒ 任何一次死亡都永远查不了死因
+  （BUG-514 同族「没人读到的证据等于没有证据」）。修复出路：serve 入口加落盘日志
+  （stderr 或文件，至少记录启停/致命异常/run_check 子进程生命周期），让下一次死亡可判因。
+- 证据：进程面扫描配方见当日日志 统帅批·续8；时间线交叉引用 memory/2026-11-02.md 续4 段
+  （06:34:28Z run_check 折叠）。
+- 关闭条件：①（前置）owner 在 Qoder 重连 fist-mbt MCP 连接器恢复服务面（运维半）；
+  ② serve 入口有落盘日志且下次死亡（若有）可从日志判因（工程半）——两半齐才翻 FIXED。
+- reported_by: lead（2026-11-02 统帅批·续6~续8，双统帅并流期间观测）
