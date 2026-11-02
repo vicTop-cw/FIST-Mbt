@@ -32,3 +32,7 @@ TASK-010~015（清理 6 支分支的未解冲突标记）：六支目标分支 `
 ## 四、盖章操作（owner 一句话即可执行）
 
 同意后统帅执行：把第一、二节共 14 条 yaml 的 `status: in_review` 改 `done` 并补一行 `reviewed_by: human_steward` + 证据指针（本报告）；第三节 3 条维持原状。改动面仅 `docs/tasks/backlog/*.yaml`，`check_backlog_status_staleness` 复跑应仍 `落差 0`（该尺读主线点名，不读状态字段）。
+
+## 五、盖章执行追记（2026-11-02，统帅代 owner 盖章）
+
+14 条已全部盖 done（提交 2d1e3b4fd，reviewed_by: lead）：TASK-002、TASK-003、TASK-005、TASK-008、TASK-009、TASK-018、TASK-019、TASK-021（第一节 8 条已落地）与 TASK-010、TASK-011、TASK-012、TASK-013、TASK-014、TASK-015（第二节 6 条对象分支已消失）。TASK-004、TASK-006、TASK-022 维持 open；TASK-022 由 ns iterate-1102 根任务 T0r3 车道双面核验中，核验后按结论处置。
