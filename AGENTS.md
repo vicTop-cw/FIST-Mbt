@@ -74,6 +74,10 @@ You can browse and install extra skills here:
   `moon fmt --check` 返回 0，未格式化不得提交。
 - 严禁跳过格式化直接提交：CI 的 `moon fmt --check` 门会把未格式化代码判红
   （rc=255）。
+- **改 `memory/bugs.md` 或任何计数面 ⇒ 同批重投影插件态**：`python scripts/gen_plugins.py`
+  必须与账本/计数改动进同一笔提交——插件态投影消费账本与工具计数，漏跑就是
+  cl7（check_plugin_sync）在 CI 红（2026-11-02 一日两实证：计数面 2020→2028 与
+  BUG-538 账本推进各漏一次，全靠 CI 兜底抓到）。
 - 版本差异说明：本地钉版 moon（**0.1.20261016**——`is` 模式匹配表达式为
   d799f56 适配此版引入，替代已移除的 is_ok/is_err）与 CI nightly（`latest`，
   观测到 0.1.20261012）分属不同 moon fmt 世代，输出可能不一致。以本地
