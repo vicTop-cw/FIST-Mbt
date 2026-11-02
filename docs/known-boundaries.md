@@ -15,6 +15,9 @@
 - CI 的两条 native 臂已改为「常驻判据当门 + 门后才跑全量」：门 = `scripts/blackbox/e2e_native_heap_probe.py`（`--selftest` + `--runs 12`），只有 `crashes=0/12` 才放行全量测试。
 - 该判据是**抽检**不是关闭条件：`crashes=0/N` 只说明「这一支样本没抽中」，不等于「native 已修」。
 - **结论**：如果你要跑 native 测试，请在 Linux 环境下跑；Windows native 不稳定是已知的。
+- **Server 落盘日志（BUG-538）只在 JS 后端生效**：serve 把关键生命周期事件追加写 `<FIST_DB_PATH 所在目录>/server.log`
+  （`FIST_SERVER_LOG=<路径>` 覆盖 / `=off` 关闭；db 路径为裸文件名时退 cwd）。日志只写文件、绝不碰 stdout/stderr，
+  IO 失败静默降级。native 面是 no-op 桩（不落日志——BUG-527 现状下的刻意降级，桩只保编译不假装成功）。
 
 ### 1.2 `moon test` 退出码不可靠（BUG-142）
 

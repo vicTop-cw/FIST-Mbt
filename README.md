@@ -127,6 +127,7 @@ moon test --target js  # → Total tests: 2028, passed: 2028, failed: 0
 # 2. 启动 MCP Server（STDIO）
 python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sqlite JS 桩用 CJS）
 node _build/js/debug/build/cmd/cli/cli.js serve   # 必须带 serve：裸跑只打印 help
+#    生命周期日志（BUG-538）落 <FIST_DB_PATH 所在目录>/server.log：FIST_SERVER_LOG=<路径> 覆盖 / =off 关闭（db 路径为裸文件名时退 cwd）；只写文件、绝不碰 stdout/stderr，IO 失败静默降级
 
 # 3. 或用 HTTP/SSE 桥接
 FIST_MCP_PORT=3000 python scripts/run_fist_mbt_http.py

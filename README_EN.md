@@ -26,6 +26,8 @@ moon check
 moon test --target js -j 1     # → Total tests: 2028, passed: 2028, failed: 0
 python scripts/patch_esm_main.py            # ESM shim: moonc ≥0.10.14 emits ESM, the SQLite JS stub uses CJS require
 node _build/js/debug/build/cmd/cli/cli.js serve   # start the MCP server (STDIO) — `serve` is mandatory, bare run only prints help
+#   Lifecycle log (BUG-538) goes to <dir of FIST_DB_PATH>/server.log (falls back to cwd when the db path is a bare filename):
+#   FIST_SERVER_LOG=<path> overrides, FIST_SERVER_LOG=off (case-insensitive) disables; file-only, never touches stdout/stderr, IO failures degrade silently
 ```
 
 > Verified on this tree: bare `node _build/js/debug/build/cmd/cli/cli.js` prints the help banner and exits (`serve` is not optional),

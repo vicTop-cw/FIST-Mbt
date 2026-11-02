@@ -65,7 +65,11 @@ FIST_MCP_PORT=3000 python scripts/run_fist_mbt_http.py
 
 - 启动后进程在 **STDIO** 上按行读取 JSON-RPC 2.0 请求、按行回写响应，直到 EOF 退出；
 - 数据库内建为 SQLite，文件名为 `fist-mbt.db`，落在 **当前工作目录**（已被 `.gitignore` 的 `*.db` 忽略，不污染仓库）；
-- 如需隔离数据，可在一个新空目录下启动（本文件第 7 节实录即在隔离目录完成）。
+- 如需隔离数据，可在一个新空目录下启动（本文件第 7 节实录即在隔离目录完成）；
+- **落盘日志（BUG-538）**：serve 把关键生命周期事件（server 启动 / spawn 起止 / 崩溃钩子）追加写
+  `<FIST_DB_PATH 所在目录>/server.log`（db 路径是裸文件名时退 **cwd**；真源 `SqliteStore::default_db_path()`）。
+  `FIST_SERVER_LOG=<路径>` 显式覆盖；`FIST_SERVER_LOG=off`（大小写不敏感）关闭。
+  日志**只写文件、绝不碰 stdout/stderr**（MCP STDIO 纯净性，`check_mcp_stdio_purity` 同口径）；IO 失败静默降级，不影响服务。
 
 ---
 
