@@ -464,7 +464,8 @@ def rpc(method, **payload):
 
 模型路由工具（`model_route` / `model_auth_status` / `model_router_status` / `model_router_reset`
 / `executor_run`）支持把部分 lane 的请求转发到**外部 OFM 服务**（OpenAI 兼容端点）。本小节只讲
-**接线配置**——它属于「配置即文档」的可复现面；工具调用见 §6 与 AGENTS.md。
+**接线配置**——它属于「配置即文档」的可复现面；工具调用见 `AGENTS.md` 的工具表
+（这些工具是 0.2.4 后加入的，按文首覆盖边界不在本手册 §6 的表里）。
 
 #### 接线点在哪（`src/router/router_config.mbt` 真源）
 

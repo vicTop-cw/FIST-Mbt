@@ -15216,3 +15216,11 @@ J18（README 快速开始注释抄数==实测）的三格自检格被误贴在 c
 - 证据：本会话 git status 后收口轮亲测（atomcode 516/8 Nov 1 11:12 / codearts 516/8 / 仓内 526/2 / harness 注入 516/8）。
 - 关闭条件：owner 裁决 A/B；若选 A —— 同步脚本落地 + 跑一次宿主 diff 实测 0；若选 B —— `docs/known-boundaries.md` §3 追加登记，且 harness 注入面实测文案与边界文档一致。
 - reported_by: lead（2026-11-02 收口轮 · 宿主副本漂移缺口核实）
+
+## BUG-543 [2026-11-02T10:45:00Z] [low] FIXED
+BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：30ms 间隔 + 400ms 窗口，
+慢 runner 上事件循环 400ms 只喂进 2 个 tick（`2 != 4`，run 41428792317）。「少 = 没在写」半边
+合法，但把「runner 慢」误读成「没在写」= 判例-31 时序竞态锁形状（测试自己的注释曾声称不属此族）。
+### FIXED(2026-11-02 / BUG-543 i4 窗口加宽)
+窗口 400→1200ms：3 tick 只需 90ms，13 倍裕量；上限锁（到点自停）由 max_ticks 保证、与窗口
+长短无关，两向变异对照语义不变。本地 src/server 586/586 复测绿 + fmt 门 PASS。
