@@ -252,3 +252,8 @@ memory/archive/thinking.archive.md
 #    `git status` 干净面、`git add .` 误入面、上游哪天不再剔点号时的失效面。
 # 不删文件（拆解正本属于那个外部项目，由它自己决定去留），只挡出本仓的跟踪面与载荷面。
 /.tnr_decompose/
+
+# ── 2026-11-02 治理：`.opencode/`（本地 OpenCode 客户端目录）───
+# 自带 .gitignore / AGENTS.md / config 与 32KB rg_full.txt 搜索残渣 = 机本地产物，
+# 非项目材料。同 .tnr_decompose/ 判例：只挡跟踪面与 git add . 误入面，不删文件。
+/.opencode/
