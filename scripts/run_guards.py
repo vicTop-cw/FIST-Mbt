@@ -173,6 +173,12 @@ SPECIAL_CASES = [
     # 活体 schema（自带采集：起 `node cli.js serve`，FIST_DB_PATH 默认改道 temp/，BUG-122 面）；
     # §6.15 模型路由工具按 WHITELIST_NO_ROW 点名豁免（豁免过期三向自红）；自检全合成、不起 server。
     case("check_usage_tool_count.py"),
+    # 续19 立尺：src/server/server.mbt 工具面「schema required 数组 ↔ 必填 描述」源↔源双向对表
+    # （本仓第一例 = bug_fix.evidence：描述三处「必填非空」、函数硬拒空 evidence，required 却漏列）。
+    # 漏写（描述必填但 required 未列）/ 多写（required 列了但描述可选或条件必填）/ 条件必填白名单三向自红。
+    # 源↔源解析（不起 server、不 build，CI 可裸跑）；自检全合成含变异对照（缺/补 evidence 双向）。
+    case("check_tool_required_sync.py"),
+    case("check_tool_required_sync.py", "--selftest"),
     # 2026-10-25：CLI 入口 `fist.py list-tools` 的计数 ↔ 真源对表。
     # 为什么单立一格：六支文档守卫全部走 `_tool_registry.real_tools()`（读 170）⇒ 永远绿，
     # 而 `fist.py list-tools` 曾自写正则只扫 server.mbt 一个文件、且 `[a-z_]+` 不认点号 ⇒ 只报 152。
