@@ -14629,6 +14629,20 @@ moon build --target native cmd/cli    → **rc=0**，产物 `_build/native/debug
   预防：以本追记为准）。
 
 
+### 追记3 [2026-11-02] [medium] 出路④取证：钉版同崩，「本地 native 必崩」与版本无关（status 维持 OPEN，关闭条件不变）
+
+出路④（若钉版不崩则本地 native 口径收窄为钉版工具链）已实测否决。车道 lane-b-pinned-moon（ns iterate-1102 根任务 T0r2）在 Windows 本机用**钉版** moon `0.1.20261016 (1af328f)` 全项目 `moon build --target native` 实测：
+
+- 前置全部就位（`moon version` 钉版确认；`pwsh ./scripts/native-env.ps1` 探测 MSVC BuildTools 2022 已装载、`C:\sqlite-dev` 的 sqlite3.h/sqlite3.lib 在位并被装载进 INCLUDE/LIB）⇒ **不是环境缺件**。
+- 崩形与 WSL `0.1.20261021`（追记2）**同根同构**：10 个带 `options(link:{"native":{...}})` 的库包被当可执行目标去链（src/store、src/omega、src/router、src/executor、src/engine、src/core、src/ops、atgc-old、omega、tests/external_executor），每包同三连：LNK4044（`-lsqlite3` GCC 风格旗标被 MSVC 忽略）→ LNK2019（找不到 `main`）→ LNK1120。编译阶段 0 error，崩全在链接段。`moon build` 退出码 127。
+- **结论改写**：「本地 Windows 全项目 native build/test 必崩」从「0.1.20261021 的语义分歧」改为「**≥钉版 0.1.20261016 两代实测均崩，与版本无关**」；CI nightly（Linux）两条 native 臂仍是唯一在绿的 native 覆盖面。权威稳定门槛维持 JS 后端。
+- 关闭条件（追记2 的「两条 moon 世代的语义分歧有裁决且两侧同时可用」）不变，出路②（上游 issue）维持唯一主行动；issue 文本已备（reports/2026-11-02-bug527-native-link-decision-sheet.md），等 owner 一句话。
+- 证据报告：`reports/2026-11-02-bug527-pinned-moon-native-report.md`（终审 PASS，2026-11-02）。
+- 教训沉淀：库包 link flag 传递问题与 MSVC 不认 `-lsqlite3` 是**两层独立崩因**，单修其一不够；moon 退出码再添一例不可靠读数（rc=127）。
+
+（追记3 完）
+
+
 ## BUG-528 [2026-10-31T10:42:00Z] [medium] FIXED
 - summary: `release.yml` 的 `meta` 作业**没有 `actions/checkout`** ⇒ `workflow_dispatch` 那条
   「ref 剥不出版本就退回真源 moon.mod」的出路**从来没跑通过**：实测第一步就
