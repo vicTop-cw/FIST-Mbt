@@ -479,6 +479,11 @@ SPECIAL_CASES = [
     # 参数（缺省行为即自证），所以可以直接进电池；夹具全程 `isolated_git_env()`。
     case("check_index_gitlinks.py", "--selftest"),
     case("blackbox/e2e_precommit_gitlink_gate.py", "--selftest"),
+    # —— 2026-11-02：BUG-538 心跳落盘黑盒判据（e2e_server_log_heartbeat）——
+    # 真跑一次要 spawn serve 等 60s 心跳（间隔写死常量 SERVER_LOG_HEARTBEAT_MS、无 env 可调）
+    # 且需 js 产物 ⇒ 与 e2e_acceptance_recheck 同族不进自动无参面；电池只跑 --selftest
+    # （纯判定函数 15 格正反对照 + 正则变异对照，零进程零产物）。
+    case("blackbox/e2e_server_log_heartbeat.py", "--selftest"),
     # —— R180：master 镜像判据（同一个「对齐 master」动作人工做了 5 次，治本是立一条命令）——
     # `gitcode/master` 是默认分支镜像，**没有任何自动化维护它**（实测 workflows 里
     # `refs/heads/master` 零命中）⇒ main 一推进它就落后，只看默认分支的人读到的都是旧基线。
