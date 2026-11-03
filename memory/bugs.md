@@ -15255,3 +15255,147 @@ BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：3
 ### FIXED(2026-11-02 / BUG-543 i4 窗口加宽)
 窗口 400→1200ms：3 tick 只需 90ms，13 倍裕量；上限锁（到点自停）由 max_ticks 保证、与窗口
 长短无关，两向变异对照语义不变。本地 src/server 586/586 复测绿 + fmt 门 PASS。
+## BUG-544 [2026-11-02T15:41:05Z] [high] FIXED
+- summary: vq-cli 连接串参数错误仍返回 rc=0（add_conn 三处 return Ok(())）
+- detail: crates/vq-cli/src/main.rs 的 add_conn 分支：格式错误、sqlite 路径为空、段数不足三处都只 println ❌ 后 return Ok(())，脚本/CI 看不出失败。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0
+## BUG-545 [2026-11-02T15:41:06Z] [medium] FIXED
+- summary: STATEMENT_KEYWORDS 与 classify_sql 的兜底动词不同源，会互相漂
+- detail: crates/vq-core/src/ask/parser.rs：classify_sql 自带一份 starts_with 兜底动词，与顶部 STATEMENT_KEYWORDS 常量不同源。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r2
+## BUG-546 [2026-11-02T15:41:07Z] [low] FIXED
+- summary: crates/vq-core/tests 滞留 9 个 tmp_* 一次性探针测试
+- detail: tmp_bug3_storage / tmp_bug3b_storage / tmp_bug5_ast / tmp_bug5_conn / tmp_bug5_fuzz / tmp_bug5_probe / tmp_bug_audit / tmp_dump_nested / tmp_r10_accept。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r3
+
+### FIXED(2026-11-02T15:41:23Z / BUG-544, BUG-545, BUG-546)
+- evidence: 回归锁：调用面判据 —— cargo run -p vq-cli -- execute --add-conn 三种非法输入改前 rc=0/0/0、改后 rc=1/1/1，正例仍 rc=0；cargo test -p vq-cli 8 passed。 crates/vq-core/src/ask/parser.rs 三条新单测（statement_keywords_are_derived_from_statement_verbs / classify_sql_recognizes_every_shared_verb / classify_sql_and_looks_like_sql_agree_on_word_boundary）；3 组变异对照全部当场变红后恢复。 唯一有真实断言的 tmp_r10_accept 先迁进 crates/vq-core/tests/fix3_storage.rs::test_governance_approved_alias_hits_concept_and_mirrors_to_db（8 passed）再删原件；其余 8 个逐条指认了已被现有测试覆盖的位置。
+## BUG-547 [2026-11-02T15:41:08Z] [medium] FIXED
+- summary: apps/web/app_windows.py 业务字段名硬编码
+- detail: lact_l7_v4 / customer_type / acct_no 散在代码里，换数据源要改源码。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r4
+## BUG-548 [2026-11-02T15:41:09Z] [low] FIXED
+- summary: apps/web/src 残留 16 份 .vue.js 生成物污染工作树
+- detail: 历史 Volar/tsc 产物；其中 IdeView.vue.js 还留着源文件早已收口的 TODO 旧文本，会误导读代码的人。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r5
+## BUG-549 [2026-11-02T15:41:10Z] [medium] FIXED
+- summary: docs 台账与盘上事实不符（8 处口径失真）
+- detail: KNOWN_ISSUES 仍称工作树在 fix/issue-1-phase2-audit 且 MR 待合（分支已不存在、修复已在 main 线性历史）；#16 称无专项测试（已存在）；#24 称二进制已出仓（实际仍被跟踪）；#21 称 .vue.js 剩 0（实际 16）；鉴权被记成已完成（实为 env-gated 默认放行）；ACCEPTANCE/PROJECT_MEMORY/HANDOFF/MIGRATION_AUDIT 各有一条已不成立。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r6
+
+### FIXED(2026-11-02T15:41:24Z / BUG-547, BUG-548, BUG-549)
+- evidence: 回归锁：apps/web/app_windows.py 的 _env_str + VQ_ACCT_ID_FIELD/VQ_CUSTOMER_TYPE_FIELD/VQ_L7_FIELD，两态实测（不设变量=原字面量、设了生效）。 回归锁：find apps/web/src -name '*.vue.js' 计数 16→0，且 npm run build 后复测仍 0；防再生根因在位（apps/web/tsconfig.json noEmit:true、build 脚本 vue-tsc --noEmit）。 本修复不需锁（纯文案回写）：每条都在文档里留了「2026-11-02 复核 + 当场依据」的括注，可逐条复跑取证命令。
+## BUG-550 [2026-11-02T15:41:11Z] [high] FIXED
+- summary: sparksql-exe LookUpon 完全跑不通（驱动加载/连接/dbtable/query 覆盖）
+- detail: Class.forName 走 py4j 线程的 app loader 看不到 spark.jars；DriverManager.getConnection 被 JDK9+ 调用方 classloader 过滤；properties['query'] 用错 option 名且裸 SELECT 不包括号；类方法 query 覆盖实例方法使 lu.query() 查生产库；缺 import os；setNull 引用未定义的 java.sql.Types 使每个正常任务被标 FAILED；jar 路径硬编码。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r7
+## BUG-551 [2026-11-02T15:41:12Z] [high] FIXED
+- summary: LookUpon._acquire_task 的领取事务被 clean_stale_locks 提前提交
+- detail: _transaction() 开事务后第一件事是 clean_stale_locks→_execute_sql(commit=True)，复用同一共享连接 ⇒ 在 FOR UPDATE SKIP LOCKED 之前把外层事务提交掉，行锁保护窗口被自己拆掉。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r8
+## BUG-552 [2026-11-02T15:41:13Z] [medium] FIXED
+- summary: sparksql-exe/python_portable_x/look_upon.py 是未修旧快照，且内含明文生产密码
+- detail: 4 处旧缺陷写法 + 缺 import os + 硬编码 jar 路径 + 明文口令 'Uwde&...' 落在水印目录里。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r9
+
+### FIXED(2026-11-02T15:41:25Z / BUG-550, BUG-551, BUG-552)
+- evidence: sparksql-exe/python/tests/test_look_upon.py 三份副本各 15 passed（WSL docker py3.6+pyspark2.4.3+JDK8）；sparksql-exe/verify_fixes.sh 出 VERIFY=PASS，对照格用现场 fixture 证明 needle 能扎到（旧写法残留 6）。 两条回归锁：test_concurrent_workers_never_share_a_task（2 线程 × 独立 JDBC 连接）与 test_clean_stale_locks_keeps_outer_transaction_open（txid_current() 当事务身份证据）；把 in_tx 临时改回 False 即修前语义，当场 2 failed（xid 前->后 13 组 / 2217->2218）后恢复 15 passed。 回归锁：verify_fixes.sh 三件（python/、archive/debug/_deco_extract/、python_portable_x/）均 12/9 标记、旧写法残留 0；对齐前先 diff 确认 portable_x 无独有功能内容。
+## BUG-553 [2026-11-02T15:41:14Z] [high] FIXED
+- summary: 仓库仍跟踪 3 个二进制库，且 .gitignore 没有 *.sqlite3 规则
+- detail: data/vq.db（3.3MB，被 HEAD 295aad8 自己重新入库）、apps/api/data/chroma_db/chroma.sqlite3、legacy/.../vector_db/chroma.sqlite3（5.1MB）；*.db 规则命中但拦不住已跟踪文件。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r10
+## BUG-554 [2026-11-02T15:41:15Z] [critical] FIXED
+- summary: vq_pyo3 的 .pyd 交付物早于 Rust 源码，10 月修复对外不可见
+- detail: vq_pyo3.cp313-win_amd64.pyd mtime 2026-07-13，src/lib.rs 2026-10-20；且 .pyd 与 dist/ 都被 .gitignore（*.py[cod] 含 d）忽略 ⇒ git 永远看不见「产物早于源码」。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r11
+## BUG-555 [2026-11-02T15:41:16Z] [high] FIXED
+- summary: crates/vq-pyo3 仍有 51+ 处 block_on 在持 GIL 的场合阻塞
+- detail: 此前只收 ask 两站（台账记「BUG-13 余 53 处」），metadata/training/history/template/variable/settings/executor/user/spec 等入口都在持 GIL 时等 runtime。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r12
+## BUG-556 [2026-11-02T15:41:17Z] [high] FIXED
+- summary: vq_pyo3 的 __init__.py/.pyi 与 10 月 Rust 签名不符，template_delete/variable_delete 抛 TypeError
+- detail: Rust 侧已把参数从 i64 改成 id_or_name: &str，wrapper/stub 仍写 id: int 并直接转发。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r13
+
+### FIXED(2026-11-02T15:41:26Z / BUG-553, BUG-554, BUG-555, BUG-556)
+- evidence: 回归锁：git ls-files '*.db' '*.sqlite3' 由 3 条→0 条（git rm --cached，磁盘文件保留），.gitignore 追加 *.sqlite3。残留待裁决：data/vq.db 是否应随仓库分发（README 训练数据节与出仓目标本身冲突）。 回归锁：maturin build --release --out dist --find-interpreter 重建，mtime 07-13→11-02（晚于 lib.rs 71s）、md5 换脸，import 侧按 __file__+size+md5 指认身份；新增 G4 门（touch src/lib.rs → FAIL 差=-402s → 恢复 PASS）。 crates/vq-pyo3/test_gil_release.py 13/13、--selftest 18/18（4 个合成变异全打红）、--behavioral RATIO 旧产物 0.0103→新产物 0.9897；cargo test -p vq-core 360 passed 未退化。 回归锁：用 lib.rs.orig 单独构建的 pristine 产物复现同一条 TypeError 完成定责（与本轮改动无关），wrapper+stub 补齐为 int|str→str()；5 套 Python 测试 9/13/19/15/24 全绿。
+## BUG-557 [2026-11-02T15:41:18Z] [medium] FIXED
+- summary: ask 元数据校验的验收标准第 4 条只部分覆盖（未闭合字符串仅 warning）
+- detail: 既有测试 test_spec_skip_on_unparseable_sql_no_bonus 钉死 note='abc 仍判 valid 且照常评分；ValidationResult 没有 category 字段，写不出 syntax 标签。升级会破被钉行为，故不当场打勾。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r14
+## BUG-558 [2026-11-02T15:41:19Z] [low] FIXED
+- summary: packages/sql-editor 仍是零引用的孤立 CodeMirror 原型目录（#23 残留半边）
+- detail: git 跟踪 22 文件、自带 7 个 CodeMirror 依赖、全仓零 import。apps/web 那半边依赖已剪枝。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r15
+## BUG-559 [2026-11-02T15:41:20Z] [medium] FIXED
+- summary: 裸中文标识符 sqlparser 解析不了 ⇒ 元数据判定整条降级，幻觉表/列拦不住
+- detail: 已被 p0_bare_cjk_identifiers_degrade_instead_of_erroring 钉成「降级不误判」契约，但拦幻觉能力在这类 SQL 上失效。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r16
+## BUG-560 [2026-11-02T15:41:21Z] [low] FIXED
+- summary: 每次 ask 多一次全树装配（每表一次 list_columns）
+- detail: 元数据校验的实现代价，尚未做缓存/按需裁剪。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r17
+
+### FIXED(2026-11-02T16:23:23Z / BUG-557, BUG-560)
+- evidence: 回归锁：crates/vq-core/src/ask/parser.rs 三条新单测 bug557_unterminated_string_is_locatable_syntax_error / bug557_metadata_verdicts_carry_metadata_category / bug557_control_legal_sql_is_not_flagged，外加调用面用例 test_unterminated_string_sql_is_syntax_error_and_not_scored——原 test_spec_skip_on_unparseable_sql_no_bonus 钉的是「未闭合字符串只给 warning 且照常评分」，本次把它反向写严（is_valid=false + syntax 类别 + 字符位可定位 + verdict=skip + rating.is_none()），撤销声明留在该用例 doc 与 parser.rs 注释两处。真源：types.rs 的 ValidationResult 新增 error_categories（与 errors 同下标，口径沿用 spec::validator::ValidationIssue.category）。变异对照：把新分支改回只 warning，当场 2 条用例变红（原文见 temp/），恢复后 cargo test -p vq-core 368 passed / 0 failed（本轮独立复跑）。 || 回归锁：crates/vq-core/src/ask/mod.rs 五条 bug560_* 用例 (list_columns_call_count_across_asks / metadata_change_invalidates_the_cache / storage_without_version_is_never_cached / invalidate_schema_cache_forces_reassembly / warm_snapshot_renders_identical_schema_section)。计数探针必须落在 SqliteStorage.list_columns_calls 上——get_metadata_tree 是内部自调用，外层 dyn Storage 夹具看不见（前一版读数 0 即因此）。实测（N=4 表、M=5 ask，before 取自 git archive HEAD 副本树只加探针）：list_columns 由 2N×M=40 降到 N=4，热路径每 ask 0 次按表取列、只 1 次廉价指纹查询；存储不给指纹⇒不缓存（20 次）；加列后缓存失效且新列在校验与 schema 提示段都可见。cargo test -p vq-core 368 passed / 0 failed（本轮独立复跑）。
+## BUG-561 [2026-11-02T15:41:22Z] [medium] FIXED
+- summary: 兄弟线程忙等抢 GIL 时，单次调用 17µs→14,804µs（862x）
+- detail: py.detach 固有代价（release→reacquire 等一个 switch interval）；旧产物「快」是靠把兄弟线程饿死（仅满速 3%）。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r18
+## BUG-562 [2026-11-02T15:41:22Z] [medium] FIXED
+- summary: Qoder 连接器面 fist-mbt 工具数为 0，而 CLI 面 tools/list 有 182
+- detail: 插件桥 fist_mcp_bridge.mjs 依赖 PATH 上的 fist-mbt；本会话 manage_mcp retry 后 status=ready 但 mcp_get 报 not found、mcp_list 空。引擎本身健康（doctor 5/5、CLI call 正常）。属连接器面缺陷，不是引擎缺陷。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r19
+
+### FIXED(2026-11-03T00:54:59Z / BUG-558, BUG-559, BUG-561, BUG-562)
+- evidence: 处置=归档而不是删除：`git mv packages/sql-editor legacy/sql-editor`（22 个被跟踪文件连同它的 16 条绿测、dictionary/weightStore 与 bundle.js 一并保留，不动历史）。回归锁：`python scripts/check_repo_layout.py` ⇒ LAYOUT=PASS（GATE1 `git ls-files packages/` 由 22→0；GATE2 活跃源码里 `packages/sql-editor` 引用 0 条）。违例对照：`--control crates` 当场 RED（tracked=52）⇒ 这扇门真会红；`--control zzz-nonexistent` 反过来报「判据失灵」，说明对照格不是摆设。CHANGELOG 是按日期沉淀的历史流水（条目不回改），故门里显式豁免并写明理由。同步改口：README 目录表、docs/KNOWN_ISSUES 的 #23 行 / 工程债表 / 建议行动第 9 条 / TL;DR。 || 回归锁：crates/vq-core/src/ask/parser.rs 三条 —— bug559_quote_wide_identifiers_boundaries（7 组边界：裸中文加方言反引号、中英混排整体加引号、纯 ASCII 返回 None、字符串字面量/行注释/已加引号标识符一律不动）、p0_bare_cjk_identifiers_are_rescued_and_hallucinations_caught（三条命中别称的裸中文 SQL 判 valid 且 warnings 为空——即降级自述消失；`SELECT ghost_col FROM 不存在的表` 必须报 metadata 类别错误）、p0_unparseable_syntax_still_degrades_instead_of_erroring（Hive LATERAL VIEW 这类真解析不了的语法仍旧只降级、不判非法，成对守住「不误杀合法 SQL」）。撤销的旧契约：原 p0_bare_cjk_identifiers_degrade_instead_of_erroring 钉「幻觉拦不住也算对」，改名 + 断言反向写严，撤销声明写在用例 doc。变异对照：把补救分支短路（`.filter(|_| false)`）⇒ rescue 用例当场 panicked at crates/vq-core/src/ask/parser.rs:2858，而降级用例仍绿（两条判据各测各的）；恢复后 cargo test -p vq-core 370 passed / 0 failed。 || 缓解件：`vq_pyo3.tune_gil_switch_interval(microseconds=500)`（wrapper + .pyi 同步、__all__ 收录，导入时不改全局，调用方自选）。档位是扫出来的不是猜的：忙等兄弟线程在场、每臂 0.4s 时间预算实测 5000µs ⇒ p50=15.4ms/p95=16.6ms/兄弟速率比 0.96；500µs ⇒ p50=11.9µs/p95=13.4µs/比值 0.96；1000µs 毫无改善（p50 仍 15.5ms）；100µs 把兄弟线程压到 0.35 —— 违本仓 RATIO_FLOOR=0.5 公平性契约，所以文档明写「别一档档往下试」。回归锁：test_gil_release.py `--gil-tail` 两条判据（① p95 至少降 5x，当场 1219.8x；② 两臂公平性都 ≥0.5，当场 1.08/0.96），违例对照 `--gil-tail --control`（两臂同用默认档）⇒ 判据①当场 FAIL(1.0x)。全套 --behavioral+--selftest+--gil-tail 16/16、--selftest 18/18（4 个合成变异全打红）。 || 连接器面已活（当场两面各验一次）：`mcp_list` 列出 plugin:fist-mbt:fist-mbt 182 工具；实调 `health_check` 回 ok=true/grade=idle（四金信号读数在场），实调 `bug_list` 回对象形状。引擎侧无缺陷自证：`node scripts/verify_bridge.mjs` ⇒ PASS 7/7（tools/list 182、resou
+## BUG-563 [2026-11-02T15:43:22Z] [medium] FIXED
+- summary: 运行期 chroma 整树 27 个二进制文件被 git 跟踪（BUG-553 的漏网面）
+- detail: 原登记只覆盖 3 个具名库文件；实测 git ls-files apps/api/data legacy/.../data 共 27 个（chroma_db 的 UUID 目录里 data_level0.bin/header.bin/length.bin/link_lists.bin），且一次 git add -A -- apps 会再加 15 个 A + 1 R + 1 D。*.db/*.sqlite3 规则都不覆盖 .bin。
+- reported_by: Qoder-agent 2026-11-02
+- task_id: T0r20
+
+
+## 勘误(2026-11-02 · VQ 项目账目误落本树)
+- 上面 20 条（BUG-544, BUG-545, BUG-546, BUG-547, BUG-548, BUG-549, BUG-550, BUG-551, BUG-552, BUG-553, BUG-554, BUG-555, BUG-556, BUG-557, BUG-558, BUG-559, BUG-560, BUG-561, BUG-562, BUG-563）是 **E:/IDEProjects/AI/vq** 项目的缺陷，不属于 FIST-Mbt。
+  成因：`fist-mbt call report_bug --project_dir .` 的 server 进程 cwd 被网关钉在本树，而 project_dir 只接受相对路径且拒绝 `..` ⇒ 调用方无法把账落到自己的项目。
+- 处置：已逐字搬移到 `E:/IDEProjects/AI/vq/memory/bugs.md`；本树条目按 append-only 保留不回改，以本节为准。
+- 引擎侧待办：需要一个「按调用方项目落账」的出路（显式允许 project_dir 绝对路径，或网关传 cwd 时一并切 server cwd）。
+## BUG-564 [2026-11-02T16:02:44Z] [medium] FIXED
+- summary: vq-cli `execute --add-conn name:sqlite:::` 把 "::" 当成合法 sqlite 路径登记，「sqlite 路径为空」错误臂不可达
+- detail: crates/vq-cli/src/main.rs 的 sqlite 分支用 rest.strip_suffix(":::") 取路径，但上游 splitn(3, ':') 已经把 `name:sqlite:` 的两个冒号当分隔符吃掉，所以 `mydb:sqlite:::` 的余段是 "::"，固定尾缀剥不掉 ⇒ path.is_empty() 永不成立，BUG-544 登记的第三条错误臂（sqlite 路径为空）随之不可达。
+- task_id: T0r21
+
+
+## 勘误(2026-11-02 · VQ 项目账目误落本树)
+- 上面 1 条（BUG-564）是 **E:/IDEProjects/AI/vq** 项目的缺陷，不属于 FIST-Mbt。
+  成因：`fist-mbt call report_bug --project_dir .` 的 server 进程 cwd 被网关钉在本树，而 project_dir 只接受相对路径且拒绝 `..` ⇒ 调用方无法把账落到自己的项目。
+  同型尝试：把 `FIST_MBT_REPO` 指到调用方项目后，`fist-mbt call bug_list` 直接 rc=1 且**零输出**（bundle 发现失败但不自述），所以这条路也不通。
+- 处置：已逐字搬移到 `E:/IDEProjects/AI/vq/memory/bugs.md`；本树条目按 append-only 保留不回改，以本节为准。
+- 引擎侧待办：需要一个「按调用方项目落账」的出路（显式允许 project_dir 绝对路径，或网关传 cwd 时一并切 server cwd）。
+
+
+### FIXED(2026-11-02T16:07:03Z / BUG-563, BUG-564)
+- evidence: 回归锁：`git ls-files '*.db' '*.sqlite3' '*.bin'` 计数由 30 → 0（当场复跑，2026-11-03），chroma 整树用 `git rm -r --cached` 移出版本控制、磁盘运行数据保留（apps/api/data/chroma_db 下 16 个 data_level0.bin/header.bin/length.bin/link_lists.bin 仍在原地可跑）；.gitignore 追加 `*.sqlite3`、`apps/api/data/chroma_db/`、`legacy/dataquest/platform/backend/data/vector_db/`。已入 c57dc10。残留说明：`git ls-files apps/api/data legacy/.../backend/data` 还剩 3 条，全是 legacy/dataquest/platform/backend/data/training/*.json 语料（文本、非运行期二进制），按原样保留。 || 回归锁：新增调用面件 crates/vq-cli/tests/add_conn_exit_code.rs（`execute --add-conn` 三臂非法输入 rc=1 + 对照臂合法 sqlite 连接 rc=0；VQ_WORKSPACE_DIR 指临时目录，测试不再写仓库 data/vq.db）。修前该件当场变红——第 2 臂 `mydb:sqlite:::` rc=0，且 data/vq.db 落了 conn.mydb={"path":"::"}（证明「sqlite 路径为空」臂不可达，BUG-544 的第三条错误臂是死的）；修后 cargo test -p vq-cli 8 passed（单元）+ 1 passed（该集成件）。真源 crates/vq-cli/src/main.rs 抽 sqlite_conn_path() 用 trim_end_matches(':')（盘符冒号在中间不受影响），并把单测 test_parse_add_conn_sqlite_windows_path 从「重抄一遍解析表达式」改成直接调用真源。垃圾连接 conn.mydb/conn.zz 已从 data/vq.db 删除（conn.% 行数 3 → 1，只剩先于本轮的 conn.pgdemo）。
+## BUG-565 [2026-11-03T00:52:55Z] [medium] OPEN
+- summary: 连接器面与 CLI 面的 server cwd 不同 ⇒ 同一个 project_dir="." 落到两本不同的台账（连接器面落到 JS 产物目录，账看不见）
+- detail: 实测同一条 `bug_list(project_dir=".")`：
