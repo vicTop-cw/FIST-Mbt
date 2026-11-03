@@ -15432,7 +15432,16 @@ BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：3
 - detail: 事件：唤醒轮 99 的 scoped 提交命令（printf > temp/ 重定向 + git commit -F … -- <path> + rm temp/ 复合）被拒，门禁原文 `bash (writes outside the workspace)`；命令写入点全在工作区（temp/ / .git / reports/）。对照（同会话）：write_file 写消息文件 + scripts/commit_scoped.sh 一次通过（80e1526fe，落盘面与申报面逐字相等）。族表：BUG-565 §0（合法工作区外写待审批、非误判）/ §5.3（cl7 探针被判 credential access）/ 轮 97（只读 $LOCALAPPDATA 命令被判工作区外写）/ 本单（工作区内提交复合被判工作区外写）⇒ 4 实例 3 误判。根因在宿主 harness 侧（H1 相对路径 temp/ 误判 / H2 rm 触发泛用标签 / H3 cd 前缀未跟踪，甄别三臂见决策单 §3），本仓内不可修。绕行（已验证）：write_file 写消息文件 + commit_scoped.sh + rm 不串同命令（决策单 §4）。
 - task_id: （本轮无派单；甄别三臂实验移交 harness 侧 / owner）
 - evidence: reports/2026-11-03-bug566-approval-gate-misjudgment.md（被拒命令原文 + 门禁拒原文 + 对照提交 80e1526fe）/ memory/2026-11-03.md 轮 99 段
-## BUG-567 [2026-11-03T04:44:08Z] [high] OPEN
+## BUG-567 [2026-11-03T04:44:08Z] [high] FIXED
 - summary: preserve_plan_markers 对 5 个前缀式结构标记只回贴前缀、丢标记内容（梯度档/父计划引用/边界四问载荷/spec 指纹），回归锁②误锁坏行为
 - detail: 缺陷位置 src/engine/omega_strong.mbt:164-175 preserve_plan_markers(old_desc,new_desc)；plan_markers()(:125-134) 6 标记中前 5 个为前缀式（无 ]）只回贴前缀 m、丢冒号后全部内容（梯度档/父计划引用/边界四问载荷/spec 指纹），留悬空前缀；omega_mark()=[omega:required] 完整带 ] 故侥幸正确。错误回归锁 omega_strong_test.mbt:504-510 preserve_plan_markers_keeps_boundary_mark 只断言 got.contains([边界四问) 验前缀，把坏行为锁成预期（判例-36 同族假绿）。唯一调用方 engine_supervisor.mbt:423 supervisor_task_upsert（with_description 整体覆盖后补回标记），修复后无需改调用点。与 BUG-503(DAG 成环,已 FIXED) 无关；本缺陷未建档。修复：对缺失标记回贴「前缀→配对 ] 的完整段」，落实规则②(自身闭合标记整段照搬不再向后找 ]) 与规则③(被更长前缀覆盖的短前缀跳过防父计划补两次)；禁改 plan_markers/cut_before/strip_plan_annotations 单一真源。
 - reported_by: lead
+
+### FIXED(2026-11-03T04:56:32Z / BUG-567)
+- evidence: 代码面：src/engine/omega_strong.mbt 重写 preserve_plan_markers（L220，含辅助 fn marker_segment L163 / marker_covered_by_longer L199）——对缺失标记回贴「从前缀到配对 ] 的完整段」，落实三条硬规则；plan_markers()/cut_before/strip_plan_annotations 单一真源未动。回归锁（判例-36：点名测试文件）：src/engine/omega_strong_test.mbt ① 锁② preserve_plan_markers_keeps_boundary_mark（L522）由只断言前缀改为断言完整边界标记段（含 ] 闭括号与载荷）；② 新增反例1 preserve_plan_markers_repairs_prefix_marker_full_segment（L556）难度梯度完整段 + brackets_balanced 配平 + 不吞 LADDER hint；③ 新增反例2 preserve_plan_markers_parent_marker_not_duplicated（L571）规则③ 父计划只补一次。变异对照真跑：修复前 moon test --target js src/engine `Total tests: 391, passed: 388, failed: 3`（EXIT=2，3 格全红：boundary_mark `false is not true` / 反例1 `false is not true` / 反例2 `3 != 2`）；修复后 `Total tests: 391, passed: 391, failed: 0`（EXIT=0）。全量 moon test --target js 基线 2030 → 2032（新增 2 反例，原 2030 全绿零回归）。
+## 回归锁（判例-36：点名测试文件）
+src/engine/omega_strong_test.mbt 本次改动：
+① 锁② `preserve_plan_markers_keeps_boundary_mark`（L522）改写——只断言 `got.contains("[边界四问")` 是把坏行为锁成预期（判例-36 同族假绿）；修正为断言完整段 `got.contains("[边界四问:空输入/极值/非法输入/资源极限——须有用例或声明不适用]")`，坏行为当场红。
+② 反例1 `preserve_plan_markers_repairs_prefix_marker_full_segment`（L556）——old=`实现缓存层 [难度梯度 3/6:中] 更简单变体：先把 X 做成最小可行片` / new=`实现缓存层`；修前 `got` 含悬空 ` [难度梯度 ` 且无 `]`，修后 `got.contains("[难度梯度 3/6:中]")` 且括号配平、且 `got` 不含 `更简单变体`（不吞 LADDER hint）。brackets_balanced（L65）按 `[`/`]` 计数相等证明配平。
+③ 反例2 `preserve_plan_markers_parent_marker_not_duplicated`（L571）——old 同时含 ` | [父计划: P1` 与 ` [父计划: P1` 两种形态；结果里 ` [父计划:` 只出现一次（规则③ guard，防父计划被补两次）。
+**变异对照真跑**：修复前 moon test --target js src/engine `Total tests: 391, passed: 388, failed: 3`（EXIT=2）；修复后 `Total tests: 391, passed: 391, failed: 0`（EXIT=0）。全量 `moon test --target js` 基线 2030 → 2032（新增 2 反例，零回归）。
