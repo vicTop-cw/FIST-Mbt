@@ -61,6 +61,22 @@ fn os_marked(e : @engine.FistEngine, id : String) -> Bool {
 }
 
 ///|
+/// 括号配平检查（按 `[` / `]` 计数相等）——用于证明修复后回贴的标记段配平、无悬空前缀。
+fn brackets_balanced(s : String) -> Bool {
+  let arr = s.to_array()
+  let mut open = 0
+  let mut close = 0
+  for c in arr {
+    if c == '[' {
+      open = open + 1
+    } else if c == ']' {
+      close = close + 1
+    }
+  }
+  open == close
+}
+
+///|
 test "omega 开关默认关闭：子任务无标记、行为与现状一致" {
   let e = os_engine()
   let id = os_publish(e, desc="Omega 默认关闭根任务")
@@ -500,13 +516,19 @@ test "preserve_plan_markers_keeps_omega_mark" {
 }
 
 ///|
-/// BUG-389 单元锁 ②：旧描述含 [边界四问 标记 → 结果仍含（含前导空格整段补回）。
+/// BUG-389 单元锁 ②（修正，判例-36 反假绿）：旧描述含**完整边界标记段** → 结果保留
+/// **整个段**（含 `]` 闭括号与载荷），而不只是前缀。修前实现只补回 " [边界四问" 前缀、
+/// 丢载荷与 `]` ⇒ 这条锁在 HEAD 把坏行为锁成预期（假绿）；修正后断言完整段，坏行为当场红。
 test "preserve_plan_markers_keeps_boundary_mark" {
   let old = "校验空输入 [边界四问:空输入/极值/非法输入/资源极限——须有用例或声明不适用]"
   let new = "校验空输入"
   let got = @engine.preserve_plan_markers(old, new)
-  // 按清单补回的是标记前缀 " [边界四问"（与 strip_plan_annotations 同一份清单）
-  assert_true(got.contains("[边界四问"))
+  // 必须保留完整段（含闭括号与载荷），而非仅前缀 " [边界四问"
+  assert_true(
+    got.contains(
+      "[边界四问:空输入/极值/非法输入/资源极限——须有用例或声明不适用]",
+    ),
+  )
 }
 
 ///|
@@ -526,6 +548,34 @@ test "preserve_plan_markers_no_duplicate_when_present" {
   let got = @engine.preserve_plan_markers(old, new)
   // 只出现一次
   let parts = got.split("[omega:required]")
+  assert_eq(parts.count(), 2)
+}
+
+///|
+/// 反例1（验收主格，判例-36 唯一能红的一把）：难度梯度标记是前缀式结构标记，
+/// 旧实现只补回 " [难度梯度 " 前缀（无 `]`）⇒ 丢梯度档且留悬空前缀。
+/// 修后：回贴 **完整段** " [难度梯度 3/6:中]"，括号配平，且不吞 LADDER `{hint}`（"更简单变体"）。
+test "preserve_plan_markers_repairs_prefix_marker_full_segment" {
+  let old = "实现缓存层 [难度梯度 3/6:中] 更简单变体：先把 X 做成最小可行片"
+  let new = "实现缓存层"
+  let got = @engine.preserve_plan_markers(old, new)
+  // 完整段被保留（含闭括号）
+  assert_true(got.contains("[难度梯度 3/6:中]"))
+  // 括号配平（无悬空前缀）
+  assert_true(brackets_balanced(got))
+  // 不吞 LADDER hint：标记段在首个 ] 处截断，故 "更简单变体" 不应出现
+  assert_false(got.contains("更简单变体"))
+}
+
+///|
+/// 反例2（规则③ guard）：父计划标记有两种形态——" | [父计划: "（长）覆盖 " [父计划:"（短）。
+/// 旧实现对两个前缀都补 ⇒ " [父计划:" 出现两次；修后按规则③跳过被覆盖的短前缀，只补一次。
+test "preserve_plan_markers_parent_marker_not_duplicated" {
+  let old = "任务 A | [父计划: P1] B [父计划: P1]"
+  let new = "任务"
+  let got = @engine.preserve_plan_markers(old, new)
+  // " [父计划:" 只应出现一次（长形态覆盖短形态，不重复补）
+  let parts = got.split(" [父计划:")
   assert_eq(parts.count(), 2)
 }
 
