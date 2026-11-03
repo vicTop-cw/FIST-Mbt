@@ -174,7 +174,7 @@ fn marker_segment(s : String, m : String) -> String {
     if first {
       first = false
     } else {
-      after = part.to_string()
+      after = part.to_owned()
       break
     }
   }
