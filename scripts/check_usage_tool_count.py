@@ -126,16 +126,12 @@ def check_counts(usage_text, real):
 # Part B · §6 参数列「工具名+参数名集」双向对表（T0r12）
 # ════════════════════════════════════════════════════════════════════════
 
-# §6.15 五个模型路由工具：§6 只讲 OFM 接线配置（配置即文档，调用面文档在
-# docs/AGENTS-mcp-inventory.md），不排参数表行 → 点名豁免。每条豁免必须带理由；
+# 豁免面（当前为空）：原 §6.15 五个模型路由工具（model_route / model_auth_status /
+# model_router_status / model_router_reset / executor_run）的「只讲配置不排表行」豁免
+# 已在五个工具补齐 §6.15 参数表行后清空（豁免过期三向自红机制保留，逼人清理）。
+# 机制仍留作后续「§6 散文提及但无表行」的配置类工具的出口：每条豁免必须带理由；
 # 豁免过期（工具有了表行 / 不在活体 / 不再被 §6 提及）会被判红逼人清理。
-WHITELIST_NO_ROW = {
-    "model_route": "§6.15 只讲接线配置（env/config 即文档），调用面在 inventory",
-    "model_auth_status": "同上：§6.15 配置小节提及，无参数表行",
-    "model_router_status": "同上：§6.15 配置小节提及，无参数表行",
-    "model_router_reset": "同上：§6.15 配置小节提及，无参数表行",
-    "executor_run": "同上：§6.15 只讲它的 OFM 通道接线，调用面在 inventory",
-}
+WHITELIST_NO_ROW = {}
 
 RE_TOOL_CELL = re.compile(r"`?[a-z_][a-z0-9_]*`?")      # 表行首格（工具名，可带反引号）
 RE_PARAM_REF = re.compile(r"([a-z_][a-z0-9_]*)\s*\(")   # 参数名注解式：name(必)/(选)/(选,默认x)

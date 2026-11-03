@@ -463,9 +463,16 @@ def rpc(method, **payload):
 ### 6.15 模型路由 · OFM 外部服务接线（配置与环境变量）
 
 模型路由工具（`model_route` / `model_auth_status` / `model_router_status` / `model_router_reset`
-/ `executor_run`）支持把部分 lane 的请求转发到**外部 OFM 服务**（OpenAI 兼容端点）。本小节只讲
-**接线配置**——它属于「配置即文档」的可复现面；工具调用见 `AGENTS.md` 的工具表
-（这些工具是 0.2.4 后加入的，按文首覆盖边界不在本手册 §6 的表里）。
+/ `executor_run`）支持把部分 lane 的请求转发到**外部 OFM 服务**（OpenAI 兼容端点）。本小节讲
+**接线配置**——它属于「配置即文档」的可复现面；工具参数表如下，调用面另见 `AGENTS.md` 的工具表。
+
+| 工具 | 说明 | 参数 |
+|---|---|---|
+| `model_route` | 模型路由决策（免费优先 + 达阈值切付费 + 每模型 5h 滚动窗口）；只问不消耗（不给 record_model）＝零副作用，两池皆耗尽显式 ok=false | project_dir(必) record_model(选) config_json(选) soldier(选) pool_label(选) dry_run(选,默认false) context(选) namespace(选,默认default) |
+| `model_router_status` | 查当前模型路由状态（每模型 used/limit/占比/档位/切换次数/状态文件路径），只读不落盘 | project_dir(必) namespace(选,默认default) |
+| `model_auth_status` | 查模型路由认证/Star 门状态（gate 三态 + pools），只读零副作用 | project_dir(必) namespace(选,默认default) |
+| `model_router_reset` | 清模型路由窗口（used 与 window_start 归零）；hard=true 连档位/轮询游标/切换计数一起复位 | project_dir(必) namespace(选,默认default) hard(选,默认false) |
+| `executor_run` | 把任务交给外部执行器真跑（aider/atomcode 走本地 CLI spawn，ofm 走并存 HTTP 通道；model 留空时先经 model_route 记账） | project_dir(必) executor(必) prompt(必) model(选) config_json(选) namespace(选,默认default) timeout_ms(选,默认180000) dry_run(选,默认false) |
 
 #### 接线点在哪（`src/router/router_config.mbt` 真源）
 
