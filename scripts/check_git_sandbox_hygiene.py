@@ -50,7 +50,13 @@ GIT_WRITE_SUBCMDS = {"init", "add", "commit", "rm", "mv", "checkout", "switch", 
 # 校准读数 2026-10-24：宽检测（字面表 + helper 拼接形）现读 9；本会话已还清 check_push_guard /
 # check_hardcoded_paths / check_merge_markers 三支（不在账上）。9 支存量多为「只读宿主仓」形状
 # （静态面保守记债），还债时逐支复核后改小常量；升档是人的决定。
-DIRTY_CEILING = 2
+#
+# 2026-11-02 还债收口：check_reverse_diff.py（run_git 88 / selftest _git 220）、
+# simulate_head_commit.py（run_git 62）、whisperer.py（G4 g() 407 / H _git_at 461 /
+# _stub_run 471）五处补齐 env=isolated_git_env() ⇒ 现读 0 违例。
+# 常量按 judge_ratchet 的律同步改回 0（债务还清后常量没改回 0 那一支同样判红，
+# 且「只许降不许升」的另一半就是这里）——新尺忘隔离会当场红（T2 变异台 + T7 自证）。
+DIRTY_CEILING = 0
 
 _TEMP_FNS = {"mkdtemp", "TemporaryDirectory", "NamedTemporaryFile", "SpooledTemporaryFile"}
 

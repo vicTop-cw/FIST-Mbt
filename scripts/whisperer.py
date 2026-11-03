@@ -405,7 +405,8 @@ def selftest():
 
     def g(*a):
         return subprocess.run(["git"] + list(a), cwd=d, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace")
+                              encoding="utf-8", errors="replace",
+                              env=isolated_git_env())
 
     try:
         g("init", "-q", "-b", "master", ".")
@@ -459,7 +460,8 @@ def selftest():
 
     def _git_at(cwd, *a):
         return subprocess.run(["git"] + list(a), cwd=cwd, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace")
+                              text=True, encoding="utf-8", errors="replace",
+                              env=isolated_git_env())
 
     def _stub_run(cmd, cwd=None, capture=True):
         """记录每一条 argv，然后**只在临时工作树里**真跑（fetch 走本地裸库，不发网络）。
@@ -469,7 +471,8 @@ def selftest():
         """
         calls.append(list(cmd))
         return subprocess.run(cmd, cwd=wt, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace")
+                              encoding="utf-8", errors="replace",
+                              env=isolated_git_env())
 
     def _reset_calls_since():
         return [c for c in calls if "reset" in c or "checkout" in c or "push" in c]

@@ -60,7 +60,8 @@ def emit_fatal(msg):
 
 def run_git(*args):
     return subprocess.run(["git"] + list(args), capture_output=True, cwd=ROOT,
-                          text=True, encoding="utf-8", errors="replace")
+                          text=True, encoding="utf-8", errors="replace",
+                          env=isolated_git_env())
 
 
 def _expand_untracked(path):

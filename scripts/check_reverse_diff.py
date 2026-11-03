@@ -66,6 +66,8 @@ import subprocess
 import sys
 import tempfile
 
+from git_env import isolated_git_env
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -87,7 +89,7 @@ def run_git(args, cwd):
     try:
         p = subprocess.run(["git"] + args, cwd=cwd, capture_output=True,
                            text=True, encoding="utf-8", errors="replace",
-                           timeout=60)
+                           env=isolated_git_env(), timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if p.returncode != 0:
@@ -218,7 +220,8 @@ def check_repo(cwd, mode, commit, ratio_threshold, min_del,
 
 def _git(cwd, *args):
     p = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True,
-                       text=True, encoding="utf-8", errors="replace")
+                       text=True, encoding="utf-8", errors="replace",
+                       env=isolated_git_env())
     assert p.returncode == 0, "selftest git 失败: %s\n%s" % (args, p.stderr)
     return p
 
