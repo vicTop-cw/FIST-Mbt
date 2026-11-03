@@ -15445,3 +15445,9 @@ src/engine/omega_strong_test.mbt 本次改动：
 ② 反例1 `preserve_plan_markers_repairs_prefix_marker_full_segment`（L556）——old=`实现缓存层 [难度梯度 3/6:中] 更简单变体：先把 X 做成最小可行片` / new=`实现缓存层`；修前 `got` 含悬空 ` [难度梯度 ` 且无 `]`，修后 `got.contains("[难度梯度 3/6:中]")` 且括号配平、且 `got` 不含 `更简单变体`（不吞 LADDER hint）。brackets_balanced（L65）按 `[`/`]` 计数相等证明配平。
 ③ 反例2 `preserve_plan_markers_parent_marker_not_duplicated`（L571）——old 同时含 ` | [父计划: P1` 与 ` [父计划: P1` 两种形态；结果里 ` [父计划:` 只出现一次（规则③ guard，防父计划被补两次）。
 **变异对照真跑**：修复前 moon test --target js src/engine `Total tests: 391, passed: 388, failed: 3`（EXIT=2）；修复后 `Total tests: 391, passed: 391, failed: 0`（EXIT=0）。全量 `moon test --target js` 基线 2030 → 2032（新增 2 反例，零回归）。
+## BUG-568 [2026-11-03T15:33:39Z] [medium] FALSE_POSITIVE
+- summary: probe-test-delete-me
+
+- false_positive(2026-11-03T15:34:42Z): 2026-11-03 唤醒轮：本人误用  做链路探测，实际写入真账本。条目无实质缺陷内容，按 append-only 纪律不静默删除、登记为误报条目保留痕迹。可复核性缺口（真实缺陷面）：report_bug 的 summary 无长度/内容校验，任意探测串即落账；建议后续立单加最小校验。
+
+- 更正(2026-11-03T15:40:00Z)：上条证据里被 shell 反引号当命令执行而吞掉的调用面补回——`python scripts/fist.py call report_bug --project_dir . --summary probe-test-delete-me`。本条是**操作面失误**（探针直打真账本），不是代码缺陷：summary 接受自由文本是设计，不设缺陷单。同族前例 BUG-250/251/414/415 均按 FALSE_POSITIVE 保留，本条从同。
