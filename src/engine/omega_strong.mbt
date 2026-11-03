@@ -151,23 +151,86 @@ pub fn strip_plan_annotations(s : String) -> String {
 }
 
 ///|
-/// 合并 decomposer 注入的结构标记：新描述缺哪些，就把旧描述里的对应标记补回（BUG-389）。
+/// 取标记 `m` 在 `s` 中「从前缀到配对 `]`」的完整段（BUG-567 修复：前缀式结构标记
+/// 只补回前缀会丢掉冒号后的全部载荷）。
 ///
-/// `supervisor_task_upsert` 用 `with_description` **整体覆盖** description，而用户经超级管家
-/// 更新任务描述时通常不会带上 `[omega:required]` / `[边界四问…]` / `[难度梯度 …]` /
-/// `[父计划:…]` / `[spec:…]` 这些由 decomposer 注入的结构标记；覆盖后标记被静默丢失，
-/// 之后 `omega_spec_create` 判门禁读到 description 不含 `[omega:required]` 就误报
-/// 「未开启 Omega 强验证」，把「标记丢失」伪装成「用户没开 Omega」。
+///   · 若 `s` 不含 `m` → 返回空串（无需补）；
+///   · 若 `m` 自身已闭合（含 `]`，如 `[omega:required]`）→ 整段照搬 `m` 本身；
+///   · 否则取 `m` 之后内容直到首个 `]`，返回 `m + content + "]"`；其后若无 `]` 则
+///     返回空串（fail-closed，绝不留悬空前缀）。
+/// 配套 `marker_covered_by_longer` 处理「短前缀被更长前缀覆盖」的跳过（如
+/// `" [父计划:"` ⊂ `" | [父计划: "`），防同一标记被补两次。
+fn marker_segment(s : String, m : String) -> String {
+  if !s.contains(m) {
+    return ""
+  }
+  if m.contains("]") {
+    return m
+  }
+  // m 之后到首个 ] 之间的内容（split 返回 Iter[StringView]，取首个 m 之后的那段）
+  let mut after = ""
+  let mut first = true
+  for part in s.split(m) {
+    if first {
+      first = false
+    } else {
+      after = part.to_string()
+      break
+    }
+  }
+  if after == "" {
+    return ""
+  }
+  let arr = after.to_array()
+  let mut seg = m
+  for c in arr {
+    if c == ']' {
+      return seg + "]"
+    }
+    seg = seg + c.to_string()
+  }
+  "" // 无配对 ]：fail-closed，不补悬空前缀
+}
+
+///|
+/// 标记 `m` 是否被清单里某个**更长**的标记覆盖（即存在 `m2 != m` 且 `m2.contains(m)`
+/// 且 `s` 含 `m2`）。用于跳过被更长前缀覆盖的短前缀，避免同一结构标记被补两次
+/// （如 `" [父计划:"` 已被 `" | [父计划: "` 覆盖时）。
+fn marker_covered_by_longer(s : String, m : String) -> Bool {
+  for m2 in plan_markers() {
+    if m2 != m && m2.contains(m) && s.contains(m2) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// 合并 decomposer 注入的结构标记：新描述缺哪些，就把旧描述里对应的**完整段**补回（BUG-567）。
 ///
-/// 语义：对 `plan_markers()` 列出的标记面做「缺失补回」——若旧描述含某标记而新描述不含，
-/// 则把该标记（连同其前导空格，`omega_mark()` 无前导空格）追加到新描述末尾。
+/// 修复前只补回标记**前缀字面量**，对 5 个前缀式结构标记（` [难度梯度 ` / ` [父计划:` /
+/// ` | [父计划: ` / ` [边界四问` / ` [spec:`）会把冒号后的全部内容（梯度档 / 父计划引用 /
+/// 边界四问载荷 / spec 指纹）丢弃，留下悬空前缀；omega 标记因完整带 `]` 侥幸正确。
+///
+/// 三条硬规则：
+///   ① 截到**配对的 `]`** 而非「下一前缀」——否则会把 LADDER `{hint}` 一并补回，触发
+///      R113 标注叠乘复发；
+///   ② 自身已闭合标记（如 `[omega:required]`）整段照搬，不再向后找 `]`（否则 BUG-389 复活）；
+///   ③ 被更长前缀覆盖的短前缀**跳过**（`" [父计划:"` ⊂ `" | [父计划: "` ⇒ 父计划只补一次）。
 pub fn preserve_plan_markers(old_desc : String, new_desc : String) -> String {
   let markers = plan_markers()
   let mut out = new_desc
   for m in markers {
     if !out.contains(m) {
       if old_desc.contains(m) {
-        out = out + m
+        // 规则③：被更长前缀覆盖的短前缀跳过，避免重复补
+        if marker_covered_by_longer(old_desc, m) {
+          continue
+        }
+        let seg = marker_segment(old_desc, m)
+        if seg != "" {
+          out = out + seg
+        }
       }
     }
   }
