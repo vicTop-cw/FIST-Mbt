@@ -565,6 +565,17 @@ test "bug434_heading_is_three_segment_only" {
   assert_false(bug_is_header("## BUG-998 [x] [bogus] OPEN"))
   // 反例④：状态不在闭集
   assert_false(bug_is_header("## BUG-997 [x] [medium] MAYBE"))
+  // 反例⑤（BUG-569）：id 后**不紧跟 `[`** 的污染行 —— 只要尾部凑齐 `[时间] [严重度] 状态`
+  // 三段，旧实现就会把它当条目（实测 memory/bugs.md:3839 的 BUG-481 病灶行，
+  // 致 `bug_list` 回 554 而投影头 553）。本格是变异对照：把 `!tail.has_prefix("[")`
+  // 那行删掉，本格必红。
+  assert_false(
+    bug_is_header(
+      "## BUG-206 锁：src/hat/hat_wbtest.mbt 新增测试 [2026-10-15T10:53:48Z] [high] FIXED",
+    ),
+  )
+  // 正例④：同编号的**真抬头**（id 后紧跟 `[`）必须仍是合法条目 —— 防修过头。
+  assert_true(bug_is_header("## BUG-206 [2026-10-15T10:54:32Z] [medium] FIXED"))
 }
 
 ///|
