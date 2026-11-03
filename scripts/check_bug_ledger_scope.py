@@ -326,7 +326,7 @@ def render(rc: int, info: dict, n_tracked: int) -> None:
     )
 
 
-def _run(ledger: str) -> int:
+def _run(ledger: str, root: str = ROOT) -> int:
     if not os.path.isfile(ledger):
         print("[FATAL] 找不到账本 %s ⇒ rc=2（绝不报绿）" % ledger)
         return RC_UNSELF
@@ -335,19 +335,19 @@ def _run(ledger: str) -> int:
     except OSError as exc:
         print("[FATAL] 账本读不到 %s：%r ⇒ rc=2" % (ledger, exc))
         return RC_UNSELF
-    tracked = load_tracked(ROOT)
+    tracked = load_tracked(root)
     if tracked is None:
-        print("[FATAL] `git ls-files` 失败（root=%s）⇒ 跟踪面拿不到，拒绝判 ⇒ rc=2" % ROOT)
+        print("[FATAL] `git ls-files` 失败（root=%s）⇒ 跟踪面拿不到，拒绝判 ⇒ rc=2" % root)
         return RC_UNSELF
-    rc, info = evaluate(text, tracked, root=ROOT)
+    rc, info = evaluate(text, tracked, root=root)
     render(rc, info, len(tracked))
     return rc
 
 
-def run(ledger: str = LEDGER_DEFAULT) -> int:
+def run(ledger: str = LEDGER_DEFAULT, root: str = ROOT) -> int:
     """real 入口：异常一律 rc=4（尺子坏了，绝不冒用 0/1/2 任何一档）。"""
     try:
-        return _run(ledger)
+        return _run(ledger, root=root)
     except Exception as exc:  # noqa: BLE001
         print("[FATAL] 判据自身异常：%r ⇒ rc=4" % (exc,))
         return RC_BROKEN
@@ -391,7 +391,7 @@ F_LOCAL = (
 
 F_ERRATA = (
     "## 勘误(2026-11-02 · X 项目账目误落本树)\n"
-    "- 上面 1 条（BUG-901）是 E:/IDEProjects/AI/xxx 项目的缺陷，不属于本仓。\n"
+    "- 上面 1 条（BUG-901）是 E:/foreign-repo/xxx 项目的缺陷，不属于本仓。\n"
     "- 处置：已逐字搬移；本树条目 append-only 保留，以本节为准。\n"
 )
 
@@ -479,12 +479,14 @@ def selftest() -> int:
     cell("S9 勘误节点名连续多条 ⇒ 全覆盖绿", _ev(both)[0], RC_OK)
 
     # ── ⑩ real 入口：账本缺失 ⇒ rc=2；尺子坏了 ⇒ rc=4；未知旗标 ⇒ rc=2 ──
-    cell("S10a 账本不存在 ⇒ rc=2", run(os.path.join(tempfile.gettempdir(), "scope_no_such_ledger.md")), RC_UNSELF)
+    # 两格都传 temp 根：hermetic 静态面不许 selftest 链上出现真仓 ROOT 流
+    #（运行期这两格本就走不到 git/subprocess——S10a 缺账本先返回、S10b evaluate 先抛）。
+    cell("S10a 账本不存在 ⇒ rc=2", run(os.path.join(tempfile.gettempdir(), "scope_no_such_ledger.md"), root=tempfile.gettempdir()), RC_UNSELF)
 
     saved = evaluate
     try:
         globals()["evaluate"] = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("合成故障"))
-        cell("S10b 判据自身异常 ⇒ rc=4（不冒用其他档）", run(LEDGER_DEFAULT), RC_BROKEN)
+        cell("S10b 判据自身异常 ⇒ rc=4（不冒用其他档）", run(LEDGER_DEFAULT, root=tempfile.gettempdir()), RC_BROKEN)
     finally:
         globals()["evaluate"] = saved
 
