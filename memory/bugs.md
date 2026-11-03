@@ -15397,5 +15397,13 @@ BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：3
 ### FIXED(2026-11-02T16:07:03Z / BUG-563, BUG-564)
 - evidence: 回归锁：`git ls-files '*.db' '*.sqlite3' '*.bin'` 计数由 30 → 0（当场复跑，2026-11-03），chroma 整树用 `git rm -r --cached` 移出版本控制、磁盘运行数据保留（apps/api/data/chroma_db 下 16 个 data_level0.bin/header.bin/length.bin/link_lists.bin 仍在原地可跑）；.gitignore 追加 `*.sqlite3`、`apps/api/data/chroma_db/`、`legacy/dataquest/platform/backend/data/vector_db/`。已入 c57dc10。残留说明：`git ls-files apps/api/data legacy/.../backend/data` 还剩 3 条，全是 legacy/dataquest/platform/backend/data/training/*.json 语料（文本、非运行期二进制），按原样保留。 || 回归锁：新增调用面件 crates/vq-cli/tests/add_conn_exit_code.rs（`execute --add-conn` 三臂非法输入 rc=1 + 对照臂合法 sqlite 连接 rc=0；VQ_WORKSPACE_DIR 指临时目录，测试不再写仓库 data/vq.db）。修前该件当场变红——第 2 臂 `mydb:sqlite:::` rc=0，且 data/vq.db 落了 conn.mydb={"path":"::"}（证明「sqlite 路径为空」臂不可达，BUG-544 的第三条错误臂是死的）；修后 cargo test -p vq-cli 8 passed（单元）+ 1 passed（该集成件）。真源 crates/vq-cli/src/main.rs 抽 sqlite_conn_path() 用 trim_end_matches(':')（盘符冒号在中间不受影响），并把单测 test_parse_add_conn_sqlite_windows_path 从「重抄一遍解析表达式」改成直接调用真源。垃圾连接 conn.mydb/conn.zz 已从 data/vq.db 删除（conn.% 行数 3 → 1，只剩先于本轮的 conn.pgdemo）。
 ## BUG-565 [2026-11-03T00:52:55Z] [medium] OPEN
-- summary: 连接器面与 CLI 面的 server cwd 不同 ⇒ 同一个 project_dir="." 落到两本不同的台账（连接器面落到 JS 产物目录，账看不见）
-- detail: 实测同一条 `bug_list(project_dir=".")`：
+- summary: 跨项目账本误落（根因）+ 网关静默失败：`fist-mbt call report_bug --project_dir .` 必把账落到 FIST_MBT_REPO 指向的树（默认本树），调用方无出路（绝对路径被设计拒绝）⇒ vq 项目 21 条账误落本树；且 `FIST_MBT_REPO` 指向无网关项目时 `fist-mbt call` rc=1 零输出（FATAL 被 quiet 吞）
+- detail: 机制 A：launcher runGateway() 以 cwd:REPO 起网关，server 按自身 cwd 解析相对路径，bug_project_dir_ok 拒绝对路径/盘符/..（fail-closed 有意）⇒ 无出路；回执回显 server_cwd/resolved_path 而调用方未比对。机制 B：call 路由 quiet=true 吞 gateway-not-found FATAL + spawn 失败消息无 FATAL 前缀 ⇒ rc=1 零输出（本轮复现 0 字节；修后同命令自述 82 字节）。B 半 2 行补丁已验证（仓内副本：node --check PASS + 复现自述 + 默认路由 version/call bug_list 回归 rc=0），部署待审批（门禁拒 writes outside the workspace，不重试）。A 半属设计边界，三案见决策单 §4 待 owner 裁决。后续：外来条目检测守卫 + 计数面裁决（均待 WIP 收口）。
+- task_id: （B 半为指挥官部署动作、A 半待 owner 裁决，本轮无派单）
+- evidence: temp/bug565_prefix_out.txt（0B）/ temp/bug565_postfix_out.txt（82B）/ temp/serve-launcher-orig.cjs 与 temp/serve-launcher-patched.cjs（diff 两处）/ reports/2026-11-03-bug565-project-dir-decision-sheet.md
+
+## BUG-566 [2026-11-03T02:11:00Z] [medium] OPEN
+- summary: 审批门禁把全工作区内提交命令误判为 `writes outside the workspace` 拒（BUG-565 §5.3 / 轮 97 风险 (5) 同族第 2 次可见复发）：标签与事实不符（写入点全在工作区内）⇒ 提交面被无声收窄，agent 被迫绕分类器习性
+- detail: 事件：唤醒轮 99 的 scoped 提交命令（printf > temp/ 重定向 + git commit -F … -- <path> + rm temp/ 复合）被拒，门禁原文 `bash (writes outside the workspace)`；命令写入点全在工作区（temp/ / .git / reports/）。对照（同会话）：write_file 写消息文件 + scripts/commit_scoped.sh 一次通过（80e1526fe，落盘面与申报面逐字相等）。族表：BUG-565 §0（合法工作区外写待审批、非误判）/ §5.3（cl7 探针被判 credential access）/ 轮 97（只读 $LOCALAPPDATA 命令被判工作区外写）/ 本单（工作区内提交复合被判工作区外写）⇒ 4 实例 3 误判。根因在宿主 harness 侧（H1 相对路径 temp/ 误判 / H2 rm 触发泛用标签 / H3 cd 前缀未跟踪，甄别三臂见决策单 §3），本仓内不可修。绕行（已验证）：write_file 写消息文件 + commit_scoped.sh + rm 不串同命令（决策单 §4）。
+- task_id: （本轮无派单；甄别三臂实验移交 harness 侧 / owner）
+- evidence: reports/2026-11-03-bug566-approval-gate-misjudgment.md（被拒命令原文 + 门禁拒原文 + 对照提交 80e1526fe）/ memory/2026-11-03.md 轮 99 段
