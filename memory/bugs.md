@@ -15451,3 +15451,14 @@ src/engine/omega_strong_test.mbt 本次改动：
 - false_positive(2026-11-03T15:34:42Z): 2026-11-03 唤醒轮：本人误用  做链路探测，实际写入真账本。条目无实质缺陷内容，按 append-only 纪律不静默删除、登记为误报条目保留痕迹。可复核性缺口（真实缺陷面）：report_bug 的 summary 无长度/内容校验，任意探测串即落账；建议后续立单加最小校验。
 
 - 更正(2026-11-03T15:40:00Z)：上条证据里被 shell 反引号当命令执行而吞掉的调用面补回——`python scripts/fist.py call report_bug --project_dir . --summary probe-test-delete-me`。本条是**操作面失误**（探针直打真账本），不是代码缺陷：summary 接受自由文本是设计，不设缺陷单。同族前例 BUG-250/251/414/415 均按 FALSE_POSITIVE 保留，本条从同。
+## BUG-569 [2026-11-03T18:20:55Z] [medium] FALSE_POSITIVE
+- summary: probe
+
+- false_positive(2026-11-03T18:21:56Z): 操作面失误（唤醒轮 121）：为查 report_bug 参数面误用 --summary probe 直打真账本，制造本条。无实质缺陷内容，按 append-only 纪律不静默删除、登记误报保留痕迹。同族前例 BUG-250/251/414/415/568。真实缺陷（bug_is_header 误判）另立 BUG-570 入账。
+## BUG-570 [2026-11-03T18:22:08Z] [medium] FIXED
+- summary: bug_is_header 只验「尾部存在 [时间] [严重度] 状态」不验 id 后紧跟 [，bug_next_bracket 跨散文找括号 ⇒ BUG-481 病灶行（memory/bugs.md:3839 的 ## BUG-206 锁：…[ts] [high] FIXED）被判成条目抬头，bug_list 回 554 条而投影头 553 条，差 1 条幻影条目
+- detail: 机制：bug_is_header（src/server/bugreport.mbt:69-131）判据 = 行首 ## BUG- + 首个空格后存在 [ts] [sev] STATUS。bug_next_bracket(tail) 从 id 后第一个空格起找第一个 [，因此 id 与 [ 之间的任意散文被跨过。账本 BUG-481 病灶行 append-only 保留（形态守卫 check_bug_ledger_shape.py:94 DUP_ALLOW 已显形并待裁决），server 解析器同口径下把它数成第二条 BUG-206。口径：对齐 scripts/gen_plugins.py 的 RE_BUG_HEAD（BUG-n 后紧跟 [）⇒ 553。已修：bug_is_header 增加 !tail.has_prefix("[") 拒判 + 白盒反例（bugreport_status_wbtest.mbt bug434 反例⑤，同编号真抬头正例④防修过头）。修复后 bug_list n_bugs=553 unique=553 dups=[]。
+
+
+### FIXED(2026-11-03T18:22:52Z / BUG-570)
+- evidence: 代码面：src/server/bugreport.mbt bug_is_header 增加「id 之后必须紧跟 [」拒判（对齐 scripts/gen_plugins.py 的 RE_BUG_HEAD），堵掉 bug_next_bracket 跨散文找括号的口子。回归锁：src/server/bugreport_status_wbtest.mbt bug434_is_header 新增反例⑤（BUG-481 病灶行形状，旧实现判 true ⇒ 删掉拒判必红）+ 正例④（同编号真抬头仍 true，防修过头）。读数：moon test --target js src/server = 586/586（rc=0）；全量 moon test --target js = 2032/2032（零回归）；修复后 python scripts/fist.py call bug_list ⇒ n_bugs=553 unique=553 dups=[]；check_bug_ledger_shape.py = 行首三段式抬头 553 条干净。

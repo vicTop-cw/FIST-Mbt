@@ -473,7 +473,16 @@ SPECIAL_CASES = [
     # 2026-10-24 追记：`check_diff_scope.pick_base()` 改用「离 HEAD 最近的候选」后，本尺的
     # base 也稳定落到 main ⇒ 「master 落后 1113 提交」那个读数不再出现，实测 **0 个分支有未推送提交**
     # （rc=0）。按本文件自订的律「预存红被修好 ⇒ 把期望改回 0」转回门禁格。
-    case("check_delivery_gap.py"),
+    #
+    # 2026-11-04 追记（轮 121）：**远端形态又变了** —— `origin/master` 推进到 0844a12d7，但
+    # `gitcode/main` 仍停在 cdb241ac，本地 main/HEAD 领先 16 个提交（轮 108~120 收口），且 tip
+    # 不在任何远端分支上（`git branch -r --contains main` 为空）⇒ 本尺确定性回 rc=1。这不是
+    # 判据坏，也不是仓内容债，而是**交付通路待 owner 决策**（pre-push hook 挡 direct push）。
+    # 按 diag 口径登记，`until={"kind":"rc","value":0}` ⇒ 推送完成后自动销账。
+    expected("check_delivery_gap.py", 1,
+             "诊断口径：本地 main/HEAD 领先远端 16 提交（轮 108~120 收口），tip 不在任何远端分支；"
+             "pre-push hook 挡 direct push ⇒ 交付通路需 owner 决策。推送完成后 rc=0 即销账",
+             kind="diag", until={"kind": "rc", "value": 0}),
     # —— R55：blackbox 尺进宇宙也进电池（相对 scripts/ 点名，路径含子目录）——
     case("blackbox/check_merge_markers.py", "--selftest"),
     # —— R179：gitlink(mode 160000) 门（瘦身组报「51 个已注册 worktree = 51 颗雷」）——

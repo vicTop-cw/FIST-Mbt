@@ -101,6 +101,17 @@ fn bug_is_header(line : String) -> Bool {
     return false
   }
   let tail = body[sp + 1:body.length()].to_owned()
+  // BUG-569：id 之后必须**紧跟 `[`**（三段式第一段的起点）。
+  //
+  // 为什么必须卡住这一格：只验「尾部存在 `[时间] [严重度] 状态`」是不够的 ——
+  // `bug_next_bracket` 会**跨过 id 后的任意散文**去找第一个 `[`，于是
+  // `## BUG-206 锁：<evidence 散文>…[2026-10-15T10:53:48Z] [high] FIXED`
+  // （memory/bugs.md:3839，BUG-481 病灶本身，append-only 保留）被判成条目抬头
+  // ⇒ `bug_list` 回 554 条而投影头 553 条，差 1 条幻影条目。
+  // 口径对齐 `scripts/gen_plugins.py` 的 `RE_BUG_HEAD`（`BUG-n \[` 紧跟）。
+  if !tail.has_prefix("[") {
+    return false
+  }
   let ts = bug_next_bracket(tail)
   let after_ts = bug_after_bracket(tail)
   let sev = bug_next_bracket(after_ts)
