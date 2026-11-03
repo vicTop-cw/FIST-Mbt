@@ -14,7 +14,7 @@
 | server 白盒 | **586/586**（`moon test --target js src/server`，rc=0） | 绿 |
 | 守卫电池 | **160 格 / 失败 0 / SKIP 0 / 缺执行面 0** | 全绿 |
 | `bug_list` 计数 | **n_bugs=555 unique=555 dups=[]**（修复前 554/553，dups `BUG-206:2`） | 已对齐 |
-| 投影头 | `BUG-1~570 共 555 条入账：5 待修 / 509 已修 / 13 重复 / 27 误报` | 一致 |
+| 投影头 | `BUG-1~570 共 555 条入账：5 待修 / 509 已修 / 13 重复 / 28 误报` | 一致（5+509+13+28=555） |
 | 账本形态 | 行首三段式抬头 555 条，干净 | 绿 |
 | 插件同步 | cl7 PASS | 绿 |
 
@@ -29,7 +29,7 @@
 - 定性：**server 解析器缺陷（BUG-481 同族复发），非账本缺陷**。账本侧 `check_bug_ledger_shape.py:94 DUP_ALLOW` 早已显形该行并待裁决，append-only 不回改。
 - 修复：`bug_is_header` 增加 `!tail.has_prefix("[")` 拒判，口径对齐 `scripts/gen_plugins.py` 的 `RE_BUG_HEAD`（`BUG-n` 后紧跟 `[`）。
 - 回归锁：`src/server/bugreport_status_wbtest.mbt` 的 `bug434_is_header` 新增**反例⑤**（BUG-481 病灶行形状，旧实现判 true ⇒ 删掉拒判必红）+ **正例④**（同编号真抬头仍 true，防修过头）。
-- 读数：修复后 `bug_list` 555/555/dups=[]；`check_bug_ledger_shape` 555 条干净。
+- 读数：**修复当刻** `bug_list` 553/553/dups=[]（幻影条目消失，与投影头对齐）；随后经网关入账 BUG-569/570 ⇒ 终态 555/555/dups=[]（见 §1 表）。`check_bug_ledger_shape` 终态 555 条干净。
 
 **② 电池登记漂移（非独立缺陷单，随 BUG-570 同批修）· `check_delivery_gap` 被登记成门禁绿**
 
