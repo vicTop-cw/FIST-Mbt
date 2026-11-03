@@ -15200,6 +15200,22 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
   check_mcp_stdio_purity rc=0；check_fmt_gate PASS；.mbti 零 diff。
 - 关闭条件不变：两半齐（owner 重连连接器 + server.log 判因面实测过一次）才翻 FIXED。
 
+### 追记（2026-11-03 / 唤醒轮 108：server.log 判因面本地实测 PASS——「实测过一次」半满足）
+- **实测面（dist 快照 0.3.11 + patch_esm_main 后真产物）**：`FIST_DB_PATH`/`FIST_SERVER_LOG` 全改道
+  `temp/bug538-probe/` 隔离面（check_demo_isolation 纪律），后台拉起 `node dist/fist-mbt.js serve` 稳跑 >80s，
+  bash_kill 硬杀（模拟进程消失）。server.log 读数（逐字）：
+  ```
+  2026-11-03T04:34:17Z [fist-mbt] server.start version=0.3.11 pid=16704 auth_mode=off db_path=probe.db log_path=server.log
+  2026-11-03T04:36:54Z [fist-mbt] server.start version=0.3.11 pid=39744 …
+  2026-11-03T04:37:54Z [fist-mbt] heartbeat alive pid=39744
+  2026-11-03T04:38:54Z [fist-mbt] heartbeat alive pid=39744   ← 硬杀前最后一拍，死亡窗口收窄到此后
+  ```
+  三次启动（含两次前台超时残留）各有生命周期行、心跳按 60s 档位落盘、硬杀后「最后还活着」时间戳在场
+  ⇒ **判因能力（关闭条件②的后半）本地实证成立**。stdio 纯度未破（日志只写文件）。
+- 剩余半：**owner 重连连接器 + 真实死亡事件（若有）从日志判因**——这一半本机做不了，单保持 OPEN。
+- 证据：`temp/bug538-probe/server.log`（工作区隔离面，不提交）；本轮报告
+  `reports/2026-11-03-wakeup-108-bug538-verdict-probe-report.md`。
+
 ## BUG-540 [2026-11-02T10:25:00Z] [low] FIXED
 USAGE.md 手册的参数列（14 张三列表约 271 个 `名(必)/名(选,默认X)` token）零守卫：J8 只扫
 templates/*.md 且解析器要求反引号 token，USAGE 裸参数列全被跳过。历史同族 BUG-33/BUG-66
@@ -15247,6 +15263,15 @@ J18（README 快速开始注释抄数==实测）的三格自检格被误贴在 c
   （~/.atomcode 与 ~/.codeartsdoer 各自的 fist-mbt + fist-commander SKILL.md）已用仓内投影
   手工刷新并 diff -rq 逐字一致（fist-mbt ledger 行 516→528）。这只是**症状半**——投影式同步
   （出路 A）与软链/Junction（出路 B）仍挂 owner 裁决，单保持 OPEN。
+
+- **追记（2026-11-03 · 唤醒轮 108，症状半再同步受阻——两条写路全被宿主沙箱拒）**：
+  宿主四副本又落后一个账本世代（宿主 528 vs 仓内投影 BUG-1~566/551 条）。两条同步路本轮实测均拒：
+  ① `cp` 到 `~/.atomcode` / `~/.codeartsdoer` 被审批门禁判 `writes outside the workspace` 拒
+  （BUG-566 同族第 5 例，被拒原命令未重试）；② `write_file` 工具同样拒——世界根被钉在
+  仓目录（`\?\E:\IDEProjects\AI\FIST-Mbt`），宿主路径不可达。⇒ **症状半在本仓会话内已不可达**，
+  同步只能靠 owner 侧手动（或出路 A 的同步脚本由 owner 跑）。出路 A/B 裁决继续挂 owner，
+  关闭条件不变；本追记同时把「宿主沙箱拒写」登记为出路 A 方案设计时的已知约束
+  （脚本须由仓外进程或 owner 执行，仓内会话跑不了）。
 
 ## BUG-543 [2026-11-02T10:45:00Z] [low] FIXED
 BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：30ms 间隔 + 400ms 窗口，
@@ -15407,3 +15432,7 @@ BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：3
 - detail: 事件：唤醒轮 99 的 scoped 提交命令（printf > temp/ 重定向 + git commit -F … -- <path> + rm temp/ 复合）被拒，门禁原文 `bash (writes outside the workspace)`；命令写入点全在工作区（temp/ / .git / reports/）。对照（同会话）：write_file 写消息文件 + scripts/commit_scoped.sh 一次通过（80e1526fe，落盘面与申报面逐字相等）。族表：BUG-565 §0（合法工作区外写待审批、非误判）/ §5.3（cl7 探针被判 credential access）/ 轮 97（只读 $LOCALAPPDATA 命令被判工作区外写）/ 本单（工作区内提交复合被判工作区外写）⇒ 4 实例 3 误判。根因在宿主 harness 侧（H1 相对路径 temp/ 误判 / H2 rm 触发泛用标签 / H3 cd 前缀未跟踪，甄别三臂见决策单 §3），本仓内不可修。绕行（已验证）：write_file 写消息文件 + commit_scoped.sh + rm 不串同命令（决策单 §4）。
 - task_id: （本轮无派单；甄别三臂实验移交 harness 侧 / owner）
 - evidence: reports/2026-11-03-bug566-approval-gate-misjudgment.md（被拒命令原文 + 门禁拒原文 + 对照提交 80e1526fe）/ memory/2026-11-03.md 轮 99 段
+## BUG-567 [2026-11-03T04:44:08Z] [high] OPEN
+- summary: preserve_plan_markers 对 5 个前缀式结构标记只回贴前缀、丢标记内容（梯度档/父计划引用/边界四问载荷/spec 指纹），回归锁②误锁坏行为
+- detail: 缺陷位置 src/engine/omega_strong.mbt:164-175 preserve_plan_markers(old_desc,new_desc)；plan_markers()(:125-134) 6 标记中前 5 个为前缀式（无 ]）只回贴前缀 m、丢冒号后全部内容（梯度档/父计划引用/边界四问载荷/spec 指纹），留悬空前缀；omega_mark()=[omega:required] 完整带 ] 故侥幸正确。错误回归锁 omega_strong_test.mbt:504-510 preserve_plan_markers_keeps_boundary_mark 只断言 got.contains([边界四问) 验前缀，把坏行为锁成预期（判例-36 同族假绿）。唯一调用方 engine_supervisor.mbt:423 supervisor_task_upsert（with_description 整体覆盖后补回标记），修复后无需改调用点。与 BUG-503(DAG 成环,已 FIXED) 无关；本缺陷未建档。修复：对缺失标记回贴「前缀→配对 ] 的完整段」，落实规则②(自身闭合标记整段照搬不再向后找 ]) 与规则③(被更长前缀覆盖的短前缀跳过防父计划补两次)；禁改 plan_markers/cut_before/strip_plan_annotations 单一真源。
+- reported_by: lead
