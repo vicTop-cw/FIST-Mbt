@@ -162,14 +162,20 @@ def auto_convert(v: str):
     return v
 
 
-def parse_args(argv, raw=False):
+def parse_args(argv, raw=False, strict=False):
     """把 ['--ns', 'scratch', '--title', 'hi'] 转成 {'ns': 'scratch', 'title': 'hi'}。
 
     raw=True（call 子命令的 --raw 旗标）时跳过 auto_convert，所有值逐字透传字符串——
     服务端 inputSchema 声明 string 的参数（如 model_route 的 config_json）经网关传 JSON 文本时，
     自动转换会把它变成对象而报 `inputSchema mismatch`，--raw 是唯一出路。
+
+    strict=True（BUG-571：只给 call 路径用）时拒绝孤立位置参数——`--raw` 写在参数名之前
+    会把 `--config_json` 的 `--` 前缀吃掉，键根本没进 kwargs，normalize_kwargs 无从拦，
+    工具按默认配置跑完还回一份看似正常的回执（BUG-23「错名当场拒绝」漏掉的另一半）。
+    非 strict 保持旧行为（list-tools 等子命令的调用面不受影响）。
     """
     out = {}
+    orphans = []
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -182,7 +188,15 @@ def parse_args(argv, raw=False):
                 out[key] = True
                 i += 1
         else:
-            i += 1  # 忽略位置参数（保留给 list-tools 等子命令）
+            if strict:
+                orphans.append(a)
+            i += 1  # 非 strict：忽略位置参数（保留给 list-tools 等子命令）
+    if strict and orphans:
+        raise ValueError(
+            "孤立位置参数 %s —— call 只认 --key value 形态；"
+            "常见成因：--raw 写在参数名之前会吃掉后一个参数的 -- 前缀（BUG-571）"
+            % ", ".join(repr(o) for o in orphans)
+        )
     return out
 
 
@@ -340,6 +354,15 @@ def _selftest():
     # 纪律针：--raw 必须被 call 分支摘掉、不落进 kwargs（否则撞未知入参拒绝面）
     check("别名表 ns->namespace 不受 --raw 影响",
           parse_args(["--ns", "scratch"], raw=True) == {"ns": "scratch"})
+    # BUG-571：call 路径拒绝孤立位置参数（变异对照：删掉 strict 分支本格必红）
+    try:
+        parse_args(["config_json", '{"route": "deepseek"}'], raw=True, strict=True)
+        check("strict 拒绝孤立位置参数（--raw 前置吃 -- 的形态）", False)
+    except ValueError:
+        check("strict 拒绝孤立位置参数（--raw 前置吃 -- 的形态）", True)
+    # 反向对照：正常 --k v 在 strict 下不误伤（防修过头）
+    check("strict 不误伤正常 --k v",
+          parse_args(["--scratch", "true"], strict=True) == {"scratch": True})
     print("selftest PASS" if ok else "selftest RED")
     sys.exit(0 if ok else 1)
 
@@ -385,7 +408,11 @@ def main():
         if "--raw" in call_args:
             call_args = [a for a in call_args if a != "--raw"]
             raw = True
-        kwargs = parse_args(call_args, raw=raw)
+        try:
+            kwargs = parse_args(call_args, raw=raw, strict=True)
+        except ValueError as e:
+            print("FAIL %s: %s" % (tool_name, e))
+            sys.exit(1)
         proc = run_server()
         try:
             # BUG-23：出网前把旗标对齐该工具的 inputSchema，错名当场拒绝而不是静默降级。
