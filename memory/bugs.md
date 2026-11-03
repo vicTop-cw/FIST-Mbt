@@ -15462,3 +15462,10 @@ src/engine/omega_strong_test.mbt 本次改动：
 
 ### FIXED(2026-11-03T18:22:52Z / BUG-570)
 - evidence: 代码面：src/server/bugreport.mbt bug_is_header 增加「id 之后必须紧跟 [」拒判（对齐 scripts/gen_plugins.py 的 RE_BUG_HEAD），堵掉 bug_next_bracket 跨散文找括号的口子。回归锁：src/server/bugreport_status_wbtest.mbt bug434_is_header 新增反例⑤（BUG-481 病灶行形状，旧实现判 true ⇒ 删掉拒判必红）+ 正例④（同编号真抬头仍 true，防修过头）。读数：moon test --target js src/server = 586/586（rc=0）；全量 moon test --target js = 2032/2032（零回归）；修复后 python scripts/fist.py call bug_list ⇒ n_bugs=553 unique=553 dups=[]；check_bug_ledger_shape.py = 行首三段式抬头 553 条干净。
+## BUG-571 [2026-11-03T22:30:37Z] [medium] FIXED
+- summary: 网关 call 路径静默吞掉孤立位置参数：--raw 前置吃掉 --key 前缀致键丢失、工具按默认配置跑完回正常回执（BUG-23「错名当场拒绝」漏掉的另一半）
+- detail: 机制：parse_args(argv, raw) 对非 -- 开头的 token 直接 i+=1 丢弃，且 --raw 的旗标摘除发生在调用方扫描阶段——当 --raw 写在参数名之前时，会被 shell/argv 解析器把后一个参数的 -- 前缀当作 --raw 的值吃掉（或被自身逻辑吃掉），键根本没进 kwargs，normalize_kwargs 的「错名当场拒绝」无从触发。后果：工具以默认配置跑完，回一份看似正常的回执，调用方拿到与预期不符的结果却无报错。修复（scripts/fist.py）：parse_args 增 strict 形参，call 路径传 strict=True，遇孤立位置参数 raise ValueError 并在 main() 捕获打印 FAIL + rc=1；list-tools 等非 strict 路径保持旧行为零回归。回归锁：_selftest() 新增两格——变异对照（strict 拒绝孤立位置参数形态，删掉 strict 分支必红）+ 反向对照（正常 --k v 在 strict 下不误伤）。读数：python scripts/fist.py --selftest = selftest PASS。
+
+
+### FIXED(2026-11-03T22:33:14Z / BUG-571)
+- evidence: 代码面：scripts/fist.py parse_args 增 strict 形参 + call 路径传 strict=True + main() 捕获 ValueError 打印 FAIL 并 rc=1；list-tools 等非 strict 路径零回归。回归锁：_selftest() 两格——变异对照（strict 拒绝孤立位置参数形态，把 orphans.append 的 guard 改 if False 后跑真 --selftest 得 FAIL strict 拒绝孤立位置参数 + selftest RED，rc=1）+ 反向对照（正常 --k v 在 strict 下不误伤）。读数：--selftest PASS；行为三格 G1/G2/G3 全 PASS；CLI 端到端 orphan arg => rc=1 点名孤立参数，正常 call => rc=0；check_bug_ledger_shape 556 条干净、cl7 PASS、fmt rc=0。
