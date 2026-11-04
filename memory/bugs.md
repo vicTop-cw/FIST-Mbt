@@ -15469,3 +15469,11 @@ src/engine/omega_strong_test.mbt 本次改动：
 
 ### FIXED(2026-11-03T22:33:14Z / BUG-571)
 - evidence: 代码面：scripts/fist.py parse_args 增 strict 形参 + call 路径传 strict=True + main() 捕获 ValueError 打印 FAIL 并 rc=1；list-tools 等非 strict 路径零回归。回归锁：_selftest() 两格——变异对照（strict 拒绝孤立位置参数形态，把 orphans.append 的 guard 改 if False 后跑真 --selftest 得 FAIL strict 拒绝孤立位置参数 + selftest RED，rc=1）+ 反向对照（正常 --k v 在 strict 下不误伤）。读数：--selftest PASS；行为三格 G1/G2/G3 全 PASS；CLI 端到端 orphan arg => rc=1 点名孤立参数，正常 call => rc=0；check_bug_ledger_shape 556 条干净、cl7 PASS、fmt rc=0。
+## BUG-572 [2026-11-04T00:51:59Z] [medium] FIXED
+- summary: `audit_branch_delete.py` 的 selftest 缺「空提交分支」格，`cherry_plus == 0` 子句未被锁 ⇒ 该子句改成 `!= 0` 后 selftest 照样绿（S1 变异 MISSED），判据声称的「无新提交且无 diff」口径实际没被锁住
+- detail: 机制：`audit()` 判据 `if contained or (cherry_plus == 0 and not diff_files)` 决定 delete/keep；原 selftest 7 格（已合可删/未合拒删/缺失不可判/审计两行与字段齐备）里「未合」格是 cherry_plus≥1 **且** diff 非空 ⇒ 只覆盖了 `cherry_plus == 0` 的否定侧；「空提交分支」（cherry_plus=1 且 diff 为空，即分支有提交但内容与 base 等价）这一形态无任何格覆盖，而它恰是 `cherry_plus == 0` 子句的唯一区分格——改成 `!= 0` 后原未合格（cherry_plus=2、diff 非空）仍绿、已合格仍绿 ⇒ 变异 MISSED（假绿）。发现路径：E2 子代理审计 selftest 变异对照覆盖时报出 2 个疑似缺口；用仓内权威探针 `_mutation_probe.py --func audit` 复核 ⇒ 本条 S1=MISSED（真缺口），而 `check_memory_log_size.py` 的 S4=CAUGHT（E2 误报，该脚本变异对照隐式存在）。修复：selftest 新增 `empty-commit-keep` 格（构造空提交分支，断言 verdict=keep），README 格数自述 7→8。
+- task_id: （本轮无派单；修复由唤醒轮直接落地）
+
+
+### FIXED(2026-11-04T00:53:50Z / BUG-572)
+- evidence: 回归锁：scripts/audit_branch_delete.py 的 selftest 新增 empty-commit-keep 格（构造空提交分支，断言 verdict=keep）。变异对照（判例-29/30 双重）：① 用仓内权威探针 _mutation_probe.py --func audit 复核，修复前 S1（cherry_plus == 0 → != 0）判定 MISSED，修复后同一探针判定 CAUGHT；② 反向对照：selftest 8 格全绿，已合可删/未合拒删/缺失不可判三格行为不变（零回归）。读数：python scripts/audit_branch_delete.py --selftest = SELFTEST OK（8 格）；python scripts/_mutation_probe.py scripts/audit_branch_delete.py --func audit = S1 CAUGHT rc=1（无 MISSED）；python scripts/check_selftest_inventory_doc.py = 格数反解对表通过；python scripts/check_battery_count_doc.py = PASS（rulers=153 ci=48 battery=113 missing=0）；README 格数自述 7→8 同批同步。诚实边界：本条只覆盖 audit_branch_delete.py 一个缺口；E2 对 check_memory_log_size.py 的指控经探针复核为误报（S4=CAUGHT），已在条目 detail 写明。

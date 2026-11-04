@@ -117,6 +117,14 @@ def selftest():
         v2, p2 = audit(base2, "unmerged", cwd=d)
         cell("unmerged-keep", v2, "keep")
         cell("unmerged-cherry-plus", p2["cherry_plus"] >= 1, True)
+        # 空提交分支：cherry_plus=1 而 diff 为空 —— 唯一能区分「内容等价」与「历史等价」的格子。
+        # 缺了它，`cherry_plus == 0` 子句改成 `!= 0` 也照样绿（S1 变异 MISSED，BUG-572）：
+        # 判据声称的「无新提交且无 diff」判据其实没被锁住。
+        g("checkout", "-q", "-b", "emptycommit")
+        g("commit", "-q", "--allow-empty", "-m", "empty")
+        g("checkout", "-q", "master")
+        v4, p4 = audit(base2, "emptycommit", cwd=d)
+        cell("empty-commit-keep", v4, "keep")
         v3, p3 = audit(base2, "no-such-branch", cwd=d)
         cell("missing-unknown", v3, "unknown")
         gd = os.path.join(d, ".git")
@@ -136,7 +144,7 @@ def selftest():
         for n, w in bad:
             print("  - %s：%s" % (n, w))
         return 1
-    print("SELFTEST OK（%d 格：已合可删/未合拒删/缺失不可判 + 审计两行与字段齐备）" % len(cells))
+    print("SELFTEST OK（%d 格：已合可删/未合拒删/空提交拒删/缺失不可判 + 审计两行与字段齐备）" % len(cells))
     return 0
 
 
