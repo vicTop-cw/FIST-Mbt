@@ -1,3 +1,7 @@
+---
+status: draft
+---
+
 # 提案 — 文件夹监控触发器（事件驱动型）
 
 > **文件命名**：`2026-10-22-folder-watch-trigger-proposal.md`

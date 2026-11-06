@@ -646,11 +646,22 @@ fn iso_minus_secs(iso : String, secs : Int32) -> String {
 /// 调用方不得把它当「不可逆指纹 / 身份认证」用；要身份认证用 `pubkey_fp`（见下）。
 /// 指纹只认原文（`fnv1a64("agent_id:" ++ raw)`）。
 ///
-/// **`pubkey_fp` 当前未接线（BUG-403）**：原注释称「`pubkey_fp` 另行用
-/// `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）」，但全仓无任何代码
-/// 真正派生它，所有写入点恒传 `pubkey_fp=""`——那是**死承诺**：若未来按
-/// 注释接入「公钥钉身份」，会静默绑定到空串（等于没有键位绑定）。接线前
-/// `pubkey_fp` 必须视为占位，不得在安全断言里依赖。
+/// **`pubkey_fp`：已接线，但接的不是原注释说的那把派生（BUG-403 → BUG-430 S3）**：
+/// 原注释称「`pubkey_fp` 另行用 `fnv1a64("pubkey:" ++ hex)` 派生（T0r5：密钥指纹面）」——
+/// 那句**全仓至今无对应代码**（上面那个 `fnv1a64("pubkey:` 串只活在本注释里，代码面零命中）。
+/// 实际落地走的是另一条路：**这一列存的是公钥 hex 原文**，由 `agent_touch_first_seen`
+/// 透传 `pubkey_hex` 给 `agents_register`，并由 MCP 工具 `agent_register_key` /
+/// `agent_revoke_key` 经 `agents_set_pubkey` 写入（吊销＝清空，写后回读核对）；
+/// 消费面在 engine 侧 —— `declared_pubkey_for` 读回后交 `verify_challenge_sig` 验签。
+///
+/// ⚠️ 两个方向都不许写错（「自述滞后现状」有两面，`AI-DEVELOPMENT-STANDARD.md` §4.1）：
+///   · 不许再说「所有写入点恒传空串 / 死承诺」—— S3 第三段起就有真录入面了。
+///     锁在 `server_bug430_s3_keytool_wbtest.mbt`（**实现路径格**：本文件代码面一旦出现
+///     `pubkey_fp="",` 作为 `agents_register` 实参即红；`pubkey_fp="") ` 那一形是
+///     `agents_set_pubkey` 的吊销末参，合法，判据按形态区分）。
+///   · 也不许反过来说成「`pubkey_fp` 是指纹」—— 名字里的 `fp` 是历史遗留，
+///     **这一列现在装的是公钥本身**，别按上面「不可逆短标识」的理解去用它。
+///   · 接线也不改变 S1：`agent_id` 仍自报，登记公钥这件事本身不证明身份归属（BUG-430 S1）。
 fn agent_fp(raw : String) -> String {
   // BUG-436：与 `@engine.agent_fp_of` 收敛到**同一实现**。
   // 此前 server 与 engine 各写一份 `@omega.fnv1a64("agent_id:" + raw)`——

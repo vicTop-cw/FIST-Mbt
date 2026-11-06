@@ -96,7 +96,7 @@ print("      challenge_sig =", sig[:16], "...（128 字符 hex）")
 |---|---|---|
 | `+challenge_required` | **有钥匙但没出示** | 取票 → 签名 → 带上 `challenge`+`challenge_sig` |
 | `+challenge_failed` | 传了票但**验签失败** | 检查是否用**对的私钥**签、签的是 **challenge 原文**（不是别的串）|
-| `+challenge_missing` | `strict` 模式下**完全没传** | 同上，取票+签名（⚠️ 见下「strict 尚未真正拒绝」）|
+| `+challenge_missing` | `strict` 模式下**完全没传** | 取票 → 签名 → 带上；这一档是**硬拒**，不是降权（见下 ⑤「strict 现在就能严格」）|
 
 **实测回执**（`reserve_scope`，同一 server 进程）：
 
@@ -119,8 +119,19 @@ print("      challenge_sig =", sig[:16], "...（128 字符 hex）")
 | 「服务端会帮我签名」 | ❌ **永远不会**。服务端代签 = 自己给自己发通行证 = 绕过整个认证。私钥只有你手里那一份 |
 | 「公钥可以随时改」 | ❌ 已登记的公钥**不可静默覆盖**。要换必须走**轮换**：带 `rotate_sig`（用**旧私钥**签服务端签发的 `rotate_challenge`）+ `rotate_challenge` |
 | 「ns 之间公钥互通」 | ❌ **按 ns 隔离**。在哪个 ns 登记就在哪个 ns 用 |
-| 「`strict` 现在就能严格」 | ❌ **本版尚未真正拒绝**：它只返回 `challenge_missing` 标签并降权，各门还没据此硬拒 ⇒ 效果接近 `soft` |
-| 「不传 challenge 也没事」 | ⚠️ 取决于 `FIST_AUTH_MODE`：`off`（默认）下无钥匙者自报放行；`soft` 下降权到 `Executor` |
+| 「设了 `strict` 就**全链路**都要认证」 | ⚠️ **生效范围有界（BUG-476）**：硬拒的是 `reserve_scope`（`rsv_set` / `rsv_try_set`）、`lock_acquire`（`locks_try_acquire`）、`claim` 这 **4 处门** —— 无 challenge 一律**拒绝**，不是降权。`execute` / `verify` / `submit` / `archive` 仍走无挑战门的路径（BUG-430c）⇒ **在门外** |
+| 「不传 challenge 也没事」 | ⚠️ 取决于 `FIST_AUTH_MODE`：`off`（默认）下无钥匙者自报放行；`soft` 下降权到 `Executor`；`strict` 下上面那 4 处**直接拒** |
+
+> **本行改过口径（自述滞后现状，`AI-DEVELOPMENT-STANDARD.md` §4.1）**：这一格原先写的是
+> ❌「**本版尚未真正拒绝**……各门还没据此硬拒 ⇒ 效果接近 `soft`」——那是 BUG-470 落地时的
+> 真实状态，也是当轮单开的 **BUG-476**。BUG-476 已把 `challenge_missing` 接到门层硬拒：
+> 判定是单一真源 `strict_challenge_denial`（`src/engine/engine_rsv.mbt`），接线 4 处
+> （`rsv_set` / `rsv_try_set` ⇒ `Err`；`locks_try_acquire` ⇒ `granted=false` +
+> `action=strict_challenge_missing`，该函数返回 `LockAcquireOutcome` 不能 `Err`；
+> `claim` ⇒ `ToolError`）。锁：`src/engine/engine_bug476_strict_wbtest.mbt`（含接线计数格，
+> 删掉任一处接线必红）。
+> ⇒ 现在**两个方向都别写错**：说「一条都不拒」是滞后于现状，说「已经全面严格」是过头。
+> 本表这一行的职责就是说清「哪几道门真拒、哪几道不拒」。
 
 ---
 
