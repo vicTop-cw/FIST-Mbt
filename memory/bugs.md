@@ -15488,3 +15488,14 @@ src/engine/omega_strong_test.mbt 本次改动：
 - evidence: 代码面（`scripts/run_guards.py`，只写符号名不写行号）：`owned_script_names()`（电池 ∪ REGISTRY ∪ KNOWN_NO_FACE 名单，CI 面由调用方经 `extra_owned` 传入，**不在 classify() 里调 `ci_referred()`**——`face_report()` 正调着 `classify()`，反向调用会绕成递归）、`unlabeled_orphan()`（纯函数，判据抽出来才拿合成输入双向打）、`flag_claims_in_reason()`（按子句切，子句里有 无/没有/不含/不提供/不接受/不存在 就不算声称）、`stale_reason_flags()`（正面声称的旗标不在脚本源码里即入清单），`classify()` 第三份改为只装真孤儿，`--list` 把真孤儿**按文件名印出**并对 stale 清单 rc=1。文档面：`install_git_hooks.py` 登记理由按真实参数面改写为 `--check`；`scripts/README.md` 锚点 `unclassified` 7→0 并写明语义换算法、其余四键逐字不动。
 - 实测读数：`--selftest` **51 格 rc=0**（新增 7 格：纯函数两格 / 实现路径两格 / 旗标声称三格）；`--list` 现读 `门禁尺 125 / 豁免 23 / 未归类 0`（gate/exempt/rulers/battery 四键不动）；`python scripts/check_battery_count_doc.py` 上岗第一跑即报 X7「登记 7 / 现读 0」——这正是本单要的形态，随锚点同批改写后转绿。
 - 变异对照两支（真跑，不是叙述）：往 `REGISTRY` 注一条声称 `--totally-made-up-flag` 的理由 ⇒ `stale_reason_flags()` 抓到并点名；同一句改写成「无 `--totally-made-up-flag` 旗标」⇒ 清单回空；还原后现状 0 条。另 `classify-wires-ownership-subtract` 一格钉「减法真的接在 classify() 的 `elif unlabeled_orphan(rel, owned):` 那一行」（判例-29：测了谓词不等于谓词真的被调用）。
+
+## BUG-574 [2026-11-06T09:35:00Z] [medium] FIXED
+- summary: 规范性自述滞后于已接线的实现（AI-DEV-STD §4.1 缺陷类）四处同型：`auth_mode_startup_warning` 每次启动打印「本版 strict 尚未真正拒绝 ⇒ 实际效果接近 soft」，而 BUG-476 已把 `strict_challenge_denial` 接到 4 处门层硬拒；`key_rotate_verdict` 背景段写「轮换通道尚未实现」，而 `agent_register_key` 第二步早已消费它；两处 `pubkey_fp` 「死承诺／所有写入点恒传空串」的旧断言已被 S3 第三段的真实写入点证伪（本单只收前两处，后两处见追记）
+- detail: 危害形状不是「文档不全」而是「误导方向相反」——启动横幅让人以为 strict 无效（于是去改代码或关掉开关），实际它已在 reserve_scope（rsv_set/rsv_try_set）、lock_acquire、claim 四处硬拒；背景段让人以为正主拿不回身份（于是放弃轮换），实际带旧私钥签名的 `rotate_sig` 通道已落库并写后回读。判据面空白：无任何尺钉「自述 ↔ 已接线符号」对表（§4.1 只在规范正文里，执行面欠账），故这类滞后只能靠人眼在源码里撞见——本轮撞见四处。
+- reported_by: commander（派单 lane-stale-claims · worktree 隔离车道实测回传）
+- evidence: 车道回传的逐字 before/after + 它当场数的 `strict_challenge_denial` 4 处代码调用点（engine_rsv.mbt rsv_set / rsv_try_set / locks_try_acquire + server.mbt claim）与锁 `engine_bug476_strict_wbtest.mbt` S6 接线计数格（2/1/1）；统帅终审面：`moon check` 无新增错误、`python scripts/check_fmt_gate.py` PASS（rc=0，本机 fmt --check 今轮可用）、`python scripts/moon_test_env.py --target js src/engine` = Total tests 391 / passed 391 / failed 0
+
+### FIXED(2026-11-06T09:35:00Z / BUG-574)
+- evidence: 代码面：src/engine/auth_mode.mbt 的 doc 块与 `auth_mode_startup_warning` 返回串改为「已生效，但生效范围有界」（点名硬拒的四处门 + 明说 execute/verify/submit/archive 走无挑战门＝BUG-430c）；src/engine/engine_rsv.mbt 的 `key_rotate_verdict` 背景段改为「第七段只拒绝、不给去路，第八段补上去路」并逐条点名消费链（第一步 `rotate_challenge_issued` 不落库 → 第二步验签 → `rotate_allowed` 经 `agents_set_pubkey` 落新键 + 写后回读）。零签名变更、零 match 分支变更、零测试断言变更，`.mbti` 未动。
+- 边界：`off` 仍是出厂默认、strict 需显式启用；`agent_revoke_key` 不验调用方（S1 冒充风险不消除），文案保留这一诚实限制，没有把旧滞后翻成新的高估。
+- 遗留（本单不收口，另议）：`src/engine/engine_rsv.mbt` 与 `src/server/server.mbt` 里两处 `pubkey_fp`「死承诺／恒传空串」的同类滞后、`docs/integration/s3-client-bootstrap.md` 面向客户端的同款旧口径、`engine_bug476_strict_wbtest.mbt` 背景段的现在时读感——已在第二车道派单核验中；把「自述 ↔ 已接线符号」钉成常驻门属 check_stale_self_claim 计划项（尚未落地，无执行面）。

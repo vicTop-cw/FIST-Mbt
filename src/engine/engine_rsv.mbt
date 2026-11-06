@@ -1074,9 +1074,31 @@ pub fn FistEngine::lock_violations_list(
 ///|
 /// BUG-430 / S3 **第八段**：**密钥轮换**的准入判定（纯函数 —— 唯一判定面）。
 ///
-/// 背景：`key_pin_verdict` 对「已有公钥且与本次不同」返回 `reject_different_key`，
-/// 拒绝文案里写着「轮换通道尚未实现」。**没有轮换 = 私钥丢了就永久锁死**
-/// （攻击者抢注成功后，正主再也拿不回自己的身份）。本函数补上那条通道。
+/// 背景：`key_pin_verdict`（`server.mbt`，第七段）对「已有公钥且与本次不同」返回
+/// `reject_different_key`。第七段那一版**只拒绝、不给去路** —— 抢注成功后正主
+/// 再也拿不回自己的身份。本函数就是第八段补上的那条去路：
+/// **换钥必须由旧私钥对本次 challenge 签名**。
+///
+/// ## 通道现状（本段此前只复述第七段的旧状态，读起来像去路还不存在，
+/// ## 与同树 `key_pin_reject_message` 的「S3 第八段已实现」对不上 ——
+/// ## 「自述滞后现状」，`AI-DEVELOPMENT-STANDARD.md` §4.1）
+///
+///   · 消费点：`server.mbt` 的 `agent_register_key` handler。
+///     第一步（确有旧键且不同、`rotate_sig` 留空）只由服务端签发 challenge 并返回
+///     `mode=rotate_challenge_issued`，**一个字节都不写库**；第二次带 `rotate_sig` +
+///     `rotate_challenge` 才走到本判定（schema 见该工具的 `rotate_sig`/`rotate_challenge`）；
+///   · 判定为 `rotate_allowed` 后经 `agents_set_pubkey` 落新键，并**写后回读**核对
+///     （不许由请求反推，BUG-145 同口径）；
+///   · `rotate_challenge` **必须是服务端签发且未消费的**：先 `s3_consume_nonce`
+///     再验签，否则「调用方自选 challenge」会把旧私钥证明架空（与首登同口径）；
+///   · 拒绝文案 `key_pin_reject_message` 点名两条去路：带 `rotate_sig` 轮换、
+///     私钥已丢则 `agent_revoke_key` 吊销后重新首登；
+///   · 锁：`engine_bug430_s3_rotate_wbtest.mbt`（r1~r9；r6 是变异对照 —— 把旧钥
+///     验签的证据换成 `true`，r4「错误签名被拒」判定即翻转，证明这一格真在看）。
+///
+/// ⚠️ 仍然诚实的边界（别把「通道有了」读成「身份能自救了」）：轮换**不免除旧私钥**。
+///   旧私钥真丢了只剩 `agent_revoke_key` 一条路，而吊销面不校验调用方是谁
+///   （BUG-430 S1：`agent` 自报、服务端无法验证）⇒ 它是**运维便利**，不是身份保障。
 ///
 /// 规则（**只加严，不放宽**）：
 ///   · 库里**没有**公钥 ⇒ `rotate_not_needed`（走首登路径，不需要旧钥证明）
