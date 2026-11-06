@@ -188,7 +188,7 @@ def scan(universe):
     return violations, claims, hits
 
 
-def stale_exemptions(universe, table=None):
+def stale_exemptions(table=None):
     out = []
     for f, s, frag, why in (table if table is not None else EXEMPTIONS):
         p = os.path.join(ROOT, f)
@@ -213,7 +213,7 @@ def run(argv):
         print("[FATAL] 扫描宇宙为空（src/ 读不到 .mbt）⇒ 拒绝出数（rc=2）")
         return 2
     violations, claims, hits = scan(universe)
-    violations += stale_exemptions(universe)
+    violations += stale_exemptions()
     # 自拒的**唯一**触发条件是「尺读不到任何可判面」，不是「没判出违例」：
     # 本仓现状面里负面句式确实可能为零（BUG-575 立了甄别式后，残留的全是点名变更史的准确陈述）——
     # 那属于干净，报绿并留痕；而 phrase 命中数为零意味着路径/编码/取数面坏了，绝不冒报绿。
@@ -329,15 +329,31 @@ def selftest():
         # 陈旧豁免反查（用合成表，不靠真豁免面存在）
         # 合成串的 needle **不许以字面量出现在本文件里**，否则 stale 检查会自喂成「豁免仍然成立」（判例-30 自指形状）
         needle = "".join(["绝无此串", "-", "ZQK", "-9"])
-        fake = {os.path.join("src", "x.mbt"): "什么都没写"}
         synth = ((os.path.relpath(SELF, ROOT).replace("\\", "/"), "ghost", needle, "合成理由"),
                  ("src/ghost_file.mbt", "ghost", "任意", "指向不存在的文件"))
-        ex = stale_exemptions(fake, table=synth)
+        ex = stale_exemptions(table=synth)
         cell("stale-exemption-is-red", any("EX2" in e for e in ex))
         cell("exemption-pointing-nowhere-is-red", any("EX1" in e for e in ex))
 
-        # 未知旗标必须 rc=2（argparse 天生拒绝）
-        cell("unknown-flag-refused", _rc_of(["--definitely-not-real"]) == 2)
+        # ── 调用面（check_selftest_call_face 的要求）：四档退出码必须由真 `run()` 给出来，
+        #    不许用「另造一个 argparse」冒充（那测的是我的想象力，不是我的参数面）──
+        face = {"dirty": os.path.join(tmp, "face_dirty"),
+                "clean": os.path.join(tmp, "face_clean"),
+                "empty": os.path.join(tmp, "face_empty")}
+        for d in face.values():
+            os.makedirs(d)
+        with io.open(os.path.join(face["dirty"], "x.mbt"), "w", encoding="utf-8") as f:
+            f.write("/// `warm_cache` 尚未实现。\npub fn warm_cache(x: Int) -> Int { x }\n"
+                    "pub fn c2(x: Int) -> Int { warm_cache(x) }\n")
+        with io.open(os.path.join(face["clean"], "y.mbt"), "w", encoding="utf-8") as f:
+            f.write("/// 此前写「`warm_cache` 尚未实现」，已被 BUG-9 推翻。\n"
+                    "pub fn c3(x: Int) -> Int { warm_cache(x) }\n")
+        with io.open(os.path.join(face["clean"], "z.mbt"), "w", encoding="utf-8") as f:
+            f.write("pub fn warm_cache(x: Int) -> Int { x }\n")
+        cell("call-face-violation-rc1", run(["--root", face["dirty"]]) == 1)
+        cell("call-face-clean-rc0", run(["--root", face["clean"]]) == 0)
+        cell("call-face-empty-refuses-rc2", run(["--root", face["empty"]]) == 2)
+        cell("call-face-unknown-flag-rc2", _exit_code_of(["--definitely-not-real"]) == 2)
     finally:
         import shutil
         shutil.rmtree(tmp, ignore_errors=True)
@@ -353,17 +369,12 @@ def selftest():
     return 0
 
 
-def _rc_of(argv):
+def _exit_code_of(argv):
+    """走**真 run()**（含真 argparse 与四档出口），不是另造一个解析器。"""
     try:
-        import argparse as _ap
-        p = argparse.ArgumentParser()
-        p.add_argument("--selftest", action="store_true")
-        p.add_argument("--list", action="store_true")
-        p.add_argument("--root", default=None)
-        p.parse_args(argv)
-        return 0
+        return run(argv)
     except SystemExit as e:
-        return int(e.code or 0)
+        return int(e.code if e.code is not None else 0)
 
 
 if __name__ == "__main__":
