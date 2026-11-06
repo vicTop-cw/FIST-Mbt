@@ -1,3 +1,7 @@
+---
+status: draft
+---
+
 # 提案 — 跨机器任务发布 / 查看（黑盒、非实时）
 
 > **文件命名**：`2026-10-22-cross-machine-task-publish-proposal.md`

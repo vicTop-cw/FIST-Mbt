@@ -15499,3 +15499,24 @@ src/engine/omega_strong_test.mbt 本次改动：
 - evidence: 代码面：src/engine/auth_mode.mbt 的 doc 块与 `auth_mode_startup_warning` 返回串改为「已生效，但生效范围有界」（点名硬拒的四处门 + 明说 execute/verify/submit/archive 走无挑战门＝BUG-430c）；src/engine/engine_rsv.mbt 的 `key_rotate_verdict` 背景段改为「第七段只拒绝、不给去路，第八段补上去路」并逐条点名消费链（第一步 `rotate_challenge_issued` 不落库 → 第二步验签 → `rotate_allowed` 经 `agents_set_pubkey` 落新键 + 写后回读）。零签名变更、零 match 分支变更、零测试断言变更，`.mbti` 未动。
 - 边界：`off` 仍是出厂默认、strict 需显式启用；`agent_revoke_key` 不验调用方（S1 冒充风险不消除），文案保留这一诚实限制，没有把旧滞后翻成新的高估。
 - 遗留（本单不收口，另议）：`src/engine/engine_rsv.mbt` 与 `src/server/server.mbt` 里两处 `pubkey_fp`「死承诺／恒传空串」的同类滞后、`docs/integration/s3-client-bootstrap.md` 面向客户端的同款旧口径、`engine_bug476_strict_wbtest.mbt` 背景段的现在时读感——已在第二车道派单核验中；把「自述 ↔ 已接线符号」钉成常驻门属 check_stale_self_claim 计划项（尚未落地，无执行面）。
+
+## BUG-575 [2026-11-06T09:59:00Z] [medium] FIXED
+- summary: §4.1「自述滞后」残余三面（BUG-574 的同一缺陷类没修完的那半）：`engine_rsv.mbt` 与 `server.mbt` 各有一处 `pubkey_fp`「死承诺／所有写入点恒传空串／要生效还需登记入口接线」的旧断言，早被 S3 第三段的真实写入点证伪；`docs/integration/s3-client-bootstrap.md` 面向客户端写「`strict` 本版尚未真正拒绝 ⇒ 效果接近 soft」与「`reserve_scope`/`lock_acquire` 重放不拦」，与 `dcea736c5` 自己在 `auth_mode.mbt` 改成的「已生效但范围有界」以及 BUG-477 的 nonce 消费直接冲突
+- detail: 危害形状与 BUG-574 同类但面更广——前两处让人以为身份链路根本没接（于是不再使用挑战验签），第三处是**随发布物发给每个客户端的文档**，比源码注释更难被发现滞后。甄别式（本批立规）：**现在时否定活接线＝滞后；点名变更史＝准确**——`engine_bug476_strict_wbtest.mbt` 的背景段因标题写明「本单修的是我自己上一版的诚实边界」判为准确、不动。判定只按代码级调用点数（剔注释/测试/`.mbti`/`dist`）。
+- reported_by: commander（lane-pubkey-fp 车道实测回传 + 统帅逐键对表后落地）
+
+### FIXED(2026-11-06T09:59:00Z / BUG-575)
+- evidence: 代码面（纯注释，diff 非注释行数实测为 0）：`src/engine/engine_rsv.mbt` `pubkey_fp` 段改为点名 `agent_touch_first_seen`/`agent_register_key`/`agent_revoke_key`/`opt_challenge`/`declared_pubkey_for`/`verify_challenge_sig` 三处真实写入点，并声明 `s3_last_sig_probe` **已删除**（不是「待换真源」）；`src/server/server.mbt` `pubkey_fp` 段改为双向诚实版——**已接线，但落的不是文档承诺的 `fnv1a64` 指纹而是原始 hex，名字里的 `fp` 是误名**；`docs/integration/s3-client-bootstrap.md` strict 行反转为「设了 strict 不等于全链路认证」并逐点名 4 处硬拒门，旧口径降为引用式历史注。车道上报的一处越界候选（同文档重放行）经统帅**当场断言否决**：`judged_role_with_nonce` 现读调用点 2 而非任务书假设的 3 ⇒ 断言 fail-closed、该文件零写入，这一行**维持未改、留作 T0r3 现验**（不猜）。
+- 终审面（统帅亲跑，非车道自述）：`moon check` 无新增错误归因；`check_fmt_gate.py` rc=0（`moon fmt --check` rc=0）；`moon_test_env.py --target js src/engine src/server` = `Total tests: 977, passed: 977, failed: 0`；合流前全量电池 160 格 / 失败 0 / SKIP 0 / 缺执行面 0（`BATTERY RC=0`，读数在 `temp/battery-574.log`）。
+- 遗留（本单不收口）：`server.mbt:7734` `agent_register_key` **工具描述串**仍写「需走轮换，尚未实现」——它是运行时代码串、随 `dist/fist-mbt.js` 发货、每个客户端 `tools/list` 都读到，纯散文判据全盲（J9 只审返回契约不审叙事时态）；关闭条件已挂 FIST ns `iterate-1106` 的 T0r3。`docs/integration` 重放行与 `engine_rsv.mbt:322`「nonce 表不落库」同类滞后亦在其中。
+
+## BUG-576 [2026-11-06T09:59:00Z] [medium] FIXED
+- summary: 计划治理面两处「文档承诺的位置/判据都不存在」：`docs/plans/README.md:45` 承诺终态计划移入 `docs/plans/archived/` 而**该目录此前不存在**、`check_plan_location.py` 的 P6 对「已驳回」只告警不拦；`docs/proposals/` 整面不在任何 glob 上（两份提案卡连 YAML 头部都没有，`draft` 只写在引用行）⇒ 与 BUG-440「README 承诺的判据从未存在」同族复发
+- detail: 判据面此前只 glob `docs/plans/` 一层，提案卡所在的 `docs/proposals/` 从零治理；被驳回的方案长期留在活动目录，读的人无法分辨「还在推进」与「已否决」。
+- reported_by: commander（lane-plan-governance 车道回传 + 统帅在当前树复跑判据后落地）
+
+### FIXED(2026-11-06T09:59:00Z / BUG-576)
+- evidence: 判据面 `scripts/check_plan_location.py`（182 → 764 行）：两面同判（`docs/plans/` + `docs/proposals/`）、新增 P7（驳回/归档终态不得留在活动目录，**判红**）、P8（提案卡 frontmatter 可解析）、P9（`status` 键与英文闭集），四种空宇宙形状全部 rc=2 自拒；文件面建 `docs/plans/archived/` 并把被驳回卡逐字节搬入（`git hash-object` = `1b179b5c…` == `git rev-parse HEAD:旧路径`，内容 0 改），两份提案卡各 +4 行头部（正文 0 改），2 处指针随搬家改指新路径（不留悬空引用，判例-39 族）。advisory↔failing 的分档按**现网会被打红的份数**定：整档 TERMINAL 提红会打 1 份已有文件（`已推迟` 的 4pools）⇒ 不提，继续 P6 告警；只提「驳回」一档 ⇒ 搬完现网 0 违例。判据面刻意窄于文档面并已写进 docstring（不静默），转正路径一行常量。
+- 对照真跑：`--selftest` 49/49（含 14 支变异对照 = 7 处变异 × rc 面 + 码面）；把改前的树复刻进 `%TEMP%` 后同一把尺 **rc=1 报 3 条违例**（P7 驳回卡留活动目录 + 2×P8 提案无头部）⇒ 新规则在真卡片上发红，不是只在 tempfile 里成立。开发事故反证：第一版按下标取 `scan()` 元组把 `violations` 读成 `skipped`，4 支「码名是否打印」格**全照样 OK**、5 支断言 rc 的变异格当场 FAIL——判例-29「机制格 ≠ 实现路径格」现场版，故 rc 面断言不与文本命中面合并。
+- 邻居尺现跑：`check_doc_surface` / `check_tools_sync` / `check_scripts_index` / `check_battery_count_doc`（`rulers=153 ci=48 battery=113` 逐键不变，本批未新增脚本）/ `check_hardcoded_paths` / `check_selftest_hermetic` 全 rc=0；`check_publish_payload` 在「文件已在盘但未跟踪」那一瞬间 rc=1 点名 P1，`git add` 后回 rc=0（门生效，不是产品坏）。
+- 遗留（另议不关本单）：`archived/` 现为完全不进判定面的墓地（「把红卡片塞 archived/ 就静音」在这一面可做到，堵它需给 archived/ 开「头部仍可解析但不判位置」的次级面）；`docs/` 本层与 `docs/superpowers/plans/` 的计划族无 `status:` 面；plans 中文闭集缺 `已归档` 合法值；两侧墓地不统一（plans→`docs/plans/archived/`，proposals→`docs/archive/`），尺只判「离开活动目录」；卡片编码按 utf-8 `errors="replace"` 读，非 UTF-8 头部带替换符仍被解析，无尺管这一面。

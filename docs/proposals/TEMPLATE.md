@@ -1,8 +1,12 @@
+---
+status: draft
+---
+
 # 提案模板 — `<主题>`
 
 > **文件命名**：`YYYY-MM-DD-<主题>-proposal.md`
 > **放置目录**：`docs/proposals/`
-> **状态**：`draft` / `under-review` / `approved` / `archived`
+> **状态**：`draft` / `under-review` / `approved` / `rejected` / `deferred` / `archived`（闭集，`check_plan_location` 守卫按这张表判）
 > **替代**：如果有旧版提案，把旧版移入 `docs/archive/`
 
 ---

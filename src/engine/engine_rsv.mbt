@@ -306,12 +306,34 @@ pub fn strict_challenge_denial(
 //   ② **四条门全部走 `judged_role_with_challenge`**
 //
 // ⚠️ 诚实边界（必读）：
-//   · `pubkey_fp` 目前是**死承诺**（`server.mbt:649` 明写「全仓无任何代码真正派生它，
-//     所有写入点恒传 `pubkey_fp=""`」，BUG-403）。⇒ **线上没有任何 agent 有公钥**
-//     ⇒ 传了 `challenge` 的调用**一律 challenge_failed**。
-//     这是**正确且期望的** fail-closed 行为，不是 bug。
-//   · 要真正生效还需要：**客户端签名回传**（`s3_last_sig_probe` 换成真实来源）
-//     + **公钥登记入口**（`agents_register` 的 `pubkey_fp` 参数接线，在 `server.mbt`）。
+//   · 本段**初版**在这里写着「`pubkey_fp` 是死承诺、全仓写入点恒传空串，⇒ 传了
+//     `challenge` 的调用一律 `challenge_failed`」—— 那是 S3 第一段的真实状态，
+//     之后被第三段（公钥录入 + 删占位）与后续段（取票窗口、轮换、吊销）逐条推翻，
+//     **而这段文字一直没跟着改**（「自述滞后现状」，`AI-DEVELOPMENT-STANDARD.md` §4.1）。
+//   · 现状（链路三段都**已接线**，逐段点名读点）：
+//       - **录入**：`server.mbt` 的 `agent_touch_first_seen` 把 `pubkey_hex` 透传给
+//         `agents_register`；MCP 工具 `agent_register_key`（两步首登 + `rotate_sig` 轮换）、
+//         `agent_revoke_key`（吊销＝清空）、`agent_issue_challenge`（取票）都在 `server.mbt`。
+//         轮换/吊销走 `agents_set_pubkey` 并**写后回读**核对（不许由请求反推）。
+//       - **真签名来源**：MCP 入参 `challenge_sig` —— `server.mbt` 的 `opt_challenge`
+//         从 args 取，`claim` / `reserve_scope` / `lock_acquire` 三工具透传进
+//         `judged_role_gated` → 本文件的 `judged_role_with_challenge`。
+//       - **验签**：`declared_pubkey_for`（本文件）读 `agents.pubkey_fp`，
+//         空串＝未登记＝过不了（fail-closed）；非空则交 `verify_challenge_sig`。
+//         第一段的 `s3_last_sig_probe` 占位**已删除**（第三段）—— 不再需要「换成真实来源」，
+//         而且服务端**永远不许自造签名**（自签＝自己给自己发通行证）。
+//       - 锁：`engine_bug430_s3_key_wbtest.mbt`（录入→读回→验签全链路）、
+//         `server_bug430_s3_keytool_wbtest.mbt`（**实现路径格**：断言代码面真的出现
+//         `pubkey_fp=pubkey_hex`，退回空串实参即红）、
+//         `server_bug430_s3_revoke_wbtest.mbt`（吊销面）。
+//   · **仍然成立的边界**（别把「接线了」读成「身份可信了」）：
+//       - `agent` / `created_by` 仍是**调用方自报**，服务端无法验证（BUG-430 S1 / BUG-464）；
+//         验签只证明「持有对应私钥」，**不证明**「该私钥属于它声称的那个名字」——
+//         没登记公钥的调用方走的路径根本不要求签名。
+//       - 公钥**按 ns 隔离**，而 `reserve_scope` / `lock_acquire` 不接受 `namespace` 参数
+//         ⇒ 与 `agent_issue_challenge` 落在不同 ns 时验签恒失败。
+//       - `execute` / `verify` 不接 challenge ⇒ 认证不覆盖全链路（BUG-430c）。
+//       - 一次性消费只在**验签通过后**发生（`s3_consume_nonce`）。
 // ══════════════════════════════════════════════════════════════════════════
 
 ///|
