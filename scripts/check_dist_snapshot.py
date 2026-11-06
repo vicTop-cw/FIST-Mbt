@@ -22,7 +22,7 @@ r"""scripts/check_dist_snapshot.py — 仓内发布快照 `dist/fist-mbt.js` 的
 `dist/fist-mbt.js` 内嵌 `src/server/server.mbt` 的**工具描述串字面量**（tools/list 的正文就来自它）。
 实测：`agent_register_key` 的描述早在 BUG-577 批就改口，dist 却仍烤着旧句
 「已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）」，直到 `python scripts/refresh_dist.py` 重投影
-（commit `e4667f851`）。**上面两面谁也看不见这一格**：
+（commit `e4667f858`）。**上面两面谁也看不见这一格**：
 1. 本尺前两面的判据是「内嵌版本号」与「符号调用形」⇒ 描述串既不是版本也不是符号，
    于是「版本对、符号在、句子旧」照样 rc=0；
 2. `check_stale_self_claim.py` 的 `SKIP_PATH_PARTS` 第一项就是 `dist/`（生成/孪生面不扫）
