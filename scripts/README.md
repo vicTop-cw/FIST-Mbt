@@ -196,7 +196,7 @@
 
 ### 2026-10-22 新增：`check_dist_snapshot.py` / `refresh_dist.py`
 - `check_commit_bug_refs.py` — **commit message 面的 BUG-N 完整性（棘轮门，补 R48/R115 两把尺的盲区）**：`check_bug_reference_integrity.py`（R48）只扫 `.mbt` 注释面、`check_bug_refs.py`（R115）扫代码/文档面，**两把尺都不扫 `git log` 的 commit message**。实测缺口：`git log --format=%B origin/main..HEAD` 引用 `BUG-390/397/398/399`，而 `memory/bugs.md` 里这些编号**全都不存在**（账本最高当时为 389）——commit 引用了账本里没有的 bug 编号，且 `BUG-390` 被两个不同 bug 复用（`0f4ffe8c` 标 BUG-390=SqliteStore::open，bug_list 面标 BUG-390=pre-push 拦截），编号**从未经 report_bug 原子分配**（手动编号绕过 API）。本尺补上 commit message 面。**判定**：ORPHAN = 未推送 commit message 里引用的 BUG-N，账本里没有该编号；`PHANTOM_COMMIT_CEILING = 0`（只扫 `origin/main..HEAD` 的新 commit，不含已 push 进 main 的历史 commit——那些引用的 390/397/398/399 不在扫面内，故任何新 commit 引用的 BUG-N 必须在账本；棘轮只许降不许升）——新 commit 引入任何幽灵编号即红。**夹具降档**：编号 >= 900（BUG-901/999）是 selftest 合成夹具，机械跳过不计孤儿。`origin/main` 不存在时退回最近 20 条（判据无法自证时仍给出读数面）。`--selftest` 6 格（提取/夹具/边界/ceiling/账本/实测）。用法：`python scripts/check_commit_bug_refs.py [--selftest|--show-ceiling]`（0=在 ceiling 内 / 1=超 ceiling / 2=无法自证）。
-- `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本面 + 内容面守卫**：版本面要求快照内嵌
+- `check_dist_snapshot.py` — **仓内发布快照 `dist/fist-mbt.js` 的版本面 + 内容面 + 描述面（三面）守卫**：版本面要求快照内嵌
   `project__version` == `moon.mod`。存在理由：`scripts/mcp_compat_shim.js` 的**默认服务端**就是
   `node dist/fist-mbt.js serve`，README 也把它当"发布版"引用；实测快照曾落后 `moon.mod` 一个版本
   （发布实况见 `BACKLOG.md` 的发布条目，本文不再抄第二处版本号）⇒ 照文档连过去的人/agent 拿到旧版本 +
@@ -218,8 +218,35 @@
   版本对得上、代码是旧的，代价是调用方把「部署面陈旧」误判成「判定逻辑有缺陷」查了 40 分钟。
   现在多判一格：快照正文里必须能找到 `scripts/_deployment_symbols.py` 的 `KEY_SYMBOLS` 每条符号的**调用形**
   （容忍 MoonBit 的 `_`→`__` 名字变形、要求命中后紧跟 `(`），缺则红并点名**「版本对但代码旧」**
-  —— 这句是事故的确诊语句，不许被"版本 PASS"盖住。`--selftest` 19 格真断言（版本 8 + 内容面 6 含变异对照 + 两面合成 5）；
-  读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
+  —— 这句是事故的确诊语句，不许被"版本 PASS"盖住。
+- `check_dist_snapshot.py` **第三面 · 工具描述串 src↔dist 对表（BUG-578 遗留②，2026-11-06 上岗）**：
+  `dist/fist-mbt.js` 内嵌 `src/server/server.mbt` 的 `instrumented_tool(...)` 描述串字面量（tools/list 的正文就来自它）。
+  实测滞后形状：`agent_register_key` 的描述早在 BUG-577 批就改口，dist 却仍烤着旧句
+  「已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）」，直到 `refresh_dist.py` 重投影（`e4667f851`）。
+  **前两面对这一格是瞎的**（判据实测，不是推断）：同一份「只把那一行改回旧句」的夹具上，
+  版本面 rc=0（`0.3.11 == moon.mod`）、内容面 rc=0（3 条探针全有调用形）⇒「版本对、符号在、句子旧」照样绿；
+  而 `check_stale_self_claim.py` 的 `SKIP_PATH_PARTS` 第一项就是 `dist/`（生成/孪生面不扫）⇒
+  §4.1 门抓得住 src 的谎，抓不住 dist 里**源码已删**的残句 —— 那是**差集**问题不是主张真伪问题；
+  `release.yml` 的资产来自 CI 现烤的 `_build/js/…/cli.js`，不读 dist ⇒「CI 恒绿」与「dist 恒旧」能长期并存，
+  真正吃到旧句的是克隆者/agent 侧（`mcp_compat_shim.js` 默认连 `dist/fist-mbt.js` serve）。
+  **取数**：`src/server/*.mbt` 非测试面里 `= instrumented_tool(` 的前两个深度-1 字面量 = `(工具名, 描述串原文)`；
+  bundle 侧用 `RE_DIST_CALL` 反解调用点（函数定义行因第二项不是字面量而天然不匹配）。
+  **S2 关注面判据逐字复用 `check_stale_self_claim` 的 `claim_lines`/`clauses`/`symbols_in`**
+  （同一规则两处实现是本仓判例族点名的形状），只用于给缺句排优先级 + 报关注面计数，**不用来收窄判定面**。
+  **抽样口径 = 全部无转义描述串**（现读 175/178）：含 `\"` 或插值 `\{…}` 的字面量在 bundle 里**可能不同形**、
+  逐一比会假红 —— 实测这 3 条今天恰好也是原形，但没有任何上游契约钉住这一点，故一律挡在闸门外并报数
+  （`--list` 打印被挡的清单）。空描述串**绝不进判定面**（空串在任何正文里都「原样命中」= 假绿发生器）。
+  **反向面**：dist 里不得多出 src 已不再注册的工具名 ⇒ 抓「src 已删工具、dist 还整条烤着」；
+  描述级的反向不判 —— bundle 会把 `+` 连接的句子**合并**，逐句反查必假红（实测 `agent_revoke_key`
+  / `agent_issue_challenge` 两条就是这样落进「dist 有而 src 集合没有」的）。
+  **自拒（rc=2，绝不冒用 1）**：src 解析不到注册 / dist 正文空 / bundle 反解不到调用点 /
+  可判形抽样数为 0 / **缺句率 ≥80% 且判定面 ≥10 条**（那不是「dist 旧」，是打包形态与本尺脱锚，人来核尺）。
+  参数面：`--selftest` / `--list`，**未知旗标 ⇒ rc=2**（R207 族；`--self-test` 拼错同样被拒，实测）。
+  三面合码取最严一档（2 压过 1 压过 0）。`--selftest` 的**格子数与分组一律从已执行格子反解**、印在 PASS 行里，
+  本文不抄那个数（抄一个数就是下一颗漂移雷）；含 4 处**打在真代码行上**的变异对照
+  （命中判定 `if desc in dist_text:` / 转义闸门 `if BS in desc:` / 空串闸门 `if not desc.strip():` /
+  脱锚闸 `if len(missing) >= 10 and …:`），每处的替换点都断言**恰 1 处命中**，摘掉后必须看到
+  「该红的夹具不红 / 该自拒的变成报绿」，否则那一格算失败。读不到版本/缺文件 ⇒ rc=2（判据无样本绝不放行）。
 - `refresh_dist.py` — **刷新快照的一条命令**：`moon build --target js --release cmd/cli` →
   `patch_esm_main.py` 注入 ESM shim → 拷贝到 `dist/fist-mbt.js` → 跑上面那把尺自证。`--dry-run` 只打印计划。
   实测 2026-10-22：刷新后 `node dist/fist-mbt.js version` = **FIST-Mbt v0.3.10**（用户视角真读数）。
