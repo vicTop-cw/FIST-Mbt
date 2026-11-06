@@ -15597,3 +15597,13 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 账务同批（cl7 律：改账本 ⇒ 同批重投影插件态）：本笔只改本条目 + `python scripts/gen_plugins.py`，本地 `check_plugin_sync` rc=0 后才交。投影面消费的只有**抬头状态计数**，本笔不动任何状态字与工具计数 ⇒ 生成物逐字节相同、`plugins/**` 无 diff（跑了，不是漏跑）；`rulers/battery/gate/ci` 四键不变（现读 `rulers=154 ci=49 battery=114 missing=0 gate=126 exempt=23 unclassified=0`），未新增脚本 ⇒ 不走 R183 两笔律。
 - 幻影引用一条（本追记现读抓出，**只登记、不改他处文本**）：`memory/2026-11-06.md` 续33、`scripts/check_dist_snapshot.py` docstring 与 `scripts/README.md` 同名条目都把刷新那笔写成 `e4667f851`，而 `git rev-parse --verify e4667f851` ⇒ `fatal: Needed a single revision`，真号是 `e4667f858`（一位数字之差）。`memory/` 历史日志按 append-only 不回填 ⇒ **统帅同批已把这两处判据面文本改真**（`scripts/check_dist_snapshot.py:25` 与 `scripts/README.md:225` 现读均为 `e4667f858`，历史日志留原样）；本追记一律用验过的 `e4667f858`。
 - 抬头状态**不翻面**：BUG-578 关闭的是「§4.1 常驻门是否存在」这一格，门已在 `0c067cde3` 交付并 FIXED；本追记收的是条目内的一条遗留，上面残留 1/2/3 仍在，翻面只会让「遗留」与「已收口」两处记账互相冒充（同族：BUG-575/576/577 各留一条遗留不关单）。
+
+## BUG-579 [2026-11-07T06:40:00Z] [medium] OPEN
+- summary: C 盘 100% 满（df: `/c 201G 201G 0 100%`）⇒ `gen_plugins.py --check` 的 tmp 生成半边写 SKILL.md 即崩（`OSError: [Errno 28] No space left on device`，崩溃点 line 343 write_text，经 line 644 `generate(tmp, vals)`）⇒ `check_plugin_sync`（cl7）整门 FAIL rc=1 —— 判据红面的**真实位置是环境（C 盘），不是投影漂移**（判例-34 同族：错误指向 ≠ 真实位置）
+- detail: ## 定性链（2026-11-07 唤醒轮 171 当场实测）
+  1. cl7 FAIL rc=1，红面引用的 traceback 被 cl7 截断看不到真异常 ⇒ 直接跑 `gen_plugins.py --check` 取原始栈，尾部 `OSError: [Errno 28] No space left on device`；
+  2. 崩的是 **tmp 目录**（Python 默认临时目录在 C 盘），不是 E 盘投影产物——df 实证 E 盘 355G 余量健康、C 盘 0 字节；
+  3. 对照实验（TEMP/TMP/TMPDIR 三变量同改道工作区 `temp/tmp_e`）：`gen_plugins.py --check` rc=0、`check_plugin_sync` 整门 rc=0（4 宿主 / 64 生成文件 / 182 工具 / v0.3.11）⇒ **投影面逐字节一致，无任何漂移**；
+  4. 结论：本单是「环境磁盘满让判据失明」，不是「插件态漂移」。cl7 的 FAIL 输出没把 `Errno 28` 显出来（只引用了截断栈），**读门的人会被指向「重投影」的错误处置**——处置建议那行 `重新生成后复跑本守卫` 在本形下无效且误导。
+- 处置建议（owner 侧）：① 清 C 盘（根因半，只有 owner 能动）；② 判据硬化（可选后续项）：cl7/gen_plugins 捕获 `OSError 28` 时输出应带「C 盘满」归因行，或 tmp 目录固定指到仓库内 `temp/`（与 `check_demo_isolation` 的改道针同思路）——本单先立账不代修。
+- 账务同批（cl7 律）：本笔只改本条目 + `python scripts/gen_plugins.py`（TEMP 改道跑，rc=0）；本条目 OPEN 会推进抬头计数（BUG-1~579 / 564 条 / 6 条待修）⇒ 投影面 SKILL.md 计数行同批刷新（9 文件 +17/-17，全为计数行）；`rulers/battery/gate/ci` 四键不变、未新增脚本 ⇒ 不走 R183 两笔律。
