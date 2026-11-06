@@ -15531,3 +15531,14 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 读数（统帅亲跑）：`check_tools_sync` rc=0（182 工具面未动）、`check_doc_surface` rc=0、`check_arg_face_strict` rc=0（97 把）、`check_fmt_gate` rc=0（`moon fmt --check` rc=0）、`moon_test_env --target js src/server` = `Total tests: 586, passed: 586, failed: 0`。
 - 申报面偏差（不藏）：描述串字数 +135，本车道的写法约束是「>120 必须收紧」；统帅判定**保留**——多出的那半句承载「吊销不验调用方（S1）」这条仍成立的限制，删掉就是把低估翻成高估。长度按 `tools/list` 一次性载荷计，非每请求重复。
 - 遗留（本单不收口）：`dist/fist-mbt.js` 仍烤旧串，属生成快照面，刷新走 `scripts/refresh_dist.py`（需 moon build 产物并写盘）；`engine_rsv.mbt:322`「nonce 表不落库、跨进程不共享」同类滞后；本类形状仍无常驻门（FIST ns `iterate-1106` / T0、任务 #41 的 `check_stale_self_claim` 未交付）⇒ **修完仍会复发**，这是这条单真正的关闭条件缺口。
+
+## BUG-578 [2026-11-06T10:35:00Z] [high] FIXED
+- summary: §4.1「自述滞后现状」**没有常驻门** —— BUG-574/575/576/577 四批收的都是实例，每批账本都写着「修完仍会复发，因为没尺」，而这句话自己就是那条缺陷类的第五个实例（规范性表面承诺了一条不存在的判据，BUG-440 同族）。现在门存在了：`scripts/check_stale_self_claim.py`
+- detail: 覆盖面=两个取数面分开报码——S1 注释面、S2 **运行时字面量面**（工具描述串/启动横幅，随 tools/list 与 dist 发货、纯散文判据全盲，BUG-577 的形状）。判据=「对具名符号的能力不存在断言」↔「该符号在非注释、非测试面的消费者」。甄别式（BUG-575 立的规则）落成代码：子句含变更史标记即跳过，无具名对象的泛指修辞不判，符号全仓找不到即视为真未实现不报红（恒红的门等于没人读的门）。豁免表逐条点名且陈旧豁免自身判红（EX1 悬空文件/EX2 原句串已不在）。rc 0/1/2/4，未知旗标必拒；自拒触发条件=「一处负面句式都读不到」，不是「没判出违例」。
+- reported_by: commander（T0 / 任务 #41 交付；此前两条车道分别因 worktree 基线过期停手、因自身回合上限中断，半成品留在对方 worktree 未采用）
+
+### FIXED(2026-11-06T10:35:00Z / BUG-578)
+- evidence: 判据本体 `scripts/check_stale_self_claim.py`；`--selftest` 17/17 rc=0（tempfile 夹具 hermetic、不起子进程、不碰真仓）：滞后必红 / 历史陈述不红 / 真未实现不红 / 测试面不计消费者 / S2 换码报出 / 两处变异对照各自**恰 1 处命中**且「摘掉历史跳过 ⇒ 历史陈述被误判红」「摘掉消费者闸门 ⇒ 全不红 ⇒ 尺失明」/ 陈旧与悬空豁免各必红 / 未知旗标 rc=2。开发过程被自家格抓到两朵自喂：① 豁免夹具 needle 以字面量写在自检里 ⇒ 「陈旧豁免必红」恒不成立，改拼接构造；② 变异格用 `src.replace(...)` 猜缩进、命中 0 处却仍判「变异成功」⇒ 改逐行 strip 匹配 + 断言命中恰 1 并把命中数打进诊断。
+- 现状读数：真树 414 份 .mbt · 负面句式 6 处 · 具名主张 0 条 · 违规 0 ⇒ rc=0（那 6 处全是点名变更史的准确陈述，正是 BUG-575/577 收完的残留形状）；`--bogus` rc=2。
+- 登记面同批：`scripts/README.md` 条目 + BATTERY-REGISTRATION 锚点现读 `rulers 153→154 / battery 113→114 / gate 125→126`（ci=48 不动），同批 gen_plugins 重投影。收口尺集全绿：battery_count_doc / selftest_inventory_doc（判定族 59 条）/ scripts_index / doc_dup（717 行 174 块）/ arg_face_strict（98 把）/ selftest_hermetic（180 份）/ new_script_hygiene / hardcoded_paths（739 文件）全 rc=0。
+- 遗留（本单不收口，不暗改）：① 未接 CI 步骤 ⇒ 只有本地电池一格；② `dist/**` 不在现状宇宙，公网产物的旧串靠 refresh_dist；③ 「陈述为真但措辞误导」与无具名对象的泛指滞后判不出（需语义理解）；④ sqlite 内的工具描述面未覆盖。
