@@ -3782,6 +3782,7 @@ pub async fn run_server() -> Unit {
               Json::object({
                 "task_id": Json::string(task_id),
                 "signal": Json::string(signal),
+                "namespace": Json::string(ns_hb),
                 "last_seen": Json::string(heartbeats.last_seen_of(task_id)),
                 "backend": Json::string(hb_backend),
                 "persisted": Json::boolean(store_ok && hb_backend == "sqlite"),
