@@ -154,13 +154,28 @@ pub fn auth_mode_reset_cache_for_test() -> Unit {
 ///|
 /// 仅在**进程启动时调一次**，拿到「配置有问题」的 warning（无问题则空串）。
 ///
-/// 两类问题都返回非空：
+/// 两类情况都返回非空：
 ///   1. **非法值**（如 `garbage`）⇒ 已回退 `off`
-///   2. **`strict` 尚未真正生效**（见下）
+///   2. **`strict` 已设置** ⇒ 报出它**真实的生效范围**（见下）
 ///
-/// ⚠️ 为什么 `strict` 也要告警：本版只做到「返回专用 `challenge_missing` 标签 + 降权」，
-///   **各门的消费者还没据此硬拒** ⇒ 实际效果接近 `soft`。
-///   若有人设 `strict` 以为「现在严格了」，那是**比不设更危险**的状态（以为自己安全了）。
+/// ## 第 2 条为什么还留着：BUG-470 R1 的措辞已被 BUG-476 推翻
+///
+/// 本分支初版写的是「strict 只降权、效果接近 soft」——那是 BUG-470 落地时的真实状态，
+/// 也是当轮台账里单开的 BUG-476。BUG-476 已把 `challenge_missing` 接到**门层硬拒**：
+/// 判定面是单一真源 `strict_challenge_denial`（`engine_rsv.mbt`），接线 4 处——
+///   · `rsv_set` / `rsv_try_set`（`reserve_scope` 两道门）⇒ 直接 `Err`
+///   · `locks_try_acquire`（`lock_acquire`）⇒ `granted=false` + `action=strict_challenge_missing`
+///     （该函数返回 `LockAcquireOutcome`，不能 `Err`，见其注释）
+///   · `claim`（`server.mbt` 的 handler 层）⇒ `ToolError`
+/// 锁：`engine_bug476_strict_wbtest.mbt` S1~S6（S6 是接线**计数**格，删掉任一处必红）。
+///
+/// ⚠️ 这一条**仍然要在启动时喊一声**，因为生效范围有界，而两个方向的误解都真实存在：
+///   · `off` 是出厂默认，`strict` / `soft` 都不默认启用（决策单：先观察一周再 flip）；
+///   · strict 只覆盖上面那 4 处 —— `execute` / `verify` / `submit` / `archive` 走的是
+///     无挑战门的路径（那是 BUG-430c），**设了 strict 不等于全链路都要认证**。
+///   本文案的职责就是说清「哪几道门真拒、哪几道不拒」：既不许再说「一条都不拒」，
+///   也不许反过来说成「已经全面严格」—— 两个方向都是**自述滞后现状**
+///   （`AI-DEVELOPMENT-STANDARD.md` §4.1；AGENTS.md：每次启动都在撒谎的自述比没有更糟）。
 pub fn auth_mode_startup_warning() -> String {
   let raw = match @env.get_env_var("FIST_AUTH_MODE") {
     Some(v) => v
@@ -171,10 +186,11 @@ pub fn auth_mode_startup_warning() -> String {
     return w
   }
   if normalize_mode_str(raw) == "strict" {
-    return "FIST_AUTH_MODE=strict 已设置，但**本版 strict 尚未真正拒绝**：" +
-      "目前只把 role_source 标成 challenge_missing 并降权到 Executor，" +
-      "各门的消费者（rsv_set / rsv_try_set / locks_try_acquire / claim）还没据此硬拒 ⇒ " +
-      "**实际效果接近 soft**。不要以为已经严格了（见 BUG-470 R1）。"
+    return "FIST_AUTH_MODE=strict 已生效，但**生效范围有界**（BUG-476）：" +
+      "硬拒的门 = reserve_scope（rsv_set / rsv_try_set）、lock_acquire（locks_try_acquire）、" +
+      "claim —— 这四处无 challenge 一律**拒绝**，不是降权。" +
+      "范围之外：execute / verify / submit / archive 走无挑战门的路径（BUG-430c）⇒ " +
+      "设了 strict 不等于全链路都要认证。要放宽请把 FIST_AUTH_MODE 设为 soft 或 off。"
   }
   ""
 }
