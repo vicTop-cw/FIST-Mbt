@@ -15532,6 +15532,19 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 申报面偏差（不藏）：描述串字数 +135，本车道的写法约束是「>120 必须收紧」；统帅判定**保留**——多出的那半句承载「吊销不验调用方（S1）」这条仍成立的限制，删掉就是把低估翻成高估。长度按 `tools/list` 一次性载荷计，非每请求重复。
 - 遗留（本单不收口）：`dist/fist-mbt.js` 仍烤旧串，属生成快照面，刷新走 `scripts/refresh_dist.py`（需 moon build 产物并写盘）；`engine_rsv.mbt:322`「nonce 表不落库、跨进程不共享」同类滞后；本类形状仍无常驻门（FIST ns `iterate-1106` / T0、任务 #41 的 `check_stale_self_claim` 未交付）⇒ **修完仍会复发**，这是这条单真正的关闭条件缺口。
 
+### 追记（2026-11-07 / 上面「遗留」bullet 的**两读作废**：`无常驻门` 与 `dist 仍烤旧串`，以同文件 BUG-578 的 `### 追记（2026-11-07 / 遗留②就地销账）` 为准；旧行按 append-only 留着不删，本追记只判定它已不成立）
+
+- 作废读一「`dist/fist-mbt.js` 仍烤旧串」：旧句「需走轮换，尚未实现」本车道**当场 `grep -c` 现读**为 src=0 / dist=0（`src/server/server.mbt`、`dist/fist-mbt.js`），dist 由 `e4667f858` 用在册件 `scripts/refresh_dist.py` 重投影到 HEAD 真源（未手改一行 bundle）。
+- 作废读二「本类形状仍无常驻门（`check_stale_self_claim` 未交付）⇒ 修完仍会复发」：门已交付 `0c067cde3`、**已进 CI** `4931e4861`（`.github/workflows/ci.yml:89` 步骤名「Stale self-description guard (§4.1 自述滞后常驻门，BUG-578)」，`:92-93` 先 `--selftest` 再全量＝BUG-89 律），产物面另有 `e8f7d9bed` 给 `scripts/check_dist_snapshot.py` 加的描述串 src↔dist 对表面。⇒ 「修完仍会复发」这一句**在本单遗留的范围内**自此不再成立；它作为缺陷类的通用论断仍归 BUG-578 判。
+- 三笔短号 `4931e4861` / `e4667f858` / `e8f7d9bed` 与门本体 `0c067cde3` 本车道逐笔跑 `git rev-parse --verify <短号>^{commit}` **全部可解析**（幻影短号不进账 ⇒ 判例-45）。
+- 现读证据（2026-11-07 本机复跑，不是从提交正文抄的）：`python scripts/check_stale_self_claim.py` ⇒ rc=0，`[扫描] 414 份 .mbt · 负面句式 6 处 · 具名负面主张 0 条（其余为无具名对象的修辞或变更史陈述）`；`python scripts/check_dist_snapshot.py` ⇒ rc=0 三面齐绿，描述面读数 `175/178 条描述串在 dist 原样命中（S2 关注面 16 条、含转义被闸门挡掉 3 条、注册形态解析不出 0 条）；dist 未多出 src 之外的工具名`。
+- **仍然成立、不许随销账一起被抹掉的残留**（本追记**不是**「本单遗留全部已解决」——写成全部已解决就是把低估翻成高估）：
+  1. 新尺只校两格——「src 的当前句子在不在 dist」与「工具名集合相等」；**校不出 dist 里同名工具多出来的旧描述句**（逐句反查 bundle 会因打包器合并 `+` 连接的句子而假红，故描述级反向在 `e8f7d9bed` 里刻意不判）。
+  2. `scripts/refresh_dist.py` **仍靠人择机跑、刻意不进 CI**（本车道现读：`.github/workflows/*.yml` 对 `refresh_dist` 零命中）⇒「忘了刷」从此当场点名，但「刷新」本身没有自动化——这一段是缺口，不是关闭。
+  3. 上面「遗留」bullet 的**第三读**（`engine_rsv.mbt` nonce 自述同类滞后）**本车道现读判定仍在**：`src/engine/engine_rsv.mbt:340`-`:346` 仍写「nonce 登记表（进程内，不落库）……为什么用进程内而不是新表：`store_sqlite.mbt` 是 HumanSteward 独占面（本轮改不了）」，而同一文件 `:386` 已 `self.store.challenge_issue(...)` 落库、`:396-397` 自陈「有意的双写」。⇒ 那句**理由**已过期（表后来是建了的）。它不在新门的取数形状内（门判「对具名符号的能力不存在断言 ↔ 非注释/非测试消费者」，而这里结论 scoped 在一个变量的存储位置上、语法不构成负面主张）⇒ **门绿不等于这一面干净**，本追记如实登记为残留而非违例。
+  4. 顺带一条同族小事实（不另立单）：上面「遗留」bullet 的行号锚点自己也漂了——`:322` 现读讲的是 `declared_pubkey_for` / `pubkey_fp`，nonce 自述在 `:340`。⇒ 引用行号必须当场重取；这条律在盘上的唯一落点是 `scripts/check_slave_task_list.py:254` 的注释（「行号会漂，这个指认不会」），`AGENTS.md` 与 `AI-DEVELOPMENT-STANDARD.md` 都没有它的正文位——判例-45 把同一条律扩到提交号，并把"律只活在注释里"这一格一并登记。
+- BUG-575 的「关闭条件已挂 FIST ns `iterate-1106` 的 T0r3」那一读，本追记**判定其整体尚未兑现、故 BUG-575 条目内不加追记**：其三项中两项（`server.mbt` 工具描述串、`docs/integration` 重放行）已由本单收口（现读 `docs/integration/s3-client-bootstrap.md:111` 为「同样拦」并点名两处消费点），第三项即上面残留 3；FIST 任务面另取不到 `iterate-1106` 的 T0r3 记录（现读 `list(namespace="iterate-1106", resolve_from_main=true)` ⇒ `count 0`），故「T0r3 已兑现」在盘上与在板上都无对账单。
+
 ## BUG-578 [2026-11-06T10:35:00Z] [high] FIXED
 - summary: §4.1「自述滞后现状」**没有常驻门** —— BUG-574/575/576/577 四批收的都是实例，每批账本都写着「修完仍会复发，因为没尺」，而这句话自己就是那条缺陷类的第五个实例（规范性表面承诺了一条不存在的判据，BUG-440 同族）。现在门存在了：`scripts/check_stale_self_claim.py`
 - detail: 覆盖面=两个取数面分开报码——S1 注释面、S2 **运行时字面量面**（工具描述串/启动横幅，随 tools/list 与 dist 发货、纯散文判据全盲，BUG-577 的形状）。判据=「对具名符号的能力不存在断言」↔「该符号在非注释、非测试面的消费者」。甄别式（BUG-575 立的规则）落成代码：子句含变更史标记即跳过，无具名对象的泛指修辞不判，符号全仓找不到即视为真未实现不报红（恒红的门等于没人读的门）。豁免表逐条点名且陈旧豁免自身判红（EX1 悬空文件/EX2 原句串已不在）。rc 0/1/2/4，未知旗标必拒；自拒触发条件=「一处负面句式都读不到」，不是「没判出违例」。
