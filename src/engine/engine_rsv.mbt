@@ -337,13 +337,22 @@ pub fn strict_challenge_denial(
 // ══════════════════════════════════════════════════════════════════════════
 
 ///|
-/// S3 第二段：nonce 登记表（**进程内**，不落库）。
+/// S3 第二段：nonce 登记表（**进程内侧**；与落库侧双写，见 `s3_issue_challenge` 尾部注释）。
 ///
 /// key = agent 的归一化 fp，value = 「已签发但未消费」的 nonce 集合。
 ///
-/// 为什么用进程内而不是新表：`store_sqlite.mbt` 是 HumanSteward 独占面（本轮改不了），
-/// 且 nonce 的语义天然是**短命**的（一次挑战一用即弃），进程内存储足够；
-/// 代价是**跨进程不共享**（多实例部署时各自的 nonce 互不可见）—— 已在 §缺口 登记。
+/// ⚠️ 理由句订正（BUG-577 追记·残留③ · §4.1「自述滞后」形状）：旧文案写「不落库」，
+/// 理由是「`store_sqlite.mbt` 是 HumanSteward 独占面（本轮改不了）」—— 该理由已过期：
+/// BUG-466 之后 nonce **已经落库**（`s3_issue_challenge` 调 `store.challenge_issue`，
+/// 表为 `agent_challenges`：DDL 在 store 初始化 schema、操作面在 `store_sqlite_challenge.mbt`，
+/// 有真实写入点，不是 schema-reserved 预留）。
+/// 进程内侧保留是**有意的双写**，仍然成立的半（删掉它=把低估翻成高估）：
+///   · 门径路（`claim` / `rsv_try_set` / `locks_try_acquire`，都经 `judged_role_with_nonce`）
+///     的重放判定**只认这张表**（模块级 `s3_consume_nonce` 只读本内存面）；
+///     store 为权威的只有另一条路（`FistEngine::s3_consume_nonce`，先 store 后内存，
+///     现读消费面为 `agent_register_key` 的轮换路径）；
+///   · 进程内侧**重启即丢、跨进程不可见** —— 多实例部署时门径路只认本进程签过的票，
+///     即便 store 侧同库可查 —— 已在 §缺口 登记。
 pub let s3_pending_nonces : Map[String, Array[String]] = Map([])
 
 ///|
