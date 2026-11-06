@@ -116,6 +116,70 @@ pub let scope_permissions : Array[PermissionRule] = [
     allowed_roles: ["HumanSteward", "Leader", "Executor"],
     reason: "依赖侧补丁 = 副机修依赖 bug 的主战场",
   },
+
+  // —— lang-zone 项目目录（BUG-488：非 Fist-Mbt 项目路径统一 fail-closed 修）——
+  // fist-mbt 管理 lang-zone 时，lang-zone 的目录结构与 Fist-Mbt 不同，
+  // 原先 `scope_permissions` 只覆盖 Fist-Mbt 源码目录，lang-zone 的
+  // `src/embed/`、`Reports/`、`CY/` 等合法作用域无匹配规则 → Unregistered
+  // → action 标 "unregistered" 而非 "reserved" → explore 并行门第4门永远不过。
+  // 这里补上 lang-zone 的常见目录规则，与 Fist-Mbt 自身规则同口径。
+  // 注意：不用宽泛的 `src/` 通配（会覆盖 Fist-Mbt 自身未被具体规则
+  // 覆盖的 src/ 子路径），改用 lang-zone 特有的目录前缀。
+  PermissionRule::{
+    pattern: "src/embed/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone embed 嵌入式抽象 = 副机修 bug 的主战场",
+  },
+  PermissionRule::{
+    pattern: "src/ir/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone IR 层 = 副机修 bug 的主战场",
+  },
+  PermissionRule::{
+    pattern: "src/bridge/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone bridge 桥接层 = 副机修 bug 的主战场",
+  },
+  PermissionRule::{
+    pattern: "src/parser/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone parser 解析层 = 副机修 bug 的主战场",
+  },
+  PermissionRule::{
+    pattern: "src/frontend/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone frontend 前端 = 副机修 bug 的主战场",
+  },
+  PermissionRule::{
+    pattern: "tests/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone 测试 = 全员可以写（与 Fist-Mbt scripts/ 同档）",
+  },
+  PermissionRule::{
+    pattern: "Reports/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone 进度报告 = 全员可以写（与 Fist-Mbt docs/ 同档）",
+  },
+  PermissionRule::{
+    pattern: "CY/",
+    allowed_roles: ["HumanSteward", "Leader"],
+    reason: "lzcyc 子编译器 = 核心（与 Fist-Mbt src/engine/ 同档）",
+  },
+  PermissionRule::{
+    pattern: "DEMO/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone DEMO 语料 = 全员可以写",
+  },
+  PermissionRule::{
+    pattern: "FIND_BUG/",
+    allowed_roles: ["HumanSteward", "Leader", "Executor"],
+    reason: "lang-zone BUG 复现 = 全员可以写",
+  },
+  PermissionRule::{
+    pattern: "lz_builtins/",
+    allowed_roles: ["HumanSteward", "Leader"],
+    reason: "lang-zone 运行时库 = 核心",
+  },
 ]
 
 ///|
