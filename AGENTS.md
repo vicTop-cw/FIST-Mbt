@@ -183,7 +183,7 @@ You can browse and install extra skills here:
 **造竞态测试时不要用 `sleep` 抢时序**（判例-31）：慢则变成前置拦截、快则读到上一发残留 ⇒
 **不可复现的锁 = 不可信**。改用「**确定性注入污染状态**」（如手工复刻两步、在两步之间直接写坏索引）。
 
-> **判例-32~43 已搬出（R119 起 · 字节预算）**：判例-32~39 七块整篇搬到 [`docs/AGENTS-precedents.md`](docs/AGENTS-precedents.md)（逐字保留），判例-40 起直接立在那份文档。
+> **判例-32~45 已搬出（R119 起 · 字节预算）**：判例-32~39 七块整篇搬到 [`docs/AGENTS-precedents.md`](docs/AGENTS-precedents.md)（逐字保留），判例-40 起直接立在那份文档。
 > **新增判例一律先写那份文档**，本文件只留指针。搬出原因同 R212：没人读到的规则等于没有规则。
 
 ### 已知边界：`agent` / `assignee` / `executor` / **`created_by`** 是**自报的**，服务端无法验证（BUG-430 / BUG-464 · S1）
