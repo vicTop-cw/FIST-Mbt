@@ -7742,7 +7742,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "agent_register_key",
-    "**BUG-430 / S3（第六段：首登也验签）**：为某个 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节）。**两步流程，缺一步不改库**：①**不带** `challenge` 调用 ⇒ 服务端签发一个挑战 nonce 并在回执里返回（**不改库**）；②带上该 `challenge` + 用**私钥**对它签出的 `proof_sig` 再调 ⇒ 验签通过**才落库**。⚠️ 为什么必须验签：否则任何人可**抢注**——趁某 agent 还没登记，先替他登**自己的**公钥，之后他以「我有密钥」接入时验的是攻击者的签名 ⇒ **永久身份劫持**。⚠️ `challenge` **必须由服务端签发**（调用方自选 challenge ⇒ 可离线预计算并预先签好 ⇒ 验签失效）。⚠️ 只登记公钥，**不产生签名**：本服务没有也不会有「代签」能力。已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）。参数：agent_id、namespace、pubkey_hex(必填)、challenge(可选)、proof_sig(可选)、by(可选)。返回 {agent_id, namespace, mode, challenge?, pubkey_hex_prefix?, registered?, persisted_pubkey_matches?}。",
+    "**BUG-430 / S3（第六段：首登也验签）**：为某个 agent 登记 Ed25519 **公钥**（hex，64 字符 = 32 字节）。**两步流程，缺一步不改库**：①**不带** `challenge` 调用 ⇒ 服务端签发一个挑战 nonce 并在回执里返回（**不改库**）；②带上该 `challenge` + 用**私钥**对它签出的 `proof_sig` 再调 ⇒ 验签通过**才落库**。⚠️ 为什么必须验签：否则任何人可**抢注**——趁某 agent 还没登记，先替他登**自己的**公钥，之后他以「我有密钥」接入时验的是攻击者的签名 ⇒ **永久身份劫持**。⚠️ `challenge` **必须由服务端签发**（调用方自选 challenge ⇒ 可离线预计算并预先签好 ⇒ 验签失效）。⚠️ 只登记公钥，**不产生签名**：本服务没有也不会有「代签」能力。已有公钥且与本次不同 ⇒ 拒绝，**须走轮换**：再调本工具带 `rotate_sig`（用**旧私钥**签服务端签发的 `rotate_challenge`）+ `rotate_challenge` 即换（S3 第八段已实现）；私钥已丢则先 `agent_revoke_key` 吊销再重登（吊销不验调用方，S1 边界）。参数：agent_id、namespace、pubkey_hex(必填)、challenge(可选)、proof_sig(可选)、by(可选)。返回 {agent_id, namespace, mode, challenge?, pubkey_hex_prefix?, registered?, persisted_pubkey_matches?}。",
     schema(
       {
         "agent_id": string_prop(

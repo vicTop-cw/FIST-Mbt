@@ -15520,3 +15520,14 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 对照真跑：`--selftest` 49/49（含 14 支变异对照 = 7 处变异 × rc 面 + 码面）；把改前的树复刻进 `%TEMP%` 后同一把尺 **rc=1 报 3 条违例**（P7 驳回卡留活动目录 + 2×P8 提案无头部）⇒ 新规则在真卡片上发红，不是只在 tempfile 里成立。开发事故反证：第一版按下标取 `scan()` 元组把 `violations` 读成 `skipped`，4 支「码名是否打印」格**全照样 OK**、5 支断言 rc 的变异格当场 FAIL——判例-29「机制格 ≠ 实现路径格」现场版，故 rc 面断言不与文本命中面合并。
 - 邻居尺现跑：`check_doc_surface` / `check_tools_sync` / `check_scripts_index` / `check_battery_count_doc`（`rulers=153 ci=48 battery=113` 逐键不变，本批未新增脚本）/ `check_hardcoded_paths` / `check_selftest_hermetic` 全 rc=0；`check_publish_payload` 在「文件已在盘但未跟踪」那一瞬间 rc=1 点名 P1，`git add` 后回 rc=0（门生效，不是产品坏）。
 - 遗留（另议不关本单）：`archived/` 现为完全不进判定面的墓地（「把红卡片塞 archived/ 就静音」在这一面可做到，堵它需给 archived/ 开「头部仍可解析但不判位置」的次级面）；`docs/` 本层与 `docs/superpowers/plans/` 的计划族无 `status:` 面；plans 中文闭集缺 `已归档` 合法值；两侧墓地不统一（plans→`docs/plans/archived/`，proposals→`docs/archive/`），尺只判「离开活动目录」；卡片编码按 utf-8 `errors="replace"` 读，非 UTF-8 头部带替换符仍被解析，无尺管这一面。
+
+## BUG-577 [2026-11-06T10:05:00Z] [medium] FIXED
+- summary: BUG-575 的遗留两面当场收口（同族但取数面不同）：`agent_register_key` 的**工具描述串**仍写「已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）」，而轮换已接线且同文件 `key_pin_reject_message` 早已写明「S3 第八段已实现」⇒ 客户端经 `tools/list` 读到的是「能力不存在」；`docs/integration/s3-client-bootstrap.md` 写「`reserve_scope`/`lock_acquire` 重放**目前不拦**（走 `judged_role_gated`，只验签不消费）」，BUG-477 后两处门实际都走 `judged_role_with_nonce`
+- detail: 为什么单立一单而不并入 575——这两处**不在任何散文判据的取数面上**：工具描述串是 `server.mbt` 里的运行时字面量（随 `dist/fist-mbt.js` 发货），J9 只审返回契约不审叙事时态；文档那一行的错误来自「函数搬家」型漂移（`judged_role_gated` → `judged_role_with_nonce`），只有按**当前调用点**重数才看得出。本单也当场纠正了统帅自己的一次错探针：第一次补丁脚本把「调用点应 ≥3」当断言（以为 claim 也在这张表里），现读只有 2 处 ⇒ 脚本 fail-closed 零写入；复查后发现 claim 的预取刻意走 `judged_role_with_challenge`（不消费，防双消费），消费点在 `rsv_try_set`:816 / `locks_try_acquire`:962 ⇒ 断言改为「这两个函数必须命中」后主张成立，才落笔。**探针写错不等于主张错，但必须先改探针再动文本。**
+- reported_by: commander（S3 车道停手前取证 + 统帅按现读调用点复核后落地）
+
+### FIXED(2026-11-06T10:05:00Z / BUG-577)
+- evidence: `src/server/server.mbt` 描述串改为点名两步链（带 `rotate_sig` 签 `rotate_challenge` 即换；私钥已丢先 `agent_revoke_key` 吊销再重登），并保留仍成立的半限制「吊销不验调用方（S1）」；同文档重放行改为「同样拦」并逐条点名现读消费点 `rsv_try_set`:816 / `locks_try_acquire`:962。脚本 fail-closed 两道：`server.mbt` 内不含「S3 第八段已实现」真源即不写、锚点命中非恰 1 即不写。
+- 读数（统帅亲跑）：`check_tools_sync` rc=0（182 工具面未动）、`check_doc_surface` rc=0、`check_arg_face_strict` rc=0（97 把）、`check_fmt_gate` rc=0（`moon fmt --check` rc=0）、`moon_test_env --target js src/server` = `Total tests: 586, passed: 586, failed: 0`。
+- 申报面偏差（不藏）：描述串字数 +135，本车道的写法约束是「>120 必须收紧」；统帅判定**保留**——多出的那半句承载「吊销不验调用方（S1）」这条仍成立的限制，删掉就是把低估翻成高估。长度按 `tools/list` 一次性载荷计，非每请求重复。
+- 遗留（本单不收口）：`dist/fist-mbt.js` 仍烤旧串，属生成快照面，刷新走 `scripts/refresh_dist.py`（需 moon build 产物并写盘）；`engine_rsv.mbt:322`「nonce 表不落库、跨进程不共享」同类滞后；本类形状仍无常驻门（FIST ns `iterate-1106` / T0、任务 #41 的 `check_stale_self_claim` 未交付）⇒ **修完仍会复发**，这是这条单真正的关闭条件缺口。
