@@ -82,6 +82,16 @@ jobs:
           python3 scripts/check_battery_count_doc.py --selftest
           python3 scripts/check_battery_count_doc.py
 
+      # position-why: 本尺只读 src/**/*.mbt 的文本与 git 跟踪面，**不依赖 moon、不起子进程**。
+      # 住在 Migrate 之前：它管的是「文档/工具描述串对具名符号断言能力不存在，而符号早有消费者」，
+      # 这类红在 Migrate 崩掉时最容易被 skip 掉而没人知道（BUG-578 立尺时账本自述的正是「没尺所以复发」）。
+      # 另半边理由：S2 面取数点在 server.mbt 的工具描述串，与文档面守卫同轨才谈得上同批对齐。
+      - name: Stale self-description guard (§4.1 自述滞后常驻门，BUG-578)
+        shell: bash
+        run: |
+          python3 scripts/check_stale_self_claim.py --selftest
+          python3 scripts/check_stale_self_claim.py
+
       # position-why: 本尺只读 docs/ 副机清单与 git 跟踪面，不依赖 moon。住在 Migrate 之前
       # 与上一条同因：Migrate 崩掉时正是「这一单还能不能认领」最需要出声的时刻，放在之后会被 skip。
       # position-why: 与上一条同因 —— 本尺只读 `run_guards.py` 的 why 文本并跑两把判据取读数，
