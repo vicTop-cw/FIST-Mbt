@@ -12,7 +12,7 @@ README 里那串历史读数没人对表。实现会自证，手抄的读数不�
 逐键与 `python scripts/run_guards.py --list` 的现读比较。
 
 **逐键点名（两个方向都红）**：
-  X1 欠格   = 现读 < 登记（格子/尺被删，或登记没随删减更新）。
+  X1 欠格   = 现读 < 登记（格子/尺被删，或登记没随删减更新，或这一键的**算法口径刚被改过**——BUG-573 的 unclassified 就是这种：7→0，一个格子都没删）。
   X2 登记落后 = 现读 > 登记（新增尺/格子后没同批改数——手抄读数落后的主路径）。
   X3 缺执行面 = missing > 0（G1 的读数被登记成 0 也不能掩盖现读）。
 键序：rulers / ci / battery / missing / gate / exempt / unclassified。
@@ -128,7 +128,8 @@ def compare(reg, reading):
                             % (idx, got, want))
         elif got < want:
             problems.append("X%d %s 欠格：登记 %d / 现读 %d（现读少于登记——格子或尺被删，"
-                            "或登记没随删减更新）" % (idx, KEY_CN[key], want, got))
+                            "或登记没随删减更新，或这一键的算法口径刚被改过（BUG-573 的 unclassified 7→0 就是这一档，不是格子被删）"
+                    % (idx, KEY_CN[key], want, got))
         else:
             problems.append("X%d %s 登记落后：登记 %d / 现读 %d（新增尺/格子后没同批更新 README "
                             "的 %s 锚点）" % (idx, KEY_CN[key], want, got, ANCHOR))
