@@ -222,7 +222,7 @@
 - `check_dist_snapshot.py` **第三面 · 工具描述串 src↔dist 对表（BUG-578 遗留②，2026-11-06 上岗）**：
   `dist/fist-mbt.js` 内嵌 `src/server/server.mbt` 的 `instrumented_tool(...)` 描述串字面量（tools/list 的正文就来自它）。
   实测滞后形状：`agent_register_key` 的描述早在 BUG-577 批就改口，dist 却仍烤着旧句
-  「已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）」，直到 `refresh_dist.py` 重投影（`e4667f851`）。
+  「已有公钥且与本次不同 ⇒ 拒绝（需走轮换，尚未实现）」，直到 `refresh_dist.py` 重投影（`e4667f858`）。
   **前两面对这一格是瞎的**（判据实测，不是推断）：同一份「只把那一行改回旧句」的夹具上，
   版本面 rc=0（`0.3.11 == moon.mod`）、内容面 rc=0（3 条探针全有调用形）⇒「版本对、符号在、句子旧」照样绿；
   而 `check_stale_self_claim.py` 的 `SKIP_PATH_PARTS` 第一项就是 `dist/`（生成/孪生面不扫）⇒

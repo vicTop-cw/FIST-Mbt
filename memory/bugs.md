@@ -15545,3 +15545,22 @@ src/engine/omega_strong_test.mbt 本次改动：
 
 - 入库首跑电池当场抓到本尺自身两处缺陷（**不是被检件红，是新尺红**）：① `check_dead_params_py.py` 判 `stale_exemptions(universe, table=None)` 的 `universe` 是死参数（函数按 ROOT 路径取数，形参从未读过）⇒ 摘掉形参与调用点；② `check_selftest_call_face.py` 判「调用面没接进自检」——首版 `unknown-flag-refused` 格是**另造一个 argparse** 去数 rc，测的是我自己的想象力而不是本尺的参数面 ⇒ 改为真调 `run()`，新增四档格 `call-face-violation-rc1` / `call-face-clean-rc0` / `call-face-empty-refuses-rc2` / `call-face-unknown-flag-rc2`（合成根目录经 `--root` 注入，仍 hermetic）。`--selftest` 17 格 → 20 格，README 自述同批改（`check_selftest_inventory_doc` rc=0 即对表通过）。两处都**没走豁免**：本仓有一条「门禁只能靠破红线转正时别自己批」的纪律，而这里破的是我自己的红线，不是别人的。
 - 复跑读数：`check_dead_params_py` rc=0（2125 函数、真债 0）/ `check_selftest_call_face` rc=0（J2=29 J1=0）/ `check_selftest_hermetic` rc=0（180 份）/ `check_new_script_hygiene` rc=0 / 本尺 `--selftest` 20/20 rc=0 / 真树 rc=0。
+
+### 追记（2026-11-07 / **遗留②就地销账**：`dist/**` 那半边既有尺也刷过了 —— 上面「遗留」bullet 的 ② 自此作废，以本追记为准）
+
+- 兑现它的三笔（短号逐笔经 `git rev-parse --verify <短号>^{commit}` 现读验过可解析，幻影号不进账）：
+  - `4931e4861`：§4.1 常驻门接进 `.github/workflows/ci.yml`，步骤名「Stale self-description guard (§4.1 自述滞后常驻门，BUG-578)」，先 `--selftest` 再全量（BUG-89 律），同批锚点 `ci=48→49`。**顺带把上面「遗留」bullet 的 ①「未接 CI 步骤 ⇒ 只有本地电池一格」一并作废**——它现在真在 CI 面上跑，`check_battery_count_doc` 现读 `ci=49` 是这一句的对账单。
+  - `e4667f858`：用在册件 `scripts/refresh_dist.py`（`moon build --target js --release cmd/cli` → `patch_esm_main` → 拷贝，**未手改一行 bundle**）把 `dist/fist-mbt.js` 重投影到 HEAD 真源——旧句「需走轮换，尚未实现」在 dist 计数 1→0、`agent_revoke_key` 计数 7→8、src↔dist 描述串 737==737 逐字相等。⇒ **遗留②的「刷新半边」**。
+  - `e8f7d9bed`：`scripts/check_dist_snapshot.py` 加**第三面「工具描述串 src↔dist 对表」**，并反向校「dist 里的工具名不得多出 src 没有的」。⇒ **遗留②的「无常驻尺半边」**（这句遗留当初之所以能被写下来，就是因为这一格没尺）。
+- 现读证据（2026-11-07 本机复跑，不是从提交正文抄的）：
+  - `python scripts/check_dist_snapshot.py --selftest` ⇒ `SELFTEST OK（60 格：版本解析 3 + 版本判定 5 + 内容面 6 + 两面合成 5 + 描述面 6 + S2 复用 4 + 转义闸门 4 + 自拒档 5 + 反向面 3 + 取数面 3 + 合码 3 + 变异对照 8 + 调用面 5，全部真断言；变异对照见「变异对照」组）` rc=0。
+  - `python scripts/check_dist_snapshot.py` ⇒ rc=0，三面齐绿：`版本面：快照版本 0.3.11 == moon.mod 0.3.11` / `内容面：3 条探针全部有调用形（omega_orphan_of_archived_parent / strip_plan_annotations / omega_enabled）` / `描述面：175/178 条描述串在 dist 原样命中（S2 关注面 16 条、含转义被闸门挡掉 3 条、注册形态解析不出 0 条）；dist 未多出 src 之外的工具名`。
+  - `python scripts/check_stale_self_claim.py` ⇒ rc=0：`[扫描] 414 份 .mbt · 负面句式 6 处 · 具名负面主张 0 条（其余为无具名对象的修辞或变更史陈述）`。
+- 定级修正沿用 `e4667f858` 提交正文的取证、本追记不重复自证：**公网 Release 资产从来吃不到那句旧串**——`release.yml` 的资产是 CI 从当次源码现烤的 `_build/js/debug/build/cmd/cli/cli.js`（`cp` 进 `_release/js/fist-mbt.js`），**不读 `dist/`**；真吃到旧句的是克隆本仓的人/agent（`scripts/mcp_compat_shim.js` 的默认服务端就是 `node dist/fist-mbt.js serve`）。⇒ 「CI 恒绿」与「dist 恒旧」能长期并存的原因：交付链两条路互不消费。当初把这条遗留写成「公网产物的旧串」是**方向对、落点错**。
+- **仍然成立的残留（照实保留，不许随销账一起被抹掉）**：
+  1. 新尺只校两格——「src 的**当前句子**在不在 dist」与「**工具名集合**相等」；**校不出** dist 里同名工具**多出来的旧描述句**（那是工具名集合相等之外的粒度）。逐句反查 bundle 会假红：打包器把 `+` 连接的句子**合并**，实测 `agent_revoke_key` / `agent_issue_challenge` 两条正是这形状（该尺 docstring「反向面」段已写明，描述级反向因此刻意不判）。关闭条件不是「再加一条子判据」而是「换取数面」——反解出 dist 每条工具的**完整**描述再与 src 全句对齐；本笔不做，也不冒充已做。
+  2. `refresh_dist.py` **仍不进 CI**，且这是 deliberate 不是欠账：`e4667f858` 的 5073/4989 行里 **7984** 条 +/- 是 moonc 每次重编整体挪生成标识符（`…S17351 → …S17376`）、净语义改动只 +84 行 ⇒ 任何「要求 dist 逐字节 == build(HEAD)」的门**每次 src 改动都红八千行**，而恒红八千行的门等于没人读的门（本单的立单理由本身）。新面把「**忘了刷**」从无人认领变成当场点名，**但没有把「刷新」自动化**——这一段是缺口，不是关闭。
+  3. 上面「遗留」bullet 的 ③（「陈述为真但措辞误导」与无具名对象的泛指滞后判不出）与 ④（sqlite 内的工具描述面未覆盖）**本笔不动、仍然成立**。
+- 账务同批（cl7 律：改账本 ⇒ 同批重投影插件态）：本笔只改本条目 + `python scripts/gen_plugins.py`，本地 `check_plugin_sync` rc=0 后才交。投影面消费的只有**抬头状态计数**，本笔不动任何状态字与工具计数 ⇒ 生成物逐字节相同、`plugins/**` 无 diff（跑了，不是漏跑）；`rulers/battery/gate/ci` 四键不变（现读 `rulers=154 ci=49 battery=114 missing=0 gate=126 exempt=23 unclassified=0`），未新增脚本 ⇒ 不走 R183 两笔律。
+- 幻影引用一条（本追记现读抓出，**只登记、不改他处文本**）：`memory/2026-11-06.md` 续33、`scripts/check_dist_snapshot.py` docstring 与 `scripts/README.md` 同名条目都把刷新那笔写成 `e4667f851`，而 `git rev-parse --verify e4667f851` ⇒ `fatal: Needed a single revision`，真号是 `e4667f858`（一位数字之差）。`memory/` 历史日志按 append-only 不回填 ⇒ **统帅同批已把这两处判据面文本改真**（`scripts/check_dist_snapshot.py:25` 与 `scripts/README.md:225` 现读均为 `e4667f858`，历史日志留原样）；本追记一律用验过的 `e4667f858`。
+- 抬头状态**不翻面**：BUG-578 关闭的是「§4.1 常驻门是否存在」这一格，门已在 `0c067cde3` 交付并 FIXED；本追记收的是条目内的一条遗留，上面残留 1/2/3 仍在，翻面只会让「遗留」与「已收口」两处记账互相冒充（同族：BUG-575/576/577 各留一条遗留不关单）。
