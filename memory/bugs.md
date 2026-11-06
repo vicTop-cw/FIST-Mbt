@@ -15500,6 +15500,13 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 边界：`off` 仍是出厂默认、strict 需显式启用；`agent_revoke_key` 不验调用方（S1 冒充风险不消除），文案保留这一诚实限制，没有把旧滞后翻成新的高估。
 - 遗留（本单不收口，另议）：`src/engine/engine_rsv.mbt` 与 `src/server/server.mbt` 里两处 `pubkey_fp`「死承诺／恒传空串」的同类滞后、`docs/integration/s3-client-bootstrap.md` 面向客户端的同款旧口径、`engine_bug476_strict_wbtest.mbt` 背景段的现在时读感——已在第二车道派单核验中；把「自述 ↔ 已接线符号」钉成常驻门属 check_stale_self_claim 计划项（尚未落地，无执行面）。
 
+### 追记（2026-11-07 / 上面「遗留」bullet 末句「check_stale_self_claim 计划项（尚未落地，无执行面）」作废 —— 本条目判**半废**：作废的只有末句，正文仍是有效收口记录）
+
+- 作废的那一读：末句把常驻门写成「计划项（尚未落地，无执行面）」，这句话自己就是 §4.1「自述滞后于已接线现实」的又一实例，今起不再成立。权威记账在别处、本追记不重复自证：门本体交付 `0c067cde3`（BUG-578 条目）、接进 CI `4931e4861`（ci 48→49）、产物面描述串 src↔dist 对表尺 `e8f7d9bed`；实例侧最新一笔收口是 `75cca25cb`（engine_rsv nonce 理由句，形状与门的盲区在 BUG-577 `### 追记2（2026-11-07）` 逐字登记）。以上短号本车道逐笔 `git rev-parse --verify <短号>^{commit}` 现读可解析（判例-45：补位造号不进账）。
+- 仍成立、不随作废一起抹掉的半：① 正文两处收口（`auth_mode_startup_warning` 改「已生效但范围有界」并点名四处硬拒门、`key_rotate_verdict` 背景段点名两步链）是已落盘的代码/注释收口记录，不因门后补上岗而失效；② 上面「遗留」bullet 的**另三读**各有归宿——`pubkey_fp` 两处与 `docs/integration` 旧口径由 BUG-575/577 收口（以那两条目为准），`engine_bug476_strict_wbtest.mbt` 背景段经 BUG-575 甄别式判为「点名变更史＝准确」，本就不是滞后、无需作废；③ 边界段「`off` 仍是出厂默认、strict 生效范围有界、`agent_revoke_key` 不验调用方（S1）」照旧成立（BUG-430c / S1 未关闭）。
+- 作废旧口径不许顺手翻成新的高估：门钉住的只是「对具名符号的能力不存在断言 ↔ 非注释/非测试消费者」这一闭集形状；「陈述为真但措辞误导」型（`75cca25cb` 收的正是这类的一个实例）门**判不出**，谓词细节与两条盲区逐字见 BUG-577 追记2 与 BUG-578 遗留③。⇒ 「门存在了」≠「本类滞后已全纳管」。
+- 抬头状态**不翻面**：FIXED 记录的是本单两处收口，已兑现；本追记只判定条目内一句旧口径失效（同族记账纪律：BUG-577/578 的追记亦不翻面）。cl7 律：本笔与 BUG-577 追记2 同批改账本、同批 `python scripts/gen_plugins.py`，本地 `check_plugin_sync.py` rc=0 后才交。
+
 ## BUG-575 [2026-11-06T09:59:00Z] [medium] FIXED
 - summary: §4.1「自述滞后」残余三面（BUG-574 的同一缺陷类没修完的那半）：`engine_rsv.mbt` 与 `server.mbt` 各有一处 `pubkey_fp`「死承诺／所有写入点恒传空串／要生效还需登记入口接线」的旧断言，早被 S3 第三段的真实写入点证伪；`docs/integration/s3-client-bootstrap.md` 面向客户端写「`strict` 本版尚未真正拒绝 ⇒ 效果接近 soft」与「`reserve_scope`/`lock_acquire` 重放不拦」，与 `dcea736c5` 自己在 `auth_mode.mbt` 改成的「已生效但范围有界」以及 BUG-477 的 nonce 消费直接冲突
 - detail: 危害形状与 BUG-574 同类但面更广——前两处让人以为身份链路根本没接（于是不再使用挑战验签），第三处是**随发布物发给每个客户端的文档**，比源码注释更难被发现滞后。甄别式（本批立规）：**现在时否定活接线＝滞后；点名变更史＝准确**——`engine_bug476_strict_wbtest.mbt` 的背景段因标题写明「本单修的是我自己上一版的诚实边界」判为准确、不动。判定只按代码级调用点数（剔注释/测试/`.mbti`/`dist`）。
@@ -15544,6 +15551,19 @@ src/engine/omega_strong_test.mbt 本次改动：
   3. 上面「遗留」bullet 的**第三读**（`engine_rsv.mbt` nonce 自述同类滞后）**本车道现读判定仍在**：`src/engine/engine_rsv.mbt:340`-`:346` 仍写「nonce 登记表（进程内，不落库）……为什么用进程内而不是新表：`store_sqlite.mbt` 是 HumanSteward 独占面（本轮改不了）」，而同一文件 `:386` 已 `self.store.challenge_issue(...)` 落库、`:396-397` 自陈「有意的双写」。⇒ 那句**理由**已过期（表后来是建了的）。它不在新门的取数形状内（门判「对具名符号的能力不存在断言 ↔ 非注释/非测试消费者」，而这里结论 scoped 在一个变量的存储位置上、语法不构成负面主张）⇒ **门绿不等于这一面干净**，本追记如实登记为残留而非违例。
   4. 顺带一条同族小事实（不另立单）：上面「遗留」bullet 的行号锚点自己也漂了——`:322` 现读讲的是 `declared_pubkey_for` / `pubkey_fp`，nonce 自述在 `:340`。⇒ 引用行号必须当场重取；这条律在盘上的唯一落点是 `scripts/check_slave_task_list.py:254` 的注释（「行号会漂，这个指认不会」），`AGENTS.md` 与 `AI-DEVELOPMENT-STANDARD.md` 都没有它的正文位——判例-45 把同一条律扩到提交号，并把"律只活在注释里"这一格一并登记。
 - BUG-575 的「关闭条件已挂 FIST ns `iterate-1106` 的 T0r3」那一读，本追记**判定其整体尚未兑现、故 BUG-575 条目内不加追记**：其三项中两项（`server.mbt` 工具描述串、`docs/integration` 重放行）已由本单收口（现读 `docs/integration/s3-client-bootstrap.md:111` 为「同样拦」并点名两处消费点），第三项即上面残留 3；FIST 任务面另取不到 `iterate-1106` 的 T0r3 记录（现读 `list(namespace="iterate-1106", resolve_from_main=true)` ⇒ `count 0`），故「T0r3 已兑现」在盘上与在板上都无对账单。
+
+### 追记2（2026-11-07 / 残留③ 已在**代码侧**收口 —— `75cca25cb` 订正 `engine_rsv.mbt` 的 `s3_pending_nonces` 理由句滞后；**纯注释面改动、不是语义修复**；门的形状盲区照实登记，BUG-578 遗留③不因此销账）
+
+- 收口落点：上面「残留」清单第 3 条点名的旧文案（块标题「不落库」＋理由句「`store_sqlite.mbt` 是 HumanSteward 独占面（本轮改不了）」）已由 `75cca25cb` 订正为「理由句订正……该理由已过期」的**引用式历史注**（BUG-575 甄别式：点名变更史＝准确），并把仍成立的半逐条验过再写回注释。自此追记1 的残留 3 由「判定仍在」改判「代码侧已收口」；旧行按 append-only 留着不删，以本追记为准。短号 `75cca25cb` 落笔前经 `git rev-parse --verify 75cca25cb^{commit}` 现读取号——本追记写的就是「别在写『别造幻影号』的单子里再造幻影号」那一格，判例-45 当场适用。
+- **收口的到底是什么（不许读成 BUG-466 语义推进了）**：纯注释面。证据面（本车道现读 `git show 75cca25cb`，非转述提交正文）：改动仅 `src/engine/engine_rsv.mbt` 一文件、numstat 13/4，`+`/`-` 行过滤行首注释符（`//`、`///`）后**零非注释改动行**；`.mbti` 无变化（`git diff --numstat -- "*.mbti"` 为空）；`python scripts/moon_test_env.py --target js src/engine` 汇总行 `Total tests: 391, passed: 391, failed: 0`。⇒ 改的是「为什么这么写」的句子，nonce 的存储与消费语义一字未动。
+- **门的形状盲区（这一格是 §4.1 常驻门判不出的形状；以下两条为本追记现开 `scripts/check_stale_self_claim.py` 读到，不是转述）**：
+  1. `NEG_PHRASES`（`:41-44`）是「能力不存在」句式**闭集**（尚未实现／未接线／死承诺／尚未落地／not implemented…），**不含冻结与权限类状态陈述**——「独占面」「本轮改不了」「不落库」都不在列，句式关第一道就不进取数面；
+  2. `RE_BACKTICK`（`:64`，字符类 `` [A-Za-z_][A-Za-z0-9_:/]{2,} ``）**不含点号** ⇒ 具名对象 `` `store_sqlite.mbt` `` 带扩展名即解析不出符号，连「具名负面主张」的计数都不进这一格。
+  ⇒ **BUG-578 遗留③（「陈述为真但措辞误导」型判不出）不许因此销账**：本笔只是那一个实例被**人工**收掉，谓词盲区依旧在。旁证自反：收口后 `check_stale_self_claim` 仍 rc=0——门对这形状恒绿，恰证它看不见，而非看不见的问题没了。
+- **仍然成立、不许顺手关掉的相邻缺口**（登记为残留，**不是**已解决）：
+  1. **门径路的 nonce 重放判定只认进程内内存面**——现读接线：`judged_role_with_nonce` 消费的是模块级 `s3_consume_nonce`，后者只读写顶层 `s3_pending_nonces : Map`（重启即丢、跨进程不可见）；store 权威的 `FistEngine::s3_consume_nonce` 生产面只接在 `agent_register_key` 轮换路径与维护查询。⇒ `src/store/store_sqlite_challenge.mbt` 顶部「为什么必须落库」段描述的「A 签票 → 负载均衡到 B → 误判 `challenge_replayed`」，在**门径路**（`claim` / `rsv_try_set` / `locks_try_acquire`）**并未被 BUG-466 消掉**。**下一个 BUG 单的候选；本笔只登记、不定级、不修复、不新建单号**（新建单号归统帅裁决）。
+  2. 「把这类形状纳管进门」需要三条腿：状态否定族进 `NEG_PHRASES`、反引号字符类放行点号式文件名、注释块↔同函数体 store 写调用配对——本笔**一条都未实现**（`75cca25cb` 提交正文自陈「本笔只分析未实现」，与本登记一致，不留两套说法）。
+- 账务同批（cl7 律）：本笔 + BUG-574 作废追记是 `memory/bugs.md` 的全部改动（纯追加、不动任何旧行与抬头状态字）；同批 `python scripts/gen_plugins.py` 重投影，本地 `python scripts/check_plugin_sync.py` rc=0 后才交。投影面对账本的取数只有**抬头状态计数**（`gen_plugins.py` 的 `RE_BUG_HEAD`/`RE_BUG_STATUS`/`ledger_status()`，本车道现读），本批不动任何抬头与计数 ⇒ `plugins/**` 为「**跑了且无 diff**」——无 diff 不是漏跑，对账单是 cl7 rc=0 那一步。
 
 ## BUG-578 [2026-11-06T10:35:00Z] [high] FIXED
 - summary: §4.1「自述滞后现状」**没有常驻门** —— BUG-574/575/576/577 四批收的都是实例，每批账本都写着「修完仍会复发，因为没尺」，而这句话自己就是那条缺陷类的第五个实例（规范性表面承诺了一条不存在的判据，BUG-440 同族）。现在门存在了：`scripts/check_stale_self_claim.py`
