@@ -1044,7 +1044,7 @@ REGISTRY = {
     "score_gate.py": "评分器 CLI（读数型，无门禁语义）",
     "simulate_head_commit.py": "辅助库（check_bug_reference_integrity 引用其 simulate_head_commit，不单独跑）",
     "install_git_hooks.py": "本机 git 钩子安装/体检（--install 写 .git/hooks 与 core.hooksPath；"
-                            "--selftest 读的是**这台机器装没装**，副机/CI 上必 rc=1 属环境态不是判据红）",
+                            "--check 读的是**这台机器装没装**，副机/CI 上未装属环境态不是判据红）",
     "refresh_dist.py": "dist 快照刷新计划/执行（要 moon build 产物并写盘；无 --selftest 旗标，"
                        "跑法见 scripts/README.md 同名条目）",
 }
@@ -1133,9 +1133,80 @@ def universe_files():
     return out
 
 
-def classify():
-    """把递归宇宙分成三份：(门禁尺, 豁免(带理由), 未归类)。"""
+def owned_script_names(extra=()):
+    """已经给出执行面的脚本名单（按 basename）：电池格 / REGISTRY 登记 / KNOWN_NO_FACE 待接线。
+
+    不含 CI 面——那一面要 `ci_referred()` 读 workflow 文件，而 `face_report()` 正调着本模块的
+    `classify()`，反向调用会绕成递归；`--list` 那一格把已经算好的 CI 名单从 `extra` 传进来。
+    """
+    names = {os.path.basename(c["script"]) for c in CASES}
+    names |= {os.path.basename(k) for k in REGISTRY}
+    names |= {os.path.basename(k) for k in KNOWN_NO_FACE}
+    names |= {os.path.basename(x) for x in extra}
+    return names
+
+
+def unlabeled_orphan(rel, owned):
+    """「名字没命中门禁/豁免」还要不要算成**真孤儿**：只问一句——它有没有执行面。"""
+    return os.path.basename(rel) not in owned
+
+
+def flag_claims_in_reason(reason):
+    """登记理由文本里**正面声称**存在的 `--旗标`。
+
+    同一子句里出现否定词（无/没有/不含/不提供/不接受/不存在）就不算声称——本仓实测有一条
+    REGISTRY 理由写的是「无 --selftest 旗标」，那句是真的；只扫 `--selftest` 在不在理由里，
+    会把对的散文判成漂移，再去「修」它就把它改错了。
+    """
+    claimed = []
+    for clause in re.split(r"[；;。\n]", reason):
+        if re.search(r"(无|没有|不含|不提供|不接受|不存在)\s*--", clause):
+            continue
+        claimed.extend(re.findall(r"--([a-z][a-z0-9-]+)", clause))
+    return claimed
+
+
+def stale_reason_flags():
+    """REGISTRY / KNOWN_NO_FACE 的理由里点名的旗标，脚本其实不接受 ⇒ (键, 旗标, 源路径) 清单。
+
+    登记面存在的意义就是解释「这份脚本为什么不该自动跑」；它引用一个不存在的旗标，那条理由
+    就不可复核（BUG-573 实测：`install_git_hooks.py` 的理由写 `--selftest`，而该脚本只认
+    --check/--install/--get）。读不到脚本源码的键跳过——那种键由 G2 的 stale 登记那一头抓。
+    """
+    src_cache = {}
+    out = []
+    universe = universe_files()
+    for table in (REGISTRY, KNOWN_NO_FACE):
+        for key, reason in table.items():
+            base = os.path.basename(key)
+            rel = next((u for u in universe if os.path.basename(u) == base), None)
+            if rel is None:
+                continue
+            if base not in src_cache:
+                try:
+                    with io.open(os.path.join(SCRIPTS_DIR, rel), encoding="utf-8",
+                                 errors="replace") as fh:
+                        src_cache[base] = fh.read()
+                except OSError:
+                    src_cache[base] = ""
+            src = src_cache[base]
+            for flag in flag_claims_in_reason(reason):
+                if src and ("--" + flag) not in src:
+                    out.append((base, "--" + flag, rel))
+    return sorted(set(out))
+
+
+def classify(extra_owned=()):
+    """把递归宇宙分成三份：(门禁尺, 豁免(带理由), 未归类)。
+
+    第三份**只装真孤儿**（BUG-573）。从前它是「名字既不像门禁尺、也没豁免理由」的全部，
+    可执行面（电池 / REGISTRY / KNOWN_NO_FACE / CI）是 `face_report()` 另算的正交面，
+    于是 7 份全都已有面的脚本被计进「未归类」：读账的人据此去找不存在的孤儿（假工作量），
+    而真孤儿与有面件不分栏，反倒遮住真该派单的那一份。`extra_owned` 让调用方把 CI 面补进来；
+    本函数**不得**去调 `face_report()`——它正被 face_report 调着。
+    """
     gates, exempt, unknown = [], [], []
+    owned = owned_script_names(extra_owned)
     for rel in universe_files():
         if is_gate(rel):
             gates.append(rel)
@@ -1143,7 +1214,7 @@ def classify():
         why = exempt_reason(rel)
         if why:
             exempt.append((rel, why))
-        else:
+        elif unlabeled_orphan(rel, owned):
             unknown.append(rel)
     return gates, exempt, unknown
 
@@ -1427,6 +1498,24 @@ def selftest():
          and not any(UNIVERSE_EXCLUDE_RE.search(x) for x in universe_files()), True)
     cell("classify-partition-alive",
          len(classify()[1]) > 0 and all(is_gate(g) for g in classify()[0]), True)
+    # BUG-573：「未归类」只装真孤儿——有执行面的脚本不得冒充孤儿，无面者也不许弃权
+    cell("orphan-excludes-script-with-face", unlabeled_orphan("scripts/x.py", {"x.py"}), False)
+    cell("orphan-includes-script-without-face", unlabeled_orphan("scripts/y.py", set()), True)
+    # 实现路径格（判例-29：测了纯函数不等于 classify 真的在用它）
+    with io.open(__file__, encoding="utf-8") as _fh:
+        _self_src = _fh.read()
+    cell("classify-wires-ownership-subtract",
+         bool(re.search(r"(?m)^\s+elif unlabeled_orphan\(rel, owned\):$", _self_src)), True)
+    cell("stale-judge-checks-script-source",
+         bool(re.search(r'\("--" \+ flag\) not in src', _self_src)), True)
+    # 登记理由里的旗标声称：正面声称要抽出来，否定句不许误红
+    # （实测本仓有一条理由写的是「无 --selftest 旗标」，那句是真的，粗暴扫串会把它判成漂移）
+    cell("reason-claim-catches-positive-claim",
+         flag_claims_in_reason("体检（--selftest 读的是这台机器装没装）"), ["selftest"])
+    cell("reason-claim-skips-negated-claim",
+         flag_claims_in_reason("要 moon build 产物；无 --selftest 旗标"), [])
+    cell("reason-claim-splits-per-clause",
+         flag_claims_in_reason("装没装用 --check；不提供 --selftest"), ["check"])
     cell("universe-covers-blackbox-real",
          any(g.startswith("blackbox/") for g in guard_files()), True)
     rows0, missing0, ci0, battery0, guards0, resident0 = face_report()
@@ -1665,9 +1754,11 @@ def main():
             print("%-42s CI=%-3s 电池=%-3s" % (g, a, b))
         print("\n尺 %d 把 / CI 面 %d / 电池面 %d / 缺执行面 %d"
               % (len(rows), len(ci & set(guards)), len(battery & set(guards)), len(missing)))
-        _g, _e, _u = classify()
+        _g, _e, _u = classify(extra_owned=ci)
         print("分类记账：门禁尺 %d / 豁免（带理由）%d / 未归类 %d"
               % (len(_g), len(_e), len(_u)))
+        for rel in sorted(_u):
+            print("  未归类·真孤儿（无任何执行面） %s" % rel)
         for rel in sorted(set(KNOWN_NO_FACE)):
             print("  待接线 %-42s %s" % (rel, KNOWN_NO_FACE[rel]))
         # 「非判据」= 在宇宙里可见、且**不进电池**。有手写 case 的脚本（哪怕名字不在门禁前缀族）
@@ -1679,6 +1770,12 @@ def main():
         print("非判据工具 %d 个（留在宇宙可见、不进电池——电池只读，改码/生成/宿主类工具不在判据面）" % len(nong))
         for s, why in nong[:60]:
             print("  非判据 %-42s %s" % (s, why))
+        stale = stale_reason_flags()
+        if stale:
+            print("[FATAL] 登记理由声称的旗标在该脚本参数面里不存在（自述滞后于参数面）：")
+            for _k, _f, _p in stale:
+                print("  旗标 %-14s %s  ← %s" % (_f, _k, _p))
+            return 1
         if missing:
             print("缺面清单：" + " ".join(missing))
             return 1
