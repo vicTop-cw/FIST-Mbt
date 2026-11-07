@@ -15075,7 +15075,7 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - **探活首跑即抓到现行实例**：本机 `FIST_OFM_ENDPOINT` 仍指旧死端点 18899（rc=1 down，WinError 10061）
   ——判据会咬的直接证据；环境变量改道 18326 属用户 env，留人终审。回归锁 = 判据本体 + 电池格。
 
-## BUG-538 [2026-11-02T07:40:00Z] [medium] OPEN
+## BUG-538 [2026-11-02T07:40:00Z] [medium] FIXED
 - summary: fist-mbt MCP server（Qoder 插件连接器拉起的 node cli.js serve）进程**消失**——
   全机进程面扫不到任何 fist server 实例，连接器对一切工具调用（含琐碎 get/call_log）回
   -32603 "MCP tool invocation did not complete" 持续 >60 分钟
@@ -15215,6 +15215,26 @@ native-win 2.2MB）齐全。终审（统帅）：jobs/artifacts 面独立复核�
 - 剩余半：**owner 重连连接器 + 真实死亡事件（若有）从日志判因**——这一半本机做不了，单保持 OPEN。
 - 证据：`temp/bug538-probe/server.log`（工作区隔离面，不提交）；本轮报告
   `reports/2026-11-03-wakeup-108-bug538-verdict-probe-report.md`。
+
+### FIXED(2026-11-07 / BUG-538 两半齐：owner 重连 + 真实死亡判因)
+- **关闭条件①（owner 重连连接器恢复服务面）已满足**：2026-11-07 会话内连接器服务面恢复——
+  琐碎调用真回执（`status_summary` 回 version 0.3.11 真实 JSON），BUG-538 观测的
+  「连琐碎 get 都 -32603 持续挂死」不复存在；进程面同刻有多个活 `node cli.js serve`。
+- **关闭条件②超出模拟档闭合——真实死亡事件已从日志判因**（`_build/js/release/build/cmd/cli/server.log`，
+  仍在活跃写入）：
+  - 心跳/生命周期活证据：`server.start` 全字段（version/pid/auth_mode/db_path/log_path）；
+    heartbeat 逐 pid 精确 60s（pid=33108：02:54:38→02:55:38→02:56:38→02:57:38）。
+  - 真实死亡判因：日志落盘 3 次 `crash.uncaughtException Error: EPIPE: broken pipe, write`
+    → `server.exit code=1`（2026-11-05T00:52:04Z / 2026-11-05T11:18:15Z / 2026-11-06T15:05:11Z）；
+    spawn 失败判因 `spawn.end ok=false code=-1 error=spawn atomcode ENOENT`（2026-11-06T00:26:12Z）
+    ⇒「进程失败原因可从日志判读」由真实事件自证。
+  - 常驻判据复跑：`python scripts/blackbox/e2e_server_log_heartbeat.py --selftest` 15 格 rc=0，
+    真判据 PASS rc=0（首拍间隔实测 60s，心跳 pid 与子进程双对）。
+  - 进程面对表：heartbeat pid 与 `Get-CimInstance` 下活 `node cli.js serve` 逐字命中，心跳非孤儿残行。
+- 附（同形状残留新实证，不另立新单）：`get` 不存在的 task 时宿主侧把非 ok 回执折叠成 -32603；
+  服务端 `call_log` 尾行仲裁为干净 `ok:false "task not found"`（runtime 1ms）——折叠发生在宿主侧，
+  属已知「-32603 两种相反局面」族（`call_log` 是仲裁面），本轮留档新证据。
+- reported_by: lead（2026-11-07 统帅批：只读实证车道活证据采集 + 统帅 EPIPE 判因抽查复核）
 
 ## BUG-540 [2026-11-02T10:25:00Z] [low] FIXED
 USAGE.md 手册的参数列（14 张三列表约 271 个 `名(必)/名(选,默认X)` token）零守卫：J8 只扫
