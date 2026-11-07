@@ -15598,7 +15598,10 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 幻影引用一条（本追记现读抓出，**只登记、不改他处文本**）：`memory/2026-11-06.md` 续33、`scripts/check_dist_snapshot.py` docstring 与 `scripts/README.md` 同名条目都把刷新那笔写成 `e4667f851`，而 `git rev-parse --verify e4667f851` ⇒ `fatal: Needed a single revision`，真号是 `e4667f858`（一位数字之差）。`memory/` 历史日志按 append-only 不回填 ⇒ **统帅同批已把这两处判据面文本改真**（`scripts/check_dist_snapshot.py:25` 与 `scripts/README.md:225` 现读均为 `e4667f858`，历史日志留原样）；本追记一律用验过的 `e4667f858`。
 - 抬头状态**不翻面**：BUG-578 关闭的是「§4.1 常驻门是否存在」这一格，门已在 `0c067cde3` 交付并 FIXED；本追记收的是条目内的一条遗留，上面残留 1/2/3 仍在，翻面只会让「遗留」与「已收口」两处记账互相冒充（同族：BUG-575/576/577 各留一条遗留不关单）。
 
-## BUG-579 [2026-11-07T06:40:00Z] [medium] OPEN
+## BUG-579 [2026-11-07T06:40:00Z] [medium] FIXED
+### FIXED(2026-11-07T10:00:00Z / BUG-579)
+- 关闭条件两格齐：① owner 已清 C 盘（201G 满 → 178G/23G 可用，89%）；② 不改道复跑 `check_plugin_sync` 整门 **rc=0**（4 宿主 / 64 生成文件 / 182 工具 / v0.3.11）——判据失明面已随环境恢复消失。
+- 可选后续项（不阻塞关闭）：cl7 捕 `OSError 28` 输出归因行 / tmp 固定改道仓库内——C 盘满时判据仍会崩且指向误导，但那是判据硬化面不是本单环境面，另立单再议。
 - summary: C 盘 100% 满（df: `/c 201G 201G 0 100%`）⇒ `gen_plugins.py --check` 的 tmp 生成半边写 SKILL.md 即崩（`OSError: [Errno 28] No space left on device`，崩溃点 line 343 write_text，经 line 644 `generate(tmp, vals)`）⇒ `check_plugin_sync`（cl7）整门 FAIL rc=1 —— 判据红面的**真实位置是环境（C 盘），不是投影漂移**（判例-34 同族：错误指向 ≠ 真实位置）
 - detail: ## 定性链（2026-11-07 唤醒轮 171 当场实测）
   1. cl7 FAIL rc=1，红面引用的 traceback 被 cl7 截断看不到真异常 ⇒ 直接跑 `gen_plugins.py --check` 取原始栈，尾部 `OSError: [Errno 28] No space left on device`；
