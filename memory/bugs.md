@@ -15630,3 +15630,16 @@ src/engine/omega_strong_test.mbt 本次改动：
   4. 结论：本单是「环境磁盘满让判据失明」，不是「插件态漂移」。cl7 的 FAIL 输出没把 `Errno 28` 显出来（只引用了截断栈），**读门的人会被指向「重投影」的错误处置**——处置建议那行 `重新生成后复跑本守卫` 在本形下无效且误导。
 - 处置建议（owner 侧）：① 清 C 盘（根因半，只有 owner 能动）；② 判据硬化（可选后续项）：cl7/gen_plugins 捕获 `OSError 28` 时输出应带「C 盘满」归因行，或 tmp 目录固定指到仓库内 `temp/`（与 `check_demo_isolation` 的改道针同思路）——本单先立账不代修。
 - 账务同批（cl7 律）：本笔只改本条目 + `python scripts/gen_plugins.py`（TEMP 改道跑，rc=0）；本条目 OPEN 会推进抬头计数（BUG-1~579 / 564 条 / 6 条待修）⇒ 投影面 SKILL.md 计数行同批刷新（9 文件 +17/-17，全为计数行）；`rulers/battery/gate/ci` 四键不变、未新增脚本 ⇒ 不走 R183 两笔律。
+
+## BUG-580 [2026-11-07T03:11:46Z] [medium] OPEN
+- summary: supervisor_reminder_tick：iso_to_epoch Int32 绕回致存在的提醒静默清零 + stale_hours 负值不拒（fail-quiet，荒谬 reason 照发）
+- detail: 定位：`src/engine/engine_supervisor.mbt:597` iso_to_epoch 的 nums 全 Int32，`:634-635` J2000 纪元算术无年份上界 ⇒ now=9999-01-01T00:00:00Z 时 epoch 计算静默 Int32 绕回；`:650-651` `stale_cut = now_ep - stale_hours * 3600`（Int32 乘法同样可绕回）；消费点 `src/server/supervisor_tools.mbt:845-861` 的 int_safe=200_000_000 守卫只防超上限、不拒负值。调用面探针（supervisor_reminder_tick，ns=iter-1107，四格对照，2026-11-07 实测）：基线 0 条提醒；`stale_hours=-5` ⇒ 1 条（12 分钟前更新的任务被报 stale，reason 原文「活跃任务超过 -5 小时未更新」——负值不拒 + 荒谬文案，fail-quiet）；`stale_hours=600000` ⇒ 0 条（预测的全量 stale 风暴未复现——`now-(h*3600)` 双重绕回 mod-2^32 同余，结果碰巧与正确值一致，如实记录证伪）；`now=9999-01-01T00:00:00Z` + `stale_hours=-5` ⇒ 0 条（对照 `-5` 单独时的 1 条 ⇒ 存在的提醒被静默清零：iso_to_epoch 绕回负值 → ts_ok=false → 提醒蒸发，C1 实锤）；`now=1900-01-01` + `stale_hours=-5` ⇒ 1 条（垃圾值未形成清晰区分，如实记录）。修复边界：`src/engine/engine_supervisor.mbt`（iso_to_epoch 年份上界/下界拒绝或 Int64 化 + stale_cut 防绕回）+ `src/server/supervisor_tools.mbt`（int_safe 增符号校验，stale_hours<0 拒）+ 回归锁 wbtest（变异对照打真代码行）。
+- task_id: T0（连接器 ns=bugs 修复根单；server cwd 落在 `_build/…/cmd/cli` 镜像，账本正身为本条）
+- reported_by: lead
+- evidence: 连接器 supervisor_reminder_tick 四格回执原文（本会话 call_log）；同刻 `_build/js/release/build/cmd/cli/memory/bugs.md` 的 `## BUG-2` 系本单误轨落点（report_bug 以 server cwd 解析 project_dir 落点，属 reference-fist-mbt-rpc-ledger-identity 已知族），内容与本条逐字同源，以本条为正身
+
+## BUG-581 [2026-11-07T03:13:00Z] [low] OPEN
+- summary: issue_scan 工具描述自述「共 31 条」内建规则，实际 33 条（src/server/issue_scan.mbt:92 起 scan_rules 现数 33 个唯一 id）——自述滞后族（BUG-578 同形）
+- detail: 定位：`src/server/server.mbt:9257` 描述串写「11 条原始 MoonBit 高危规则 + 20 条 ocr-local 融合规则——共 31 条」；`src/server/issue_scan.mbt:92-360` 的 scan_rules() 实数 33 个唯一 rule id（awk 逐 id 去重现数，非估读）。描述串随 tools/list 与 dist 投影发货，每增一条规则都会再漂一位。修复边界：`src/server/server.mbt:9257` 描述串的计数与分解两处（或改为不含写死数的措辞，需过 J9 描述契约门），同批刷 dist（`scripts/refresh_dist.py`）并跑 `check_dist_snapshot` 描述面对表。severity low（纯自述面，扫描行为本身无影响）。
+- task_id: （并入手头修复车道或下一批次）
+- reported_by: lead
