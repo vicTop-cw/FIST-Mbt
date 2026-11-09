@@ -15668,5 +15668,13 @@ src/engine/omega_strong_test.mbt 本次改动：
 ## BUG-582 [2026-11-07T03:52:00Z] [low] OPEN
 - summary: check_selftest_hermetic rc=1（既有红，与本批无关）：155 处发现全在其它脚本（check_exit_code_contract / check_plugin_sync / check_t0r21 / whisperer / e2e_native_heap_probe 等），全量电池 163 格中唯一非本批成因的失败
 - detail: 2026-11-07 收口批全量电池实测（163 格 / 失败 5，其中 4 个为本批可消红：publish_payload=新 wbtest 未提交、dist_snapshot=描述串已改未刷、badge=计数待同步、warning_ledger=新 wbtest 缺 `..` 写法——均已在本批消掉；唯 check_selftest_hermetic 红在 155 处既有脚本的 --selftest 密封性，本批新增脚本贡献 0 处）。处置（车道 B 建议）：把涉事段移出 --selftest 归主面，或改用 temp 合成夹具。待 owner/后续批次处置，本单先立账。
-- task_id: （后续批次）
+- task_id: T0（ns=iter-1109，轮 182 车道 F 试点）
+- reported_by: lead
+
+### 追记（2026-11-09 / 轮 182 车道 F 试点 + 统帅终审复跑）
+- Triage 现读：155 处 / 52 脚本，按档 W=8（写真树）/ R=94（读现状）/ G=34（subprocess cwd=ROOT 打真仓）/ S=4+T=7（隔离/temp 记账）/ C=8（校准读记账）；红档 W+R+G=136，棘轮基线 W=8/R=92/G=34 ⇒ 唯 R 越线 2。
+- 试点：`scripts/render_dsh_patch.py`（R=2，T14 读真仓模板与主面冗余）按模式②改 temp 合成夹具——写干净模板进 temp 沙箱再读回，主面 `main()` 仍读真模板跑 template_problems，零覆盖损失。该脚本发现 2→0；归一化集合差对表 removed=2 / added=0（其它脚本严格零变化）；**附带效果**：越线量恰为这 2 处 ⇒ 守卫整体 rc=1→0（R=92/92 贴基线）。
+- 变异对照：temp 沙箱复制修好脚本、重新引入 `tpl_p = REPO_ROOT / TPL_REL` ⇒ 守卫真实 scan() 重新冒出 2 条 R；修复态 0 条 ⇒ 守卫真在看。守卫自带 --selftest 51 格 rc=0。
+- 统帅终审复跑（非转抄）：`check_selftest_hermetic` rc=0（W=8 R=92 G=34 基线内）；`render_dsh_patch.py --selftest` rc=0（14 格全保留）；`git diff --stat` 仅该脚本 +9/−5；battery_count_doc 修前修后读数逐字相同。
+- **边界如实**：剩余 134 处红档是基线内接受债（守卫绿态文案自称「不是零违例，是没比基线更差」），BUG-582 整体处置方向仍 OPEN 待 owner——推广三类分流：干净 temp 夹具/主面冗余类（约 15–20 脚本可照试点批量）、校准读类（HERMETIC_CALIBRATION 声明机制走不走须裁决）、结构冲突/G 档（call-face J2 ⟂ 读锚点，temp 夹具解不了，挂 BUG-492 选项 C）。守卫 docstring 明示「要求标定格清零＝更假不是更严」，零红不是设计终态。
 - reported_by: lead

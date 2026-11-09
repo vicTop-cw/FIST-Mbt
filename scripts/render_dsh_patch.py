@@ -205,11 +205,15 @@ def selftest() -> list[str]:
         g.write_text("// glob-release", encoding="utf-8")
         got5, src5 = find_cli(only_glob, None)
         cell("T13 glob 兜底 release 目录优先", got5 is not None and "release" in src5, f"src={src5}")
-        # ⑭ 模板+渲染真源现状：仓库里那份 tpl 必须过模板判据
-        tpl_p = REPO_ROOT / TPL_REL
-        if tpl_p.exists():
-            cell("T14 仓内模板无泄漏", not template_problems(tpl_p.read_text(encoding="utf-8")),
-                 str(template_problems(tpl_p.read_text(encoding="utf-8"))))
+        # ⑭ 模板判据「读盘→判定」路径自证（BUG-582 密封性试点：合成夹具，不读真仓）。
+        #     真仓那份 tpl 的**现状**校验归主面——main() 读 tpl_p 后跑 template_problems，
+        #     泄漏即 rc=1（见 main() 模板态违例分支）；自检只证尺子可红可绿，故把干净模板写进
+        #     temp 沙箱再读回，零现状面读取。原先 `tpl_p = REPO_ROOT / TPL_REL` 让 selftest 读真仓
+        #     （check_selftest_hermetic 的 R 档两处），与「自检只许合成夹具」相悖。
+        tpl_p = root / "cordis.patch.yml.tpl"
+        tpl_p.write_text(clean_tpl, encoding="utf-8")
+        cell("T14 读盘模板无泄漏（合成夹具）", not template_problems(tpl_p.read_text(encoding="utf-8")),
+             str(template_problems(tpl_p.read_text(encoding="utf-8"))))
 
     if fails:
         return fails
