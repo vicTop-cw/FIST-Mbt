@@ -15678,3 +15678,58 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 统帅终审复跑（非转抄）：`check_selftest_hermetic` rc=0（W=8 R=92 G=34 基线内）；`render_dsh_patch.py --selftest` rc=0（14 格全保留）；`git diff --stat` 仅该脚本 +9/−5；battery_count_doc 修前修后读数逐字相同。
 - **边界如实**：剩余 134 处红档是基线内接受债（守卫绿态文案自称「不是零违例，是没比基线更差」），BUG-582 整体处置方向仍 OPEN 待 owner——推广三类分流：干净 temp 夹具/主面冗余类（约 15–20 脚本可照试点批量）、校准读类（HERMETIC_CALIBRATION 声明机制走不走须裁决）、结构冲突/G 档（call-face J2 ⟂ 读锚点，temp 夹具解不了，挂 BUG-492 选项 C）。守卫 docstring 明示「要求标定格清零＝更假不是更严」，零红不是设计终态。
 - reported_by: lead
+
+## BUG-583 [2026-11-09T13:14:00Z] [high] OPEN
+- summary: mcpcf 内嵌路径把裸 Unix 秒 `.to_int()` 截断喂 Int32 熔断器 ⇒ 2038-01-19T03:14:07Z 起正性哨兵恒假、熔断永久卡 Open 且 stale 复位失效；且 mcpcf 面零测试覆盖
+- detail: 定位：`src/server/mcpcf_embed.mbt:267` 与 `:360` `let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`（Int64→Int32 截断，core 语义 `%i64_to_i32`），分别喂 `circuit_fail/succeed/status`；消费点 `src/engine/engine_circuit.mbt:136` `opened_at > 0 &&`（恢复门）与 `:170` `rec > 0 && last_ts > 0 && now_secs - last_ts >= rec`（stale 复位）——全文件 Int32、无域声明。2039-01-01 探针：`trunc(2177452800000L/1000) = -2117514496`；两臂实测（车道 E 独立 MoonBit 探针，17/17 PASS）——臂 A（opened=2026 正、now=2039 负）减法经双回绕同余还原真实 elapsed ⇒ 门 true（**减法形安全，勿报**，与 BUG-580 的 600000 风暴臂同一机理）；臂 B（两端同为 2039 后截断负值、差 60s）差值同余正确但 `opened_at > 0` 假 ⇒ 卡 Open。坏的是**正性哨兵**不是算术。
+- 隔离结论（车道 G 只读调查，实锤「今日不共享行」）：主 MCP 路径 `src/server/server.mbt:5908/:5976/:6002` 用 `@ops.iso_to_secs(now)`（ops_ts 2024 基、域 2024..2091，见 `src/ops/ops_ts.mbt:48`）喂引擎，库落 `<target>/.fist-mbt/data/<ns>.db`（`src/store/multi_store.mbt:276`）或 `FIST_DB_PATH`（`src/store/store_sqlite.mbt:187`）；mcpcf 路径是**另一份引擎与另一份库**——模块级 `holder`（`mcpcf_embed.mbt:10-16`）+ 硬编码 `mcpconftest-ops.db`（`:48/:181`），目录默认 `%LOCALAPPDATA%\mcpconftest\data`，`set_engine` 仅这两处调用、永不被注入主引擎。表同名（`store_sqlite.mbt:237` `circuit_breakers`）但不同文件 ⇒ **不存在跨时基比较**（车道 E 的疑点已排除）。⚠ 隔离是**路径约定而非断言**：若 `FIST_DB_PATH` 被指到 `…\mcpconftest-ops.db`，两基（差≈1.7e9 秒）同库同表 ⇒ 熔断永久 Open / half-open 随机。
+- 修复方向（按代价升序，待 owner/后续批次裁决）：① **mcpcf 边界换时基**（最小，2 处改动、零签名/零存储变更，顺带把「两条路径写同一张表用两种时基」收敛成一条纪律）；代价 = 内嵌库既有 Unix 基行被读成「远在过去」⇒ 立刻 Half-Open + 计数重置一次（可接受，或对该沙箱库清表）。② mcpcf 在时钟越界时显式拒绝熔断操作；代价 = 2038 变成 outage 而非错答。③ **引擎 Int64 化**（最彻底也最贵：`now_secs`/`opened_at`/`last_fail_ts` 贯穿 engine+store 双后端+JSON，现状非测试引用 48 处 / 测试 59 处，另需 `@ops.iso_to_secs` 出 Int64 变体）；收益 = 同时干掉 ops_ts 的 2091 顶与 BUG-218 的 2037 顶，即 BUG-584/585/586 这一整族的根。④ 附送判据建议：加一条「mcpcf 库路径 ≠ 主库路径」守卫（把方向④的约定变成断言）。
+- 覆盖缺口：`grep` 全仓 mcpcf 生产文件外零测试；`src/engine/engine_circuit_test.mbt:52+` 用 100..2000 合成秒，够不到绕回档 ⇒ 任何修复都需先补行为锁。
+- task_id: T0（ns=iter-1109，轮 182 车道 E 普查 + 车道 G 只读调查）
+- reported_by: lead
+
+## BUG-584 [2026-11-09T13:14:00Z] [high] FIXED
+- summary: `ModelQuota::in_cooldown` 的 BUG-206 fail-open 意图**只落在 cool 臂**，now 臂没防 ⇒ `iso_to_secs` 的 -1 域外/非法哨兵让 `-1 < cool_secs` 恒真 ⇒ 模型永久锁死（坏 now 串今天即可达，不必等 2037）
+- detail: 定位：`src/router/model_router.mbt:163-175`（修前）——`:172` 已有 `cool_secs <= 0 ⇒ return false`，注释自述「比永久锁死可恢复」，而 now 侧无同判；`iso_to_secs` 声明域 1970..2037（BUG-218），域外/非法返回 -1。`quota_admitted`/`pool_pick` 永久跳过该模型，且 `mark_failure("")` 解不开（锁死的是判定不是数据）。同形：`window_expired` 靠 `elapsed >= 0` 这一**算术巧合**拒绝过期（结论正确但形状不可辨）。与 BUG-580（静默清零提醒）、BUG-206（cool 臂绕回）同族：**半截守卫**——同一意图只实现一半，另一半静默反向。
+- task_id: T0（ns=iter-1109，轮 182 车道 G 修复）
+- evidence: 车道 E 探针 `in_cooldown(now=-1, cool=299) = true`；修后锁见下 FIXED 段 M1/M2 变异对照
+- reported_by: lead
+
+### FIXED(2026-11-09 / BUG-584 轮 182 车道 G 修复 + 统帅终审)
+- 修法：`src/router/model_router.mbt:181-183` 补 now 臂同判 `if now_secs <= 0 { return false }`（与 cool 臂口径一致，**epoch-0 也按哨兵处理**并写进锁，防后人把 `<=0` 当笔误改回 `<0`）；`:724-736` 把 `window_expired` 靠算术巧合的 `elapsed >= 0` 改成显式一行 `if elapsed < 0 { return false }`——该臂**刻意与 in_cooldown 反方向**维持 fail-closed（过期分支会把 `used` 清零并把坏 `now` 写成新起点＝「用坏时钟清账」，R231 已锁；上游 `window_reset_check` 的 `now_s < 0 ⇒ 0 次重置` 是同方向）。不改 `iso_to_secs` 声明域（1970..2037，BUG-218 设计边界）。
+- 行为面变化：域外/非法 `now` 从「模型被永久跳过且 `mark_failure("")` 解不开」变成「冷却判定放行，下一次 `mark_failure` 用合法时间戳自然重置」；`window_expired` 行为逐字不变（只是判定形状从算术巧合变成显式分支）。
+- 残余风险如实记账（**不在本门里偷偷绕过**）：墙钟越过声明域（>2037）⇒ 窗口永不 expired ⇒ 用量只增不减 ⇒ 最终 `available=false`。关闭条件是时钟 Int64 化迁移（见 BUG-583 方向③），不是把坏时间戳当成一次重置。
+- 回归锁：`src/router/model_router_bug584_wbtest.mbt` 7 格（哨兵臂复现 / cool 臂口径 / 正常路径不变 / window_expired 反方向三格 / 边界）。
+- 变异对照真跑（车道 G，统帅复跑全量覆盖）：M1 撤 `in_cooldown` now 臂守卫 ⇒ router `Total tests: 237, passed: 232, failed: 5`；M2 把 `elapsed < 0` 臂翻成 `return true` ⇒ `237/234/failed: 3`（除本单锁外还抓到 R231 原锁 `model_router_window_wbtest.mbt:67` 与 `rx_rate_limit_wbtest.mbt:95`，证明该臂真在看）；M5 把派生上界改写成 Int32 max ⇒ `237/234/failed: 3`。三发均已逐字还原并复绿。
+- 终审读数（统帅复跑，非转抄）：全量 `python scripts/moon_test_env.py --target js` = `Total tests: 2053, passed: 2053, failed: 0`（基线 2036 + 本批 17 格）；`check_fmt_gate` PASS；`moon info` 后 `.mbti` 仅纯增量两行（`iso_domain_upper_secs` / `window_deadline_iso`），零 pub 签名破坏；调用面普查：新算式与 `in_cooldown`/`window_expired`/`next_switch_at` 在 `src/router`+`src/server` 之外零引用 ⇒ 两包全量即完整爆炸半径。
+- reported_by: lead
+
+## BUG-585 [2026-11-09T13:14:00Z] [medium] FIXED
+- summary: `mr_record_failure` 的 `secs_to_iso(now_secs + secs)` 单加法 Int32 绕回 ⇒ 产出 "" ⇒ 冷却被**静默清除**（fail-open，回执零提示）；`FIST_MODEL_COOLDOWN_SECS` 今日即可触发
+- detail: 定位：`src/server/model_router_ops.mbt:682`（修前）。env 经 `bug_parse_int`（`src/server/bugreport.mbt:263-278`，acc≥2e8 break ⇒ 上限约 1,999,999,999）只要 >0 即采纳；2026 年 `now_secs`≈1.77e9，secs 超约 3.8e8（阈值 = 2^31-1 − now_epoch，**逐年递减**）即绕回负值 ⇒ `secs_to_iso` 负值返回 ""（`src/router/model_router.mbt:597`）⇒ `in_cooldown("")=false` ⇒ 冷却消失。探针：`1767225600 + 500000000 = -2027741696`，"" ⇒ fail-open 均实锤。属「荒谬输入被合法接受后静默错行为」，与 BUG-580 同构 ⇒ 按判例改为显式 Err。
+- task_id: T0（ns=iter-1109，轮 182 车道 G 修复）
+- reported_by: lead
+
+### FIXED(2026-11-09 / BUG-585 轮 182 车道 G 修复 + 统帅终审)
+- 修法：算式从调用点抽出收敛为唯一函数 `src/server/model_router_ops.mbt:678-702` `mr_cooldown_deadline(now_iso, secs) -> Result[String, String]`，调用点 `:723-726`（`Err` 前缀 `mr_record_failure: ` 后原样上抛，BUG-229 纪律：落盘/盖章失败必须回执不得静默吞错）。三条闸：① `now_secs < 0`（时钟不在可表示域）⇒ Err 点名 ISO 原串；② `secs <= 0` ⇒ Err 点名配置项（BUG-580 C2 同族：负值/零值不静默采纳）；③ **域校验用减法形式** `secs > bound - now_secs`（先把和算出来就是要防的那个绕回点）⇒ Err 文案点名 `FIST_MODEL_COOLDOWN_SECS`、**从当前 `now_secs` 按公式推导**的可用上限秒数与最晚可盖章时刻；上限由 `@router.iso_domain_upper_secs()` 从 `iso_to_secs` 声明域**二分反解**，不写死年份常数（判例-46 律 3）。
+- 行为面变化：荒谬冷却配置从「回执零提示、冷却被静默清除（fail-open）」变成「显式 Err 并告诉运维可用上限是多少」——即 BUG-580 判例「荒谬输入显式报错，不静默」在模型路由面的同族落地。合法配置（默认 300s 与一切常规值）逐字零回归。
+- 回归锁：`src/server/model_router_ops_bug585_wbtest.mbt` 5 格（绕回档必 Err / 边界内一格不误伤 / 非正拒绝 / 非法时钟拒绝 / 默认路径不变）。
+- 变异对照真跑：M4 把 `mr_cooldown_deadline` 退回裸加法（＝修前形状）⇒ server 包 `Total tests: 591, passed: 588, failed: 3`；还原后 `591/591/failed: 0`。
+- 已知残余（如实登记，不构成本单关闭缺口）：`FIST_MODEL_COOLDOWN_SECS` 给**非数字**（如 `abc`）仍走 `bug_parse_int`→0→静默回落 300，本轮只修「大到绕回」与「非正」两档；非数字档属配置健壮性，另案处置。
+- 终审读数：全量 JS `2053/2053/failed: 0`（统帅复跑，见 BUG-584 FIXED 段同批读数）。
+- reported_by: lead
+
+## BUG-586 [2026-11-09T13:14:00Z] [low] FIXED
+- summary: `next_switch_at` 展示字段三处各写一遍 `secs_to_iso(iso_to_secs(now) + window_seconds)`，大 window_seconds 绕回 ⇒ 空串或 2038 不可表示日期（逻辑走 window_expired 减法不受影响，纯展示面）
+- detail: 定位：`src/router/model_router.mbt:904/:950/:1190-1192`（修前）；`src/router/router_config.mbt:14-26/:171-186` 的 `num_to_int_safe` 钳制 ±2e9、仅拒非正 ⇒ 够得到绕回档。探针：`1767225600 + 2000000000 = -527741696`。三处重复算式本身是「同一规则多份实现」形状。
+- task_id: T0（ns=iter-1109，轮 182 车道 G 修复）
+- reported_by: lead
+
+### FIXED(2026-11-09 / BUG-586 轮 182 车道 G 修复 + 统帅终审)
+- 修法：三处重复算式（修前 `:904/:950/:1190-1192`）收敛为唯一 choke point `src/router/model_router.mbt:669-680` `window_deadline_iso(now, window_seconds)`，调用点改 `:988/:1034/:1274`。口径：`now` 非法/域外 ⇒ `""`（**「无法盖章」——修前这里会写出 1970 的假截止时刻**，比空串更坏）；`now + window_seconds` 超可表示域 ⇒ **饱和到域上界那一秒**（看得见「远在声明域之外」，既不是空串也不是 `iso_to_secs` 读不回的 2038 假日期）；其余逐字与旧算式一致（合法窗口零回归，含 `window_seconds < 0` 这一不可达档）。域校验同样用减法形式，上界复用 `iso_domain_upper_secs()`（判例-46 律 3）。
+- 取舍如实：选**加法点域校验**而非配置期校验——配置加载期**没有 `now`**，任何固定上界要么任意要么过松（`num_to_int_safe` 的 ±2e9 钳制本身就够到绕回档），而绕回阈值逐年递减；取舍已写进文件头注释。
+- 行为面变化：`next_switch_at` 从「大窗口给空串或不可表示日期」变成「饱和到声明域上界」，展示面不再把「算不出来」伪装成「没有截止」。
+- 回归锁：`src/router/model_router_bug586_wbtest.mbt` 5 格（绕回档饱和 / 非法 now 空串 / 合法窗口逐字不变 / 上界派生值与 `iso_to_secs` 往返一致 / 饱和态可读回）。
+- 变异对照真跑：M3 把 `window_deadline_iso` 退回裸加法（＝修前形状）⇒ router `Total tests: 237, passed: 234, failed: 3`；还原后 `237/237/failed: 0`。
+- 终审读数：全量 JS `2053/2053/failed: 0`（统帅复跑，见 BUG-584 FIXED 段同批读数）。
+- reported_by: lead
