@@ -44,7 +44,11 @@
 ///
 /// ## 但**名字有误导性**，所以本测试用「**相对差值**」断言，而不是绝对 epoch
 /// —— 断言绝对 epoch 会把「基准是 J2000」这个**事实**当成 bug，反过来逼人改实现。
-fn iso_delta_seconds(a : String, b : String) -> Int32? {
+///
+/// BUG-580 C1（2026-11）：返回类型从 Int32? 改 **Int64?**——全 Int32 算术对
+/// 远未来年份（9999-01-01 ≈ 2.5e11 秒）静默绕回成负值，调用点 `ts_ok` 判假
+/// 会把存在的提醒静默清零；差值断言的字面量相应带 `L` 后缀。
+fn iso_delta_seconds(a : String, b : String) -> Int64? {
   match (iso_to_epoch(a), iso_to_epoch(b)) {
     (Some(x), Some(y)) => Some(y - x)
     _ => None
@@ -59,32 +63,32 @@ test "iso_accepts_canonical_form_and_matches_known_epoch" {
   // 这比「等于某个绝对数」更强 —— 它同时锁住「日/月/年进位」与「每天 86400 秒」两条。
   assert_eq(
     iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-31T00:00:00Z"),
-    Some(86400),
+    Some(86400L),
   )
   assert_eq(
     iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T01:00:00Z"),
-    Some(3600),
+    Some(3600L),
   )
   assert_eq(
     iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T00:01:00Z"),
-    Some(60),
+    Some(60L),
   )
   assert_eq(
     iso_delta_seconds("2026-10-30T00:00:00Z", "2026-10-30T00:00:01Z"),
-    Some(1),
+    Some(1L),
   )
   // 月进位 / 年进位（闰年 2/29 也要对：2028 是闰年）
   assert_eq(
     iso_delta_seconds("2026-10-31T00:00:00Z", "2026-11-01T00:00:00Z"),
-    Some(86400),
+    Some(86400L),
   )
   assert_eq(
     iso_delta_seconds("2026-12-31T00:00:00Z", "2027-01-01T00:00:00Z"),
-    Some(86400),
+    Some(86400L),
   )
   assert_eq(
     iso_delta_seconds("2028-02-28T00:00:00Z", "2028-02-29T00:00:00Z"),
-    Some(86400),
+    Some(86400L),
   )
 }
 

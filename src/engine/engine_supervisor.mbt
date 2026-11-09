@@ -585,7 +585,11 @@ pub fn FistEngine::supervisor_task_upsert(
 ///|
 /// ISO 时间（YYYY-MM-DDTHH:MM:SS，忽略尾部 Z/毫秒/时区）→ epoch 秒。
 /// 解析失败返回 None（调用方按不可比较处理，不阻断轮询）。
-fn iso_to_epoch(s : String) -> Int32? {
+/// BUG-580 C1：旧实现全 Int32 算术，`(jd - 2451545) * 86400` 对远未来年份
+/// （如 9999-01-01，≈2.5e11 秒）静默绕回成负值 ⇒ 调用点的
+/// `ts_ok = now_ep > 0` 判假 ⇒ 存在的提醒被静默清零。改返回 Int64：
+/// 4 位 ISO 年（0000..9999）全域 epoch（约 ±2.6e11）在 Int64 内精确无溢出。
+fn iso_to_epoch(s : String) -> Int64? {
   if s.length() < 19 ||
     s[4] != '-' ||
     s[7] != '-' ||
@@ -631,8 +635,22 @@ fn iso_to_epoch(s : String) -> Int32? {
   let a = (14 - mo) / 12
   let y = yy + 4800 - a
   let m = mo + 12 * a - 3
-  let jd = dd + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045
-  Some((jd - 2451545) * 86400 - 43200 + hh * 3600 + mi * 60 + ss)
+  // BUG-580 C1：jd 本体（≤ ~5.4e6）与各分段在 Int32 内都安全，
+  // 只有 `(jd - 2451545) * 86400` 需要 Int64（9999 年 ≈ 2.5e11 秒，Int32 必绕回）。
+  let jd64 : Int64 = (dd +
+  (153 * m + 2) / 5 +
+  365 * y +
+  y / 4 -
+  y / 100 +
+  y / 400 -
+  32045).to_int64()
+  Some(
+    (jd64 - 2451545L) * 86400L -
+    43200L +
+    hh.to_int64() * 3600L +
+    mi.to_int64() * 60L +
+    ss.to_int64(),
+  )
 }
 
 ///|
@@ -646,16 +664,34 @@ pub fn FistEngine::supervisor_reminder_tick(
   stale_hours~ : Int32 = 24,
   pending_hours~ : Int32 = 48,
 ) -> Json {
-  let now_ep = iso_to_epoch(now).unwrap_or(0)
-  let stale_cut = now_ep - stale_hours * 3600
-  let pending_cut = now_ep - pending_hours * 3600
+  // BUG-580 C2（引擎侧防御）：负阈值会让 stale_cut 落在未来 ⇒ 刚更新的活跃任务
+  // 被报「超过 -5 小时未更新」这类荒谬提醒。引擎直接调用方（ops_commissar 等）
+  // 拿到带 error 字段的空结果；MCP 工具层在 supervisor_tools.mbt 显式报 Err。
+  if stale_hours < 0 || pending_hours < 0 {
+    let no_items : Array[Json] = []
+    return Json::object({
+      "ts": Json::string(now),
+      "stale_hours": Json::number(stale_hours.to_double()),
+      "pending_hours": Json::number(pending_hours.to_double()),
+      "error": Json::string(
+        "stale_hours/pending_hours 不接受负值（收到 \{stale_hours}/\{pending_hours}）：负阈值无意义，请传非负小时数",
+      ),
+      "reminder_count": Json::number(0.0),
+      "reminders": Json::array(no_items),
+    })
+  }
+  let now_ep = iso_to_epoch(now).unwrap_or(0L)
+  // BUG-580 C1：阈值乘法一并 Int64 化——Int32 的 stale_hours*3600 在
+  // stale_hours ≥ Int32::MAX/3600（≈596523）时静默绕回。
+  let stale_cut = now_ep - stale_hours.to_int64() * 3600L
+  let pending_cut = now_ep - pending_hours.to_int64() * 3600L
   let reminders : Array[Json] = []
   for t in self.list_all() {
     let st = t.get_status()
     let active = !st.is_pending() && !st.is_completed() && !st.is_archived()
     let up = t.get_updated_at()
-    let up_ep = iso_to_epoch(up).unwrap_or(0)
-    let ts_ok = now_ep > 0 && up_ep > 0
+    let up_ep = iso_to_epoch(up).unwrap_or(0L)
+    let ts_ok = now_ep > 0L && up_ep > 0L
     if active && ts_ok && up_ep < stale_cut {
       reminders.push(
         Json::object({
