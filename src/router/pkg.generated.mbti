@@ -46,6 +46,8 @@ pub fn hex_encode(Bytes) -> String
 
 pub fn is_model_unhealthy(String, Array[String]) -> Bool
 
+pub fn iso_domain_upper_secs() -> Int32
+
 pub fn iso_to_secs(String) -> Int32
 
 pub fn ofm_reserve_max_tokens(Int32, Int32) -> Result[Int32, String]
@@ -85,6 +87,8 @@ pub fn star_gate_verify(String, String, Int64) -> StarGateOutcome
 pub fn star_gate_verify_pinned(String, String, Int64, String) -> StarGateOutcome
 
 pub let star_release_default_pubkey_hex : String
+
+pub fn window_deadline_iso(String, Int32) -> String
 
 pub fn window_elapsed_secs(String, String) -> Int32
 

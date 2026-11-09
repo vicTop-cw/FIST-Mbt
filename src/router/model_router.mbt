@@ -172,6 +172,15 @@ pub fn ModelQuota::in_cooldown(self : ModelQuota, now_iso : String) -> Bool {
   if cool_secs <= 0 {
     return false
   }
+  // BUG-584：上面那段意图（「比永久锁死可恢复」）此前**只落在 cool 臂**，now 臂没防——
+  // `iso_to_secs(now_iso)` 的 -1 域外/非法哨兵让 `-1 < cool_secs` **恒真** ⇒ 模型被
+  // **永久锁死**（`quota_admitted`/`pool_pick` 永久跳过，`mark_failure("")` 也解不开：
+  // 锁死的是判定而不是数据）。now 超声明域（>2037，BUG-218）之外，**坏 now 串今天就能
+  // 到达这一格**。同因同判：now 侧同样 fail-open，`<= 0` 与 cool 臂口径一致
+  //（epoch-0 那格也按哨兵处理——1970 墙钟不是本模块的正常输入，锁死比放行更糟）。
+  if now_secs <= 0 {
+    return false
+  }
   now_secs < cool_secs
 }
 
@@ -609,6 +618,69 @@ pub fn secs_to_iso(secs : Int32) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// BUG-584/585/586 同族的**可表示域**基元（时间戳加法的唯一算式口径）
+//
+// `iso_to_secs` 的声明域是 1970..2037（BUG-218：`days*86400` 在 Int32 下 2038 起溢出，
+// 越界一律 -1 哨兵）。所有「时间戳 + 秒数」的算式都必须先对着这个域做判据，再落地成
+// ISO —— 否则 Int32 加法绕回负值 ⇒ `secs_to_iso` 产出 "" ⇒ 冷却被**静默清除**（BUG-585）、
+// 或写出 `iso_to_secs` 读不回来的 2038 假日期（BUG-586）。
+// ---------------------------------------------------------------------------
+
+///|
+/// `iso_to_secs ∘ secs_to_iso` 往返成立的**最大 epoch 秒**（可表示域上界）。
+///
+/// 刻意**不写死年份/秒数常数**：2037 那格边界是 `iso_to_secs` 自己定的（BUG-218），
+/// 这里按「往返成立」这一**定义**反解——谓词对 s 单调（域内往返成立是前缀，越界一律假），
+/// 故二分有效。将来把边界放宽（时钟 Int64 化、E1 同族）时这里自动跟着走，
+/// 不留第二份需要人肉同步的口径（判例：同一规则多份实现 = 下一颗漂移雷）。
+/// `2147483647` 是 **Int32 类型**的机器上界，不是域上界，故不作为「年份常数」看待。
+pub fn iso_domain_upper_secs() -> Int32 {
+  let roundtrip_ok = fn(s : Int32) -> Bool { iso_to_secs(secs_to_iso(s)) == s }
+  // 不变式：roundtrip_ok(lo) == true、roundtrip_ok(hi) == false
+  let mut lo = 0
+  let mut hi : Int32 = 2147483647
+  if !roundtrip_ok(lo) || roundtrip_ok(hi) {
+    // 谓词不再单调 = iso_to_secs/secs_to_iso 的边界被改坏；宁可回 0（调用方的域校验
+    // 会因此拒绝一切非零秒数 = 显式失败），也不冒「上界算大 ⇒ 绕回又回来了」的险。
+    return 0
+  }
+  while hi - lo > 1 {
+    let mid = lo + (hi - lo) / 2
+    if roundtrip_ok(mid) {
+      lo = mid
+    } else {
+      hi = mid
+    }
+  }
+  lo
+}
+
+///|
+/// BUG-586：滚动窗口**截止时刻**（`next_switch_at` 展示字段）的唯一算式。
+/// 修前三处各写一遍 `secs_to_iso(iso_to_secs(now) + window_seconds)`，大 `window_seconds`
+/// 走 Int32 绕回（`num_to_int_safe` 钳到 ±2e9 且只拒非正，够得到绕回档）。
+///
+/// 口径：
+/// - `now` 非法/域外 ⇒ ""（「无法盖章」——修前这里会写出 1970 的假截止时刻）。
+/// - `now + window_seconds` 超出可表示域 ⇒ **饱和到域上界**（看得见「远在声明域之外」，
+///   既不是空串也不是 `iso_to_secs` 读不回的 2038 假日期）。
+/// - 其余逐字与旧算式一致（合法窗口零回归，含 `window_seconds < 0` 这一不可达档）。
+/// 域校验用**减法**形式（`secs > bound - s`）而不是先把和算出来：和本身就是要防的绕回点。
+pub fn window_deadline_iso(now : String, window_seconds : Int32) -> String {
+  let s = iso_to_secs(now)
+  if s < 0 {
+    return ""
+  }
+  let bound = iso_domain_upper_secs()
+  if window_seconds > bound - s {
+    secs_to_iso(bound)
+  } else {
+    secs_to_iso(s + window_seconds)
+  }
+}
+
+///|
+// ---------------------------------------------------------------------------
 // 5h 滚动窗口门（A1' 单一真源）
 //
 // 这里**没有** `@rx.rate_limit` / `@rx.throttle`。不是没查，是查完发现 API 表达不了；
@@ -649,7 +721,19 @@ pub fn window_expired(
   window_seconds : Int32,
 ) -> Bool {
   let elapsed = window_elapsed_secs(window_start, now)
-  elapsed >= 0 && elapsed >= window_seconds
+  // BUG-584 同形检查（结论：**这一侧刻意与 in_cooldown 反方向**，维持 fail-closed）。
+  // `elapsed` 为负有三种成因——① window_start 非法/域外、② now 非法/域外（两者都是
+  // `window_elapsed_secs` 的 -1 哨兵）、③ 两端合法但时钟倒挂。三者一律「不过期」，
+  // 且必须是**显式**一行而不是靠 `-1 >= 0` 这个算术巧合：过期分支会把 `used` 清零并把
+  // `window_start` 改写成这个坏 now，即「用坏时钟清零用量」（R231 已锁：'量不出来'不能当
+  // '该重置'；上游 `window_reset_check` 的 `now_s < 0 ⇒ 0 次重置` 是同一条方向）。
+  // 残余后果如实记账、不在此门里偷偷绕过：墙钟越过声明域(>2037, BUG-218) ⇒ 窗口永不
+  // expired ⇒ 用量只增不减 ⇒ 最终 available=false。出路是时钟 Int64 化迁移（E1 同族），
+  // 不是把坏时间戳当成一次重置。
+  if elapsed < 0 {
+    return false
+  }
+  elapsed >= window_seconds
 }
 
 ///|
@@ -901,7 +985,7 @@ fn ModelRouter::pick_with_hint(
     self.config.paid_models
   }
   let idx0 = if tier == Free { self.free_idx } else { self.paid_idx }
-  let nxt = secs_to_iso(iso_to_secs(now) + self.config.window_seconds)
+  let nxt = window_deadline_iso(now, self.config.window_seconds)
   match pool_pick(pool, idx0, th, now~, unhealthy_ids~) {
     None => None
     Some(idx) => {
@@ -947,7 +1031,7 @@ fn ModelRouter::pick_inner(
   let th = self.config.threshold_pct
   let free = self.config.free_models
   let paid = self.config.paid_models
-  let nxt = secs_to_iso(iso_to_secs(now) + self.config.window_seconds)
+  let nxt = window_deadline_iso(now, self.config.window_seconds)
   // P2：laya 软性档位提示——先试提示档位，配额硬约束仍在，不破。
   // 档位字符串大小写归一（laya sidecar 可能返回 "Free"/"Paid"，from_string 只收小写）。
   if laya_prefer_tier != "" {
@@ -1187,9 +1271,7 @@ pub fn ModelRouter::force_switch(
           "manual switch"
         },
         switched: !noop,
-        next_switch_at: secs_to_iso(
-          iso_to_secs(now) + self.config.window_seconds,
-        ),
+        next_switch_at: window_deadline_iso(now, self.config.window_seconds),
         available: true,
         fallback_chain: compute_fallback_chain(self.config, pool[idx].name),
         laya_reason: "",

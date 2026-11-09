@@ -662,9 +662,51 @@ fn mr_record_only(
 }
 
 ///|
+/// BUG-585：冷却截止 ISO 的**带域校验**算式（`mr_record_failure` 的唯一算式点）。
+///
+/// 修前形态是一步裸加法 `@router.secs_to_iso(now_secs + secs)`。`secs` 来自 env
+/// `FIST_MODEL_COOLDOWN_SECS`，经 `bug_parse_int`（`acc>=2e8` 即 break，上限约 1e9 秒）
+/// **只要 >0 就采纳**；而 2026 年 `now_secs≈1.77e9` ⇒ 只要 `secs` 超过
+/// `2^31-1 - now_secs`（≈3.8e8，随年份递减）这一步**单个加法就绕回负值** ⇒
+/// `secs_to_iso` 走负秒分支产出 **""** ⇒ `in_cooldown("")` 恒 false ⇒
+/// **冷却被静默清除**（fail-open，回执里一个字都没有——正是 BUG-585 的中危面：今天可达）。
+///
+/// 判例-580（荒谬输入**显式报错**，不静默）：越界一律 `Err`，文案点名配置项名 +
+/// **从当前 `now_secs` 按公式推导**的可用上限（不写死年份常数：上界由
+/// `@router.iso_domain_upper_secs()` 从 `iso_to_secs` 的声明域反解）。
+/// 域校验写成**减法**（`secs > bound - now_secs`）：先把和算出来就是要防的那个绕回点。
+fn mr_cooldown_deadline(
+  now_iso : String,
+  secs : Int32,
+) -> Result[String, String] {
+  let now_secs = @router.iso_to_secs(now_iso)
+  if now_secs < 0 {
+    return Err(
+      "系统时钟 ISO '\{now_iso}' 不在 @router.iso_to_secs 的可表示域（1970..2037，BUG-218），冷却截止无法盖章 —— 冷却**未写入**（BUG-585：宁可显式失败，不许把冷却静默清除）",
+    )
+  }
+  if secs <= 0 {
+    return Err(
+      "冷却时长 secs=\{secs} 非正：FIST_MODEL_COOLDOWN_SECS 只接受正整数秒（<=0 会把截止写成 now 本身或过去时刻，等于没有冷却——BUG-580 C2 同族：负值不静默采纳）",
+    )
+  }
+  let bound = @router.iso_domain_upper_secs()
+  let max_secs = bound - now_secs
+  if secs > max_secs {
+    Err(
+      "FIST_MODEL_COOLDOWN_SECS=\{secs} 超出可表示域：相对当前时刻 '\{now_iso}' 可用上限 \{max_secs} 秒（冷却截止最晚 \{@router.secs_to_iso(bound)}）。更大的值会让 now_secs+secs 在 Int32 下绕回负值 ⇒ secs_to_iso 产出 \"\" ⇒ 冷却被静默清除（BUG-585）。",
+    )
+  } else {
+    Ok(@router.secs_to_iso(now_secs + secs))
+  }
+}
+
+///|
 /// P1.1：给某模型标记失败冷却（不消耗配额）。冷却时长从 env `FIST_MODEL_COOLDOWN_SECS`
 /// 取（默认 300 秒）。模型不在池中→无操作返回 Ok（防御性，正常路径不会触发）；
 /// 落盘失败返回 Err，调用方必须回执，不得静默吞错（BUG-229）。
+/// BUG-585：冷却截止算式改走 `mr_cooldown_deadline`——env 给到荒谬值时**显式 Err**
+/// （点名配置项与可用上限），不再产出 "" 把冷却静默清除。
 fn mr_record_failure(
   project_dir : String,
   ns~ : String,
@@ -678,8 +720,10 @@ fn mr_record_failure(
       secs = parsed
     }
   }
-  let now_secs = @router.iso_to_secs(now_default())
-  let cool_until = @router.secs_to_iso(now_secs + secs)
+  let cool_until = match mr_cooldown_deadline(now_default(), secs) {
+    Err(e) => return Err("mr_record_failure: " + e)
+    Ok(s) => s
+  }
   let (r, _warns) = @router.router_restore(mr_read(project_dir, ns))
   let found = r.mark_failure(model, cool_until)
   if !found {
