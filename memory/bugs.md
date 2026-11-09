@@ -15688,6 +15688,16 @@ src/engine/omega_strong_test.mbt 本次改动：
 - task_id: T0（ns=iter-1109，轮 182 车道 E 普查 + 车道 G 只读调查）
 - reported_by: lead
 
+### 追记（2026-11-09 / 轮 183 车道 H：前置行为锁已就位，状态仍 OPEN）
+- **前置拆掉**：`src/engine/engine_circuit_bug583_wbtest.mbt` 7 格 + `src/server/mcpcf_embed_bug583_wbtest.mbt` 4 格（mcpcf 面**史上第一批测试**），产品码零改动。包级读数（统帅亲跑复核）：engine `395 → 402`、server `591 → 595`；全量将 2053 → 2064。
+- 下锁层结论（车道 H 现读）：**mcpcf 的时钟不可注入** ⇒ 2039 那一档在调用层写不出来（要写得先动产品码），而两枚哨兵 `engine_circuit.mbt:136/:170` 判定与调用方无关、`now_secs` 在引擎层是入参 ⇒ 等价且可达的锁层是引擎层；mcpcf 调用层锁「可达的那一半」（holder 注入生效、时基形状、`:267` 与 `:360` 共用同一 `opened_at`、注入缺口本身）。
+- 变异对照三发（打代码行、sha256 还原逐字相同）：M1 `:136` `> 0`→`!= 0` ⇒ engine `402/399/failed: 3`（bug583_02/06/07）而 server 仍 `595/595/0`；M2 `:170` 同改 ⇒ engine `402/401/failed: 1`（只 bug583_04）——**每枚哨兵只点亮自己那一格**，合法域对照格不误红；M3 只把 `mcpcf_embed.mbt:267` 换成 ops 基、`:360` 逐字不动 ⇒ server `595/593/failed: 2`，当场抓到 `mcpcf.watchdog` 把 `opened_at` 读成「远在 1972 年」立刻跳半开。
+- **对本单原「修复方向①」的实测修正**：①「边界换时基」**不是 2 处**而是 **2 处 + 沙箱库清表**——只改 `:267` 漏 `:360` 会产生比原缺陷更响的新红（两基同库 ⇒ half-open 随机），这条原只在车道 G 的调查里作为推论写着，现由 `bug583_03` 活体复现钉住。方向②③的必红面逐格写在两份文件头（含「修复后该断言应变成什么」）；**只改存储不动哨兵 ⇒ 全绿**，`bug583_07` 就是专门用来证明这一档修复无效的（负值经 SQLite 逐字往返，库不背这个锅）。
+- 顺带抓到的口径滞后（**未修，避免越界**）：`src/engine/engine_circuit_test.mbt` 头注释仍写「需 SQLite 后端（Mem 后端 cb 为 no-op）」，BUG-439 后内存后端已实读实写（车道 H 有 6 格用内存后端通过即为反证）⇒ 旧口径会误导后来者多开沙箱库。
+- 新增残余 ⇒ 另立 **BUG-588**（可测性缺口：mcpcf 无时钟入参 + `ops_data_dir()` 默认目录在测试内不可改道，`:48` 库名硬编码）。
+- 定时发信器如实预告：server `bug583_02` 的 Unix 正域带断言在 **2038-01-19 之后会自己红**（刻意设计）——届时若仍未修，那是预期信号而不是判据坏了。
+- reported_by: lead
+
 ## BUG-584 [2026-11-09T13:14:00Z] [high] FIXED
 - summary: `ModelQuota::in_cooldown` 的 BUG-206 fail-open 意图**只落在 cool 臂**，now 臂没防 ⇒ `iso_to_secs` 的 -1 域外/非法哨兵让 `-1 < cool_secs` 恒真 ⇒ 模型永久锁死（坏 now 串今天即可达，不必等 2037）
 - detail: 定位：`src/router/model_router.mbt:163-175`（修前）——`:172` 已有 `cool_secs <= 0 ⇒ return false`，注释自述「比永久锁死可恢复」，而 now 侧无同判；`iso_to_secs` 声明域 1970..2037（BUG-218），域外/非法返回 -1。`quota_admitted`/`pool_pick` 永久跳过该模型，且 `mark_failure("")` 解不开（锁死的是判定不是数据）。同形：`window_expired` 靠 `elapsed >= 0` 这一**算术巧合**拒绝过期（结论正确但形状不可辨）。与 BUG-580（静默清零提醒）、BUG-206（cool 臂绕回）同族：**半截守卫**——同一意图只实现一半，另一半静默反向。
@@ -15740,4 +15750,12 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 修法候选（待裁决）：① 启动器把 `data_dir`/`FIST_DB_PATH` 默认钉到非产物目录（如 `%LOCALAPPDATA%\FIST-Mbt\data`，与 `serve-launcher.cjs` 同址）；② 连接器侧 ns 库随 `moon.mod` 版本归档；③ 至少加一条判据：`data_dir` 解析结果不得位于 `_build/` 之下（现无任何尺看这一格）。
 - task_id: T0（ns=iter-1109，轮 182 收口期现场观察）
 - evidence: `find` 现读两库路径 / `store_open` 回显 `data_dir=.fist-mbt/data` / `temp/` 内 sqlite 直读结果（T0 status 与 deliverable 长度）/ 同轮 `refresh_dist.py` 与 `check_badge --fresh` 的命令回执原文
+- reported_by: lead
+
+## BUG-588 [2026-11-09T14:26:00Z] [low] OPEN
+- summary: mcpcf 工具面可测性缺口两条：① `tool_circuit`/`tool_watchdog` 的 `now_secs` 内部现算墙钟、无注入点 ⇒ 2038 档在 mcpcf 调用层写不出锁；② `ops_data_dir()` 只读 `MCPCONFTEST_DATA_DIR`/`LOCALAPPDATA`，MoonBit 侧无 env 写接口，且 `mcpcf_embed.mbt:48` 库名硬编码 ⇒ 任何 mcpcf 测试**必须先 `set_engine`**，否则直接往 `%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 写
+- detail: 定位：`src/server/mcpcf_embed.mbt:267/:360`（`let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`，参数面只有 `circuit`/`action`/`ns`）、`:10-16`（模块级 `holder`，`set_engine` 只注入引擎不注入时钟）、`:48/:181`（库名硬编码）与 `ops_data_dir()`。后果不是行为错（BUG-583 才是），而是**验证面在调用层被结构封住**：BUG-583 的 2039 臂只能退到引擎层锁（等价但不等于调用面覆盖），车道 H 因此把「缺口本身」钉成 `mcpcf_embed_bug583_wbtest.mbt` 的 `bug583_04`（传 `now_secs=-2117514496` 被静默丢弃、落库仍是墙钟正值）——将来谁加了时钟入参，那一格就红，逼修复者改写而不是留一条与产品码脱节的假锁。另注：`check_selftest_hermetic` 的 G/S 档口径只管 `--selftest` 密封性，管不到「产品测试会不会写真用户库」这一格，无尺在看。
+- 关闭条件：mcpcf 有可注入的时钟或数据目录（任一即可），**或** BUG-583 方向④「mcpcf 库路径 ≠ 主库路径」判据落地把风险变成断言。
+- task_id: T0（ns=iter-1109b，轮 183 车道 H 现场抓出）
+- evidence: `src/server/mcpcf_embed.mbt:10-16/:48/:267/:360` 现读 + `src/server/mcpcf_embed_bug583_wbtest.mbt` `bug583_01/:131`（holder 注入可达性实证）与 `bug583_04/:261`（缺口断言原文）+ 车道 H 回传「零污染实证：`%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 跑完 mtime 未变」
 - reported_by: lead

@@ -1,6 +1,9 @@
 /// engine_circuit_test.mbt —— 熔断器三态状态机（R104）测试。
 /// 覆盖：Closed 窗口内计数达阈值 → Open（fail-fast）/ Half-Open 恢复（探测成功 Closed、
-/// 探测失败回 Open）/ 窗口外失败复位 / clear 清空。需 SQLite 后端（Mem 后端 cb 为 no-op）。
+/// 探测失败回 Open）/ 窗口外失败复位 / clear 清空。本文件按 SQLite 后端组织用例。
+/// （旧口径「需 SQLite 后端，因 Mem 后端 cb 为 no-op」已滞后：BUG-439 之后内存后端实读实写，
+///  `engine_circuit_bug583_wbtest.mbt` 有六格走内存后端通过即为反证。该选择要不要换成内存后端
+///  需另跑对照，不在本轮边界内——但**理由**已经不是 no-op 了，留着旧句会诱导后来者多开沙箱库。）
 
 ///|
 /// 构建干净的 SQLite 引擎（先清库保证用例幂等）。
