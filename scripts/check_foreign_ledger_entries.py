@@ -173,6 +173,7 @@ WHITELIST: dict[str, tuple[str, str]] = {
     # ── 本仓元条目（讨论误落问题本身，可能引用外来路径做证据）──
     "565": ("meta", "BUG-565 本体：跨项目账本误落的根因登记，detail 引用 vq 项目做证据——是元条目不是外来缺陷"),
     "573": ("meta", "BUG-573：BUG-565 同族（report_bug 落账轨）的 run_guards 记账面复查，引用外来落账事实做证据"),
+    "587": ("meta", "BUG-587：同族的 data_dir 一面（连接器台账库落在 _build 产物目录），正文引用 `.fist-mbt/data/<ns>.db` 与 %LOCALAPPDATA% 路径做**落点证据**——那是本仓工具自己的路径形状，被 `data/` 前缀信号族误伤，不是外来缺陷"),
 }
 
 
