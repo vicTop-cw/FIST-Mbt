@@ -54,6 +54,8 @@
 5. **BUG-582 整体处置方向待 owner**：试点只证一个脚本。推广三类分流——干净 temp 夹具/主面冗余类（约 15–20 脚本可照本模式批量）、校准读类（`HERMETIC_CALIBRATION` 声明机制走不走须裁决）、结构冲突/G 档（call-face ⟂ 读锚点，temp 夹具解不了，挂 BUG-492 选项 C）。守卫自身设计终态不是零红，「标定格清零＝更假不是更严」。
 6. **owner 既有裁决项不代翻**：BUG-527（native 上游 issue 出路②）、BUG-542、BUG-565 A 半三案 + 计数面裁决 + 双层守卫并存与否、BUG-566（宿主审批门误判族）。
 7. **非本批留账**：`scripts/explore_watchdog_wrapper.ps1` / `_prompt.md` / `_hidden.vbs` 三件仍未跟踪未 ignore（`check_publish_payload` 红面），属唤醒轮基础设施，由该车道/owner 处置，本批未动。
+8. **BUG-587（本轮新立，medium OPEN）**：插件连接器的任务台账库实际落在**构建产物目录**内（`_build/js/release/build/cmd/cli/.fist-mbt/data/<ns>.db`，`find` 现读 + `iter-1107.db` 同址）⇒ 与 BUG-565 同根的第二面（`data_dir` 也随 server cwd），且落在会被构建重写的树下。本轮 `refresh_dist.py` 与徽章尺 `--fresh` 都动过这棵树，靠 `moon build` 的 up-to-date 缓存侥幸未清档——**不得据此判无风险**。三档修法候选与「`data_dir` 不得位于 `_build/` 之下」判据建议已入账。
+9. **写型 RPC 在重负载期折叠的仲裁实录**：`execute` 在徽章尺真跑期间回 `-32603`，直读 sqlite 见 T0 仍 `已领取`、`length(deliverable)=0` ⇒ 确实没落，等尺跑完再重发（不是盲重发，也不是"回执折了就算成功"）。
 8. **车道基础设施留档**：后台 `Agent` 派单起跑即失败（无任何工具产出、`git status` 零残留）时，先核盘面再前台重派，不当作任务本身不可完成。
 
 ## 五、后续建议

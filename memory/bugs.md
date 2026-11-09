@@ -15733,3 +15733,11 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 变异对照真跑：M3 把 `window_deadline_iso` 退回裸加法（＝修前形状）⇒ router `Total tests: 237, passed: 234, failed: 3`；还原后 `237/237/failed: 0`。
 - 终审读数：全量 JS `2053/2053/failed: 0`（统帅复跑，见 BUG-584 FIXED 段同批读数）。
 - reported_by: lead
+
+## BUG-587 [2026-11-09T13:26:00Z] [medium] OPEN
+- summary: 插件连接器的任务台账库落在**构建产物目录**内（`_build/js/release/build/cmd/cli/.fist-mbt/data/<ns>.db`）⇒ 任何全量重烤产物（`moon build` 重建该目录 / `build_release` / `refresh_dist` 真重跑那一支）都会连任务表一起清掉，轮次台账不是持久面
+- detail: 定位：`store_open(namespace="iter-1109")` 回显 `data_dir=.fist-mbt/data`（相对路径），而启动器以插件 workdir = `_build/js/release/build/cmd/cli` 为 server cwd ⇒ 实际落 `_build/js/release/build/cmd/cli/.fist-mbt/data/iter-1109.db`（本会话现读 `find` 实证，`iter-1107.db` 同址）。这与 BUG-565 是**同一根的第二面**：BUG-565 讲 `report_bug` 的账本落点随 server cwd，本条讲**任务台账**的落点随 server cwd——而且落在「本来就会被构建重写」的那棵树下。机制危害实锤条件是产物目录被重建（AGENTS「JS 服务端产物会被清掉」同族已实测过清除），本轮 `refresh_dist.py` 走 `moon build` 的 up-to-date 缓存（回执 `ran 4 tasks, now up-to-date`）故**未触发清档**，不得据此宣称无风险；测试计数面重跑徽章尺（`check_badge --fresh` 内部真跑全量）同样动这棵树。附带观察：`execute` 在这一跑期间回 `-32603` 且**盘上未落**（直读 sqlite：T0 仍 `已领取`、`length(deliverable)=0`）⇒ 重负载期写型 RPC 折叠时先按 sqlite 仲裁再重发，别盲重发。
+- 修法候选（待裁决）：① 启动器把 `data_dir`/`FIST_DB_PATH` 默认钉到非产物目录（如 `%LOCALAPPDATA%\FIST-Mbt\data`，与 `serve-launcher.cjs` 同址）；② 连接器侧 ns 库随 `moon.mod` 版本归档；③ 至少加一条判据：`data_dir` 解析结果不得位于 `_build/` 之下（现无任何尺看这一格）。
+- task_id: T0（ns=iter-1109，轮 182 收口期现场观察）
+- evidence: `find` 现读两库路径 / `store_open` 回显 `data_dir=.fist-mbt/data` / `temp/` 内 sqlite 直读结果（T0 status 与 deliverable 长度）/ 同轮 `refresh_dist.py` 与 `check_badge --fresh` 的命令回执原文
+- reported_by: lead
