@@ -15447,6 +15447,12 @@ BUG-538 心跳 wbtest i4 的「恰好 3 行」锁在 CI windows 臂抖动红：3
 - task_id: （B 半为指挥官部署动作、A 半待 owner 裁决，本轮无派单）
 - evidence: temp/bug565_prefix_out.txt（0B）/ temp/bug565_postfix_out.txt（82B）/ temp/serve-launcher-orig.cjs 与 temp/serve-launcher-patched.cjs（diff 两处）/ reports/2026-11-03-bug565-project-dir-decision-sheet.md
 
+### 追记（2026-11-09 / 后续项「外来条目检测守卫」第二层落地，迭代轮 181 车道 B）
+- 已落两层：第一层 `scripts/check_bug_ledger_scope.py`（2026-11-03，勘误覆盖机制）；第二层 `scripts/check_foreign_ledger_entries.py`（本批，白名单棘轮）——同对象不同契约，非「同一规则两份实现」：scope 红「vq 形状前缀族 × 不在跟踪面 × 无人勘误收口」，本尺红「**基线外**的缺陷位置在本仓树外的条目」。信号取数面只扫条目自己的 summary/detail 行（evidence 是证据不是缺陷位置）；署名只认 summary 行首 `[Pentad/`、`[p5c`、`[vools]` 标签（BUG-406 报告人署名不误伤）。
+- 基线读数（本批实测）：39 条既有外来条目全在白名单（Pentad/p5c 13 + vools 10 + vq 勘误批 15 + 跨仓 BUG-531），基线外 0；`--selftest` 15/15（含 3 变异对照：summary 信号 / detail 信号 / 白名单键改名）。检测盲区（勘误批内无路径字面量的 549/557/559/560/561/562 等）如实写在 docstring，不放宽信号硬抓。
+- 仍挂 owner：① A 半设计边界三案（决策单 §4）；② 计数面裁决（§5.2）；③ **双层守卫是否长期并存**（保留双层 / 合一 / 撤其一）——本批不代翻。处置（搬走/改判/加白）基线外新条目时由 owner 定。
+- reported_by: lead
+
 ## BUG-566 [2026-11-03T02:11:00Z] [medium] OPEN
 - summary: 审批门禁把全工作区内提交命令误判为 `writes outside the workspace` 拒（BUG-565 §5.3 / 轮 97 风险 (5) 同族第 2 次可见复发）：标签与事实不符（写入点全在工作区内）⇒ 提交面被无声收窄，agent 被迫绕分类器习性
 - detail: 事件：唤醒轮 99 的 scoped 提交命令（printf > temp/ 重定向 + git commit -F … -- <path> + rm temp/ 复合）被拒，门禁原文 `bash (writes outside the workspace)`；命令写入点全在工作区（temp/ / .git / reports/）。对照（同会话）：write_file 写消息文件 + scripts/commit_scoped.sh 一次通过（80e1526fe，落盘面与申报面逐字相等）。族表：BUG-565 §0（合法工作区外写待审批、非误判）/ §5.3（cl7 探针被判 credential access）/ 轮 97（只读 $LOCALAPPDATA 命令被判工作区外写）/ 本单（工作区内提交复合被判工作区外写）⇒ 4 实例 3 误判。根因在宿主 harness 侧（H1 相对路径 temp/ 误判 / H2 rm 触发泛用标签 / H3 cd 前缀未跟踪，甄别三臂见决策单 §3），本仓内不可修。绕行（已验证）：write_file 写消息文件 + commit_scoped.sh + rm 不串同命令（决策单 §4）。
@@ -15631,15 +15637,36 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 处置建议（owner 侧）：① 清 C 盘（根因半，只有 owner 能动）；② 判据硬化（可选后续项）：cl7/gen_plugins 捕获 `OSError 28` 时输出应带「C 盘满」归因行，或 tmp 目录固定指到仓库内 `temp/`（与 `check_demo_isolation` 的改道针同思路）——本单先立账不代修。
 - 账务同批（cl7 律）：本笔只改本条目 + `python scripts/gen_plugins.py`（TEMP 改道跑，rc=0）；本条目 OPEN 会推进抬头计数（BUG-1~579 / 564 条 / 6 条待修）⇒ 投影面 SKILL.md 计数行同批刷新（9 文件 +17/-17，全为计数行）；`rulers/battery/gate/ci` 四键不变、未新增脚本 ⇒ 不走 R183 两笔律。
 
-## BUG-580 [2026-11-07T03:11:46Z] [medium] OPEN
+## BUG-580 [2026-11-07T03:11:46Z] [medium] FIXED
 - summary: supervisor_reminder_tick：iso_to_epoch Int32 绕回致存在的提醒静默清零 + stale_hours 负值不拒（fail-quiet，荒谬 reason 照发）
 - detail: 定位：`src/engine/engine_supervisor.mbt:597` iso_to_epoch 的 nums 全 Int32，`:634-635` J2000 纪元算术无年份上界 ⇒ now=9999-01-01T00:00:00Z 时 epoch 计算静默 Int32 绕回；`:650-651` `stale_cut = now_ep - stale_hours * 3600`（Int32 乘法同样可绕回）；消费点 `src/server/supervisor_tools.mbt:845-861` 的 int_safe=200_000_000 守卫只防超上限、不拒负值。调用面探针（supervisor_reminder_tick，ns=iter-1107，四格对照，2026-11-07 实测）：基线 0 条提醒；`stale_hours=-5` ⇒ 1 条（12 分钟前更新的任务被报 stale，reason 原文「活跃任务超过 -5 小时未更新」——负值不拒 + 荒谬文案，fail-quiet）；`stale_hours=600000` ⇒ 0 条（预测的全量 stale 风暴未复现——`now-(h*3600)` 双重绕回 mod-2^32 同余，结果碰巧与正确值一致，如实记录证伪）；`now=9999-01-01T00:00:00Z` + `stale_hours=-5` ⇒ 0 条（对照 `-5` 单独时的 1 条 ⇒ 存在的提醒被静默清零：iso_to_epoch 绕回负值 → ts_ok=false → 提醒蒸发，C1 实锤）；`now=1900-01-01` + `stale_hours=-5` ⇒ 1 条（垃圾值未形成清晰区分，如实记录）。修复边界：`src/engine/engine_supervisor.mbt`（iso_to_epoch 年份上界/下界拒绝或 Int64 化 + stale_cut 防绕回）+ `src/server/supervisor_tools.mbt`（int_safe 增符号校验，stale_hours<0 拒）+ 回归锁 wbtest（变异对照打真代码行）。
 - task_id: T0（连接器 ns=bugs 修复根单；server cwd 落在 `_build/…/cmd/cli` 镜像，账本正身为本条）
 - reported_by: lead
 - evidence: 连接器 supervisor_reminder_tick 四格回执原文（本会话 call_log）；同刻 `_build/js/release/build/cmd/cli/memory/bugs.md` 的 `## BUG-2` 系本单误轨落点（report_bug 以 server cwd 解析 project_dir 落点，属 reference-fist-mbt-rpc-ledger-identity 已知族），内容与本条逐字同源，以本条为正身
 
-## BUG-581 [2026-11-07T03:13:00Z] [low] OPEN
+### FIXED(2026-11-07 / BUG-580 修复车道回传 + 统帅终审)
+- 修法（车道 D，终审复跑证实）：C1 = `src/engine/engine_supervisor.mbt:592` `iso_to_epoch` 返回类型改 `Int64?`（仅末段换算 `(jd-2451545)*86400 - 43200 + hh*3600 + mi*60 + ss` Int64 化，jd 分段本体 ≤~5.4e6 留 Int32——4 位 ISO 年全域 epoch ±2.6e11 在 Int64 内精确，任何年份不再绕回）；`:684-689` `stale_cut`/`pending_cut` 改 `now_ep - stale_hours.to_int64() * 3600L`（Int32 阈值全域乘 3600 不再可绕回）；C2 双层 = `src/server/supervisor_tools.mbt:643-653` 工具层负阈值显式 `Err(ToolError)`（不 fail-quiet）+ `:667-681` 引擎层负阈值守卫（返回带 `error` 字段的空结果，保护 `ops_commissar` 等直接调用方；引擎 pub 函数返 Json 非 Result 无法抛错，error 字段是可观测的次优解）。
+- 行为面变化：`now=9999-01-01` 从「静默清掉存在提醒」变成「一切活跃任务如实全量报 stale」（远未来 now 真的意味着全部停滞）；`stale_hours=-5` 从「荒谬 reason 照发」变成「显式报错」。
+- 调用面普查（修前做）：`iso_to_epoch` 全 src 仅 `engine_supervisor.mbt:661/:675` 两处调用（都在 supervisor_reminder_tick 内、全是相对比较），签名升级无外部破坏面；`supervisor_reminder_tick` 的 pub 签名（Int32 阈值）不变，`ops_commissar.mbt:217` 零改动。
+- 回归锁：`src/engine/engine_supervisor_bug580_wbtest.mbt` 4 格（远未来不清零 / epoch 正值+年进位数值等价 / 负阈值拒绝 / 正常路径不变）；`engine_supervisor_parse_wbtest.mbt` 差值断言随签名升 `Int64?`/`86400L`。已知缺口：工具层 Err 无白盒直测（处理器闭包嵌在 register 内，引擎面锁打的是同一表达式，变异需两处同改——文件头已点名）。
+- 终审读数（统帅复跑，非车道自述转抄）：全量 `python scripts/moon_test_env.py --target js` = `Total tests: 2036, passed: 2036, failed: 0`（基线 2032 + 新增 4 格）；`check_fmt_gate` PASS；`moon info` 后 `.mbti` 零 diff；README/README_EN 测试数徽章与日期归属同批 2032→2036 / 2026-11-07。
+- 同批账务：`memory/warnings.md` 面清零（新 wbtest 三处 `Json::Number(n)` → `Number(n, ..)` 消 missing_pattern_arguments，`check_warning_ledger` rc=0）。
+- evidence: `git diff src/engine/engine_supervisor.mbt src/server/supervisor_tools.mbt` + 回归锁 4 格 + 本轮全量测试输出
+- reported_by: lead
+
+## BUG-581 [2026-11-07T03:13:00Z] [low] FIXED
 - summary: issue_scan 工具描述自述「共 31 条」内建规则，实际 33 条（src/server/issue_scan.mbt:92 起 scan_rules 现数 33 个唯一 id）——自述滞后族（BUG-578 同形）
 - detail: 定位：`src/server/server.mbt:9257` 描述串写「11 条原始 MoonBit 高危规则 + 20 条 ocr-local 融合规则——共 31 条」；`src/server/issue_scan.mbt:92-360` 的 scan_rules() 实数 33 个唯一 rule id（awk 逐 id 去重现数，非估读）。描述串随 tools/list 与 dist 投影发货，每增一条规则都会再漂一位。修复边界：`src/server/server.mbt:9257` 描述串的计数与分解两处（或改为不含写死数的措辞，需过 J9 描述契约门），同批刷 dist（`scripts/refresh_dist.py`）并跑 `check_dist_snapshot` 描述面对表。severity low（纯自述面，扫描行为本身无影响）。
 - task_id: （并入手头修复车道或下一批次）
+- reported_by: lead
+### FIXED(2026-11-07 / BUG-581 描述串计数订正)
+- `src/server/server.mbt:9257` 描述串「11 条原始 + 20 条融合——共 31 条」→「11 条原始 + 22 条融合（补过宽 catch / 未用变量 / 重复除零三个漏列名）——共 33 条」，与 `scan_rules()` 现数 33 个唯一 id 对齐。
+- 同批 `python scripts/refresh_dist.py` 重烤 dist（描述面 175/178 命中恢复，`check_dist_snapshot` rc=0）。
+- 终审：全量 JS 测试 2036/2036（描述串改动随批覆盖）。
+- reported_by: lead
+
+## BUG-582 [2026-11-07T03:52:00Z] [low] OPEN
+- summary: check_selftest_hermetic rc=1（既有红，与本批无关）：155 处发现全在其它脚本（check_exit_code_contract / check_plugin_sync / check_t0r21 / whisperer / e2e_native_heap_probe 等），全量电池 163 格中唯一非本批成因的失败
+- detail: 2026-11-07 收口批全量电池实测（163 格 / 失败 5，其中 4 个为本批可消红：publish_payload=新 wbtest 未提交、dist_snapshot=描述串已改未刷、badge=计数待同步、warning_ledger=新 wbtest 缺 `..` 写法——均已在本批消掉；唯 check_selftest_hermetic 红在 155 处既有脚本的 --selftest 密封性，本批新增脚本贡献 0 处）。处置（车道 B 建议）：把涉事段移出 --selftest 归主面，或改用 temp 合成夹具。待 owner/后续批次处置，本单先立账。
+- task_id: （后续批次）
 - reported_by: lead

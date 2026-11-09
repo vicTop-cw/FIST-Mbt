@@ -634,8 +634,20 @@ pub fn register_supervisor_tools(s1 : @mcp.MCPServer) -> @mcp.MCPServer {
     ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let now = get_str(args, "now", default=now_default())
-      let stale_h = str_to_int(get_str(args, "stale_hours"), 24)
-      let pending_h = str_to_int(get_str(args, "pending_hours"), 48)
+      let stale_raw = get_str(args, "stale_hours")
+      let pending_raw = get_str(args, "pending_hours")
+      let stale_h = str_to_int(stale_raw, 24)
+      let pending_h = str_to_int(pending_raw, 48)
+      // BUG-580 C2：负阈值显式报错，不落 fail-quiet——旧实现把 "-5" 照单全收，
+      // 回执给出「活跃任务超过 -5 小时未更新」这类荒谬 reason（12 分钟前更新的
+      // 活跃任务被报 stale）。
+      if stale_h < 0 || pending_h < 0 {
+        return Err(
+          @mcp_types.ToolError(
+            "supervisor_reminder_tick：stale_hours/pending_hours 不接受负值（收到 stale_hours=\{stale_raw}、pending_hours=\{pending_raw}）——负阈值会让停滞判据落在未来，请传非负小时数",
+          ),
+        )
+      }
       let include_consumed = get_bool(args, "include_consumed")
       let ns = get_str(args, "namespace")
       let ns_err = supervisor_ns_unavailable(ns)
@@ -834,6 +846,8 @@ fn supervisor_guidance_consume(id~ : String) -> SupervisorGuidance? {
 
 ///|
 /// 字符串转整数（非法/空返回默认值）。供 supervisor_reminder_tick 解析阈值。
+/// 注意（BUG-580 C2）：负值会原样返回负数、超上界回退默认值——
+/// 负值由调用方（supervisor_reminder_tick 工具处理器）显式报错，不在此静默吞掉。
 fn str_to_int(s : String, dft : Int32) -> Int32 {
   if s == "" {
     return dft
