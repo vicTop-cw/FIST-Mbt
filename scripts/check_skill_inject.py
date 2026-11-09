@@ -269,21 +269,26 @@ def selftest() -> list[str]:
         fails.append("U3b2 真实现状面缺关键文件：%s → 本轮判据自拒 exit 2"
                      % ", ".join(missing_key_files()))
 
-    # U4 现状真源不红（尺子自证）：当前 server.mbt 的匹配逻辑应是合规的
-    p = ROOT / SERVER_MBT
-    if p.exists():
-        real = inject_logic_problems(p.read_text(encoding="utf-8"))
+    # U4 合规夹具不红（尺子自证）：写干净匹配逻辑进 temp 沙箱再读回，判据必须不误红。
+    #      （R183 车道 I hermetic 改造：原「现读真源 src/server/server.mbt」的断言归主面——
+    #      裸跑 S1 判的就是真 server.mbt，电池执行面常驻，此处零覆盖损失。
+    #      照轮 182 车道 F render_dsh_patch 先例：写干净模板进 temp 沙箱再读回。）
+    #      真源在位性由 U3b2/missing_key_files 负责，不在此重复。
+    import tempfile as _tf
+    with _tf.TemporaryDirectory(prefix="skill-inject-selftest-") as _td:
+        _fx_server = Path(_td) / "server_fixture.mbt"
+        _fx_server.write_text(good_server, encoding="utf-8")
+        real = inject_logic_problems(_fx_server.read_text(encoding="utf-8"))
         if real:
-            fails.append("U4 现状注入匹配逻辑红了（应为绿）：" + real[0])
-    else:
-        fails.append("U4 找不到 src/server/server.mbt → 扫描面选错了")
+            fails.append("U4 合规匹配逻辑夹具红了（应为绿）：" + real[0])
 
-    # U5 现状白盒锁不红
-    mp = ROOT / MEMORY_TEST
-    if mp.exists():
-        real = inject_test_problems(mp.read_text(encoding="utf-8"))
+        # U5 合规白盒锁夹具不红（现状锁的断言同样归主面 S2，见上）
+        _fx_test = Path(_td) / "memory_test_fixture.mbt"
+        _fx_test.write_text('test "%s", "inject code-review hits the asset" {\n}\n' % TEST_NAME,
+                            encoding="utf-8")
+        real = inject_test_problems(_fx_test.read_text(encoding="utf-8"))
         if real:
-            fails.append("U5 现状白盒锁红了（应为绿）：" + real[0])
+            fails.append("U5 合规白盒锁夹具红了（应为绿）：" + real[0])
 
     return fails
 
@@ -302,7 +307,8 @@ def main(argv: list[str]) -> int:
                 print("  - " + f)
             return 1
         print("SELFTEST OK 注入路径判据可红可绿（合规 [asset] 条目不误红 / 匹配逻辑缺失或"
-              "退化必红 / 档案面空与输入面退化必自拒 exit 2 / 现状真源与白盒锁不误红）")
+              "退化必红 / 档案面空与输入面退化必自拒 exit 2 / 合规 temp 夹具真源与白盒锁不误红"
+              "——现状真源/锁的断言归主面 S1/S2）")
         return 0
 
     # 输入面退化 → 自拒

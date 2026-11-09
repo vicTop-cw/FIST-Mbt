@@ -407,7 +407,16 @@ def selftest() -> int:
         fails.append("本仓真源 plugins/source/SKILL.md 被算进了生成集合")
 
     tools = real_tools()
-    version = (RE_VERSION.search(MOON_MOD.read_text(encoding="utf-8")) or [None, "0"])[1]
+    # R183 车道 I（hermetic 改造）：此处的 version 只是合成世界的**输入数据**（写进合成 manifest、
+    # 作 J4 变异的对照值），不是断言对象——真 moon.mod 的现读在主面（裸跑 L183，电池门禁格常驻，
+    # J4「真 manifest == 真 moon.mod」的契约由主面守住）。照轮 182 车道 F 先例：
+    # 写干净 moon.mod 进 temp 沙箱再读回，RE_VERSION 的真解析路径不丢。
+    import tempfile as _tfv
+    with _tfv.TemporaryDirectory(prefix="cl7-selftest-ver-") as _vd:
+        _vm = Path(_vd) / "moon.mod"
+        _vm.write_text('module {\n  source = "test"\n}\nversion = "0.0.0-selftest"\n',
+                       encoding="utf-8")
+        version = (RE_VERSION.search(_vm.read_text(encoding="utf-8")) or [None, "0"])[1]
 
     # ① J1 变异对照（判例-29/30/50）：注入**必然非零**的假命令 ⇒ 主判据必须报 J1 漂移
     rc_bad = subprocess.CompletedProcess(

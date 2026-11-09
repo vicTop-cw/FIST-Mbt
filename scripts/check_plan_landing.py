@@ -302,19 +302,11 @@ _GITIGNORE_FILE = ".gitignore"
 PROPOSAL_DOC_PREFIX = "docs/proposals/"
 
 
-def _gitignore_excludes_daily_logs(root=None):
-    """P8 的**真源现读**：`.gitignore` 里是否确有 `memory/20XX-*.md` 这类日日志排除规则。
-
-    不写死 True：规则被移除 ⇒ 排除自动失效（自愈，不是一次性豁免）。
-    读不到 .gitignore ⇒ 返回 False（**保守**：宁可多报，不可错放）。
+def daily_logs_ignored_from_text(text):
+    """P8 判据本体（**纯函数**，R183 车道 I hermetic 拆分）：给定 .gitignore 正文，
+    判其中是否确有日日志排除规则。不写死 True：规则被移除 ⇒ 排除自动失效（自愈）。
     只认日日志形态的规则；`memory/` 整目录挡**不算**（本仓刻意逐文件点名，见 .gitignore 注释）。
-    """
-    root = root or ROOT
-    try:
-        with open(os.path.join(root, _GITIGNORE_FILE), encoding="utf-8", errors="replace") as fh:
-            text = fh.read()
-    except OSError:
-        return False
+    供 `--selftest` 用合成正文真调（判例-29 实现路径格）。"""
     for raw in text.splitlines():
         s = raw.strip()
         if not s or s.startswith("#"):
@@ -322,6 +314,25 @@ def _gitignore_excludes_daily_logs(root=None):
         if re.match(r"^/?memory/(?:20\d{2}|\*|20\?\?)[-*].*\.md$", s):
             return True
     return False
+
+
+def _read_gitignore_text(path):
+    """I/O 外壳：读一份 .gitignore 正文；读不到 ⇒ 空文本（**保守**：判不出规则返回 False，
+    宁可多报，不可错放）。"""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _gitignore_excludes_daily_logs(root=None):
+    """P8 的**真源现读**：本仓 `.gitignore` 里是否确有 `memory/20XX-*.md` 这类日日志排除规则。
+    读法 = 外壳取文 + 纯函数判定；自检不再走这条路（现读归主面：design_exempt_reason 默认值
+    在裸跑诊断格现读，见 selftest 9d 注释），⇒ 规则漂移由主面与棘轮说话。"""
+    root = root or ROOT
+    return daily_logs_ignored_from_text(
+        _read_gitignore_text(os.path.join(root, _GITIGNORE_FILE)))
 
 
 def design_exempt_reason(p, doc, daily_logs_ignored=None,
@@ -537,31 +548,33 @@ def selftest():
     cell("extract-dir-form", got3 == ["src/claimguard"], True)
     print("  ok  extract-dir-form（目录形态去斜杠）")
 
+    # R183 车道 I（hermetic）：以下 selftest 各格的 judge 调用一律显式注入 daily_logs_ignored=False
+    # （P8 排除对下列合成路径本就无涉），把「现读真 .gitignore」留在主面裸跑诊断格。
     # 4) 干净输入：路径都在跟踪面 ⇒ 0 诊断
-    f, n = judge({"d.md": ["src/a.mbt"]}, {"src/a.mbt"}, set())
+    f, n = judge({"d.md": ["src/a.mbt"]}, {"src/a.mbt"}, set(), daily_logs_ignored=False)
     cell("clean-no-findings", len(f) == 0 and n == 1, True)
     print("  ok  clean-no-findings（%d 条路径，0 诊断）" % n)
 
     # 5) 合成违例一：在磁盘、不在跟踪面 ⇒ on-disk（工作树有、未提交）
-    f, n = judge({"d.md": ["src/x.mbt"]}, set(), {"src/x.mbt"})
+    f, n = judge({"d.md": ["src/x.mbt"]}, set(), {"src/x.mbt"}, daily_logs_ignored=False)
     cell("on-disk-detected", len(f) == 1 and f[0][2] == "on-disk", True)
     print("  ok  on-disk-detected（磁盘有、跟踪面无 ⇒ 报'出路是 git add'）")
 
     # 6) 合成违例二：都不在 ⇒ missing
-    f, n = judge({"d.md": ["src/y.mbt"]}, set(), set())
+    f, n = judge({"d.md": ["src/y.mbt"]}, set(), set(), daily_logs_ignored=False)
     cell("missing-detected", len(f) == 1 and f[0][2] == "missing", True)
     print("  ok  missing-detected（都没有 ⇒ 报 missing）")
 
     # 6a) **P4 分面**：同一条 missing，写在存档面文档里 ⇒ 面=「存档面」（只报不判），
     #     写在活文档里 ⇒ 面=「活文档」（计入退出码）。56 条实测读数里 17 条属前者。
     f, n = judge({"docs/archive/2026-10-11-plan.md": ["src/never.mbt"],
-                  "docs/plan-live.md": ["src/never2.mbt"]}, set(), set())
+                  "docs/plan-live.md": ["src/never2.mbt"]}, set(), set(), daily_logs_ignored=False)
     live = [x for x in f if x[4] == "活文档"]
     arch = [x for x in f if x[4] == "存档面"]
     cell("face-split", len(live) == 1 and len(arch) == 1, True)
     print("  ok  face-split（同形状按文档所在面分档：活文档 %d 条 / 存档面 %d 条）" % (len(live), len(arch)))
     # 反证：只有存档面有未落地时，判定档为空 ⇒ 不判红（但条目仍在，不静默消失）
-    f2, _ = judge({"docs/archive/2026-10-11-plan.md": ["src/never.mbt"]}, set(), set())
+    f2, _ = judge({"docs/archive/2026-10-11-plan.md": ["src/never.mbt"]}, set(), set(), daily_logs_ignored=False)
     cell("archive-only-not-verdict", len(f2) == 1 and not [x for x in f2 if x[4] == "活文档"], True)
     print("  ok  archive-only-not-verdict（存档面独红 ⇒ 判定档空，条目照报）")
     cell("archive-prefix-not-overbroad",
@@ -574,47 +587,47 @@ def selftest():
     td = build_tracked_dirs({"src/diff/diff.mbt", "cmd/cli/main.mbt"})
     cell("tracked-dirs-derived", {"src", "src/diff", "cmd", "cmd/cli"} <= td, True)
     print("  ok  tracked-dirs-derived（从跟踪文件反解隐含目录：%d 个）" % len(td))
-    f, n = judge({"d.md": ["src/diff"]}, {"src/diff/diff.mbt"}, set(), td)
+    f, n = judge({"d.md": ["src/diff"]}, {"src/diff/diff.mbt"}, set(), td, daily_logs_ignored=False)
     cell("tracked-dir-not-reported", len(f) == 0, True)
     print("  ok  tracked-dir-not-reported（已跟踪目录不误报）")
     # 目录在磁盘、未跟踪 ⇒ 仍报 on-disk。注意 disk_set 里要放**目录条目本身**
     # （主流程的 os.walk 会把目录也收进 disk_set，故这里模拟真实形态）。
-    f, n = judge({"d.md": ["src/claimguard"]}, set(), {"src/claimguard"}, set())
+    f, n = judge({"d.md": ["src/claimguard"]}, set(), {"src/claimguard"}, set(), daily_logs_ignored=False)
     cell("untracked-dir-on-disk", len(f) == 1 and f[0][2] == "on-disk", True)
     print("  ok  untracked-dir-on-disk（目录在磁盘未跟踪 ⇒ 报 on-disk）")
 
     # 7) 防空转：零路径 ⇒ 由 main 自拒；这里只考 judge 的 n 计数不漏
-    f, n = judge({"d.md": []}, set(), set())
+    f, n = judge({"d.md": []}, set(), set(), daily_logs_ignored=False)
     cell("empty-doc-counts-zero", n == 0, True)
     print("  ok  empty-doc-counts-zero（空文档 n=0，供 main 判空转）")
 
     # 8) P5 搬家态：同名 + 父目录前缀 ⇒ moved，且**不静默消失**（第 6 位给实际位置）
-    f, n = judge({"a.md": ["docs/x.md"]}, {"docs/archive/x.md"}, set())
+    f, n = judge({"a.md": ["docs/x.md"]}, {"docs/archive/x.md"}, set(), daily_logs_ignored=False)
     cell("moved-detected", len(f) == 1 and f[0][2] == "moved" and f[0][5] == ["docs/archive/x.md"], True)
     print("  ok  moved-detected（docs/x.md 点名、真身在 docs/archive/x.md ⇒ 报搬家并给实际位置）")
     # 反证①：父目录不构成前缀 ⇒ 不许认搬家（这是"宽口径豁免"的第一步，BUG-365 的免检牌形状）
-    f2, _ = judge({"a.md": ["docs/super/x.md"]}, {"reports/x.md"}, set())
+    f2, _ = judge({"a.md": ["docs/super/x.md"]}, {"reports/x.md"}, set(), daily_logs_ignored=False)
     cell("moved-rejects-nonprefix-parent", len(f2) == 1 and f2[0][2] == "missing", True)
     print("  ok  moved-rejects-nonprefix-parent（同名但父目录不相干 ⇒ 仍 missing）")
     # 反证②：搬进更深层子目录仍算搬家（前缀含 "/"，防 `docs` 匹配 `docsxyz` 那种串面误判）
-    f3, _ = judge({"a.md": ["docs/x.md"]}, {"docs/archive/old/x.md"}, set())
+    f3, _ = judge({"a.md": ["docs/x.md"]}, {"docs/archive/old/x.md"}, set(), daily_logs_ignored=False)
     cell("moved-deeper-subdir", len(f3) == 1 and f3[0][2] == "moved", True)
     print("  ok  moved-deeper-subdir（搬进 docs/archive/old/ 仍认搬家）")
     # 反证③：点名在顶层（无父目录）⇒ 不认搬家（引用没写目录是文档口径问题，工具不替人猜）
-    f4, _ = judge({"a.md": ["x.md"]}, {"docs/x.md"}, set())
+    f4, _ = judge({"a.md": ["x.md"]}, {"docs/x.md"}, set(), daily_logs_ignored=False)
     cell("moved-rejects-top-level-ref", len(f4) == 1 and f4[0][2] == "missing", True)
     print("  ok  moved-rejects-top-level-ref（顶层点名 x.md 不认搬家）")
     # 反证④：搬家不许吃掉 on-disk（点名处自己就在磁盘上 ⇒ 出路仍是 git add）
-    f5, _ = judge({"a.md": ["docs/x.md"]}, {"docs/archive/x.md"}, {"docs/x.md"})
+    f5, _ = judge({"a.md": ["docs/x.md"]}, {"docs/archive/x.md"}, {"docs/x.md"}, daily_logs_ignored=False)
     cell("moved-does-not-eat-on-disk", len(f5) == 1 and f5[0][2] == "on-disk", True)
     print("  ok  moved-does-not-eat-on-disk（磁盘上有点名处本体 ⇒ 优先报 on-disk）")
     # 反证⑤：候选只来自跟踪面；磁盘上未跟踪的同名件不算搬家证据
-    f6, _ = judge({"a.md": ["docs/x.md"]}, set(), {"docs/archive/x.md"})
+    f6, _ = judge({"a.md": ["docs/x.md"]}, set(), {"docs/archive/x.md"}, daily_logs_ignored=False)
     cell("moved-rejects-untracked-candidate", len(f6) == 1 and f6[0][2] == "missing", True)
     print("  ok  moved-rejects-untracked-candidate（未跟踪同名件不给搬家态）")
     # 目录形态也能搬家（宇宙里放跟踪面隐含目录）
     td2 = build_tracked_dirs({"docs/archive/plans/p.md"})
-    f7, _ = judge({"a.md": ["docs/plans"]}, {"docs/archive/plans/p.md"}, set(), td2)
+    f7, _ = judge({"a.md": ["docs/plans"]}, {"docs/archive/plans/p.md"}, set(), td2, daily_logs_ignored=False)
     cell("moved-dir-form", len(f7) == 1 and f7[0][2] == "moved", True)
     print("  ok  moved-dir-form（目录形态点名 docs/plans → docs/archive/plans 认搬家）")
 
@@ -705,28 +718,38 @@ def selftest():
          len(live2) == 1 and len(ex2) == 2 and live2[0][1] == "src/gone.mbt", True)
     print("  ok  split-p8p9-out-of-verdict（判定面只留真正 missing 的 1 条，P8/P9 那 2 条进豁免态）")
 
-    # 9d) P8 的真源自证：`.gitignore` 现读结果本身也要能考（不写死 True）
-    cell("p8-gitignore-read-from-truth",
-         isinstance(_gitignore_excludes_daily_logs(), bool), True)
-    print("  ok  p8-gitignore-read-from-truth（排除依据是**现读 .gitignore**，不是写死常量）")
+    # 9d) P8 判据本体 + 变异对照（R183 车道 I hermetic）：合成正文真调纯函数，三格锁形状——
+    #     规则在场 ⇒ True / 无规则（变异）⇒ False / `memory/` 整目录挡不算 ⇒ False。
+    #     「现读真 .gitignore」的自愈契约归主面：裸跑诊断格（电池 expected(check_plan_landing.py, 1)）
+    #     经 design_exempt_reason 默认值走 _gitignore_excludes_daily_logs() 现读，规则被删 ⇒ ignored-log
+    #     态掉回 missing ⇒ 判定面漂移当场现形，自检不再重复读现状面。
+    cell("p8-rule-detected-in-fixture",
+         daily_logs_ignored_from_text("# 注释不喂针\ntemp/\nmemory/2026-*.md\n"), True)
+    print("  ok  p8-rule-detected-in-fixture（日日志排除规则在场 ⇒ True，注释/无关行不误判）")
+    cell("p8-mutation-no-rule-falls-back",
+         daily_logs_ignored_from_text("temp/\nbuild/\nmemory-lock.json\n"), False)
+    print("  ok  p8-mutation-no-rule-falls-back（变异：正文无该规则 ⇒ False，证判据真在看而非写死）")
+    cell("p8-whole-dir-block-not-counted",
+         daily_logs_ignored_from_text("memory/\n"), False)
+    print("  ok  p8-whole-dir-block-not-counted（memory/ 整目录挡不算日日志点名规则）")
 
     # 9b) P7 豁免：外部宿主精确名单 / scripts/ `_` 前缀 ⇒ external/scratch，只出数不判红
-    f8, _ = judge({"a.md": ["src/adapter.js"]}, set(), set())
+    f8, _ = judge({"a.md": ["src/adapter.js"]}, set(), set(), daily_logs_ignored=False)
     cell("external-detected", len(f8) == 1 and f8[0][2] == "external", True)
     print("  ok  external-detected（src/adapter.js 属外部宿主 ⇒ external 态）")
-    f9, _ = judge({"a.md": ["scripts/_ai_prompt.md"]}, set(), set())
+    f9, _ = judge({"a.md": ["scripts/_ai_prompt.md"]}, set(), set(), daily_logs_ignored=False)
     cell("scratch-detected", len(f9) == 1 and f9[0][2] == "scratch", True)
     print("  ok  scratch-detected（scripts/_ai_prompt.md 属一次性临时件 ⇒ scratch 态）")
     # 反证①：豁免名单外 src/*.js 仍报 missing（不给整目录/后缀开免检牌）
-    fa, _ = judge({"a.md": ["src/foo.js"]}, set(), set())
+    fa, _ = judge({"a.md": ["src/foo.js"]}, set(), set(), daily_logs_ignored=False)
     cell("exempt-not-overbroad-external", len(fa) == 1 and fa[0][2] == "missing", True)
     print("  ok  exempt-not-overbroad-external（src/foo.js 不在名单 ⇒ 仍 missing）")
     # 反证②：scripts/ 下非 `_` 前缀仍报 missing
-    fb, _ = judge({"a.md": ["scripts/normal.py"]}, set(), set())
+    fb, _ = judge({"a.md": ["scripts/normal.py"]}, set(), set(), daily_logs_ignored=False)
     cell("exempt-not-overbroad-scratch", len(fb) == 1 and fb[0][2] == "missing", True)
     print("  ok  exempt-not-overbroad-scratch（scripts/normal.py 无 `_` 前缀 ⇒ 仍 missing）")
     # 反证③：豁免不抢 on-disk（点名处自己在磁盘 ⇒ 优先报 on-disk，P7 只替换 missing）
-    fc, _ = judge({"a.md": ["src/adapter.js"]}, set(), {"src/adapter.js"})
+    fc, _ = judge({"a.md": ["src/adapter.js"]}, set(), {"src/adapter.js"}, daily_logs_ignored=False)
     cell("exempt-does-not-eat-on-disk", len(fc) == 1 and fc[0][2] == "on-disk", True)
     print("  ok  exempt-does-not-eat-on-disk（豁免件点名处自己在磁盘 ⇒ 仍报 on-disk）")
 
