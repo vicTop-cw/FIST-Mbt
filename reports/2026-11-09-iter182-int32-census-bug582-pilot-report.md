@@ -32,7 +32,7 @@
 ## 二、资源消耗
 
 - **模型/额度**：全部走 Qoder 内置 agent（本会话无外部 token 支出）。车道 E、F 各一前台 `general-purpose`；车道 G 首次以后台派发**起跑即失败**（2 次工具调用、78 秒、盘面零残留），改前台重派一次成功。
-- **fist-mbt 工具面（MCP 连接器）**：`store_open`、`agent_acl_grant`×2（lead-1109 / human_steward @iter-1109）、`publish`、`claim`、`execute`、`submit`、`verify`、`archive`、`mcp_get`（publish schema 现读）。
+- **fist-mbt 工具面（MCP 连接器）**：`store_open`、`agent_acl_grant`×2（lead-1109 / human_steward @iter-1109）、`publish`、`claim`、`execute`、`submit`、`verify`、`archive`、`mcp_get`（publish/submit/omega 三张 schema 现读）、`call_log`×4（`-32603` 仲裁）、**Omega 强验证链三段全走通**：`omega_spec_create`（语料 `spec:T0:r1`，七条可复跑判据）→ `omega_spec_review(approve)` → `omega_result_verify(pass)`。本会话第一次把 `[omega:required]` 根单的完整语料链跑到放行，拒因与可达性记入当日日志。
 - **内置工具面**：Read/Grep/Glob、Write/Edit（账本与判例）、Bash（`moon_test_env.py`、`check_badge --fresh`、`check_selftest_hermetic`、`check_bug_ledger_shape`、`check_precedents_doc`、`check_test_sync`、`gen_plugins`、`git diff/status`）。
 - **墙钟**：轮 182 全程约 82 分钟（含两次全量 JS 复跑与一次徽章尺真跑）。
 
@@ -55,8 +55,9 @@
 6. **owner 既有裁决项不代翻**：BUG-527（native 上游 issue 出路②）、BUG-542、BUG-565 A 半三案 + 计数面裁决 + 双层守卫并存与否、BUG-566（宿主审批门误判族）。
 7. **非本批留账**：`scripts/explore_watchdog_wrapper.ps1` / `_prompt.md` / `_hidden.vbs` 三件仍未跟踪未 ignore（`check_publish_payload` 红面），属唤醒轮基础设施，由该车道/owner 处置，本批未动。
 8. **BUG-587（本轮新立，medium OPEN）**：插件连接器的任务台账库实际落在**构建产物目录**内（`_build/js/release/build/cmd/cli/.fist-mbt/data/<ns>.db`，`find` 现读 + `iter-1107.db` 同址）⇒ 与 BUG-565 同根的第二面（`data_dir` 也随 server cwd），且落在会被构建重写的树下。本轮 `refresh_dist.py` 与徽章尺 `--fresh` 都动过这棵树，靠 `moon build` 的 up-to-date 缓存侥幸未清档——**不得据此判无风险**。三档修法候选与「`data_dir` 不得位于 `_build/` 之下」判据建议已入账。
-9. **写型 RPC 在重负载期折叠的仲裁实录**：`execute` 在徽章尺真跑期间回 `-32603`，直读 sqlite 见 T0 仍 `已领取`、`length(deliverable)=0` ⇒ 确实没落，等尺跑完再重发（不是盲重发，也不是"回执折了就算成功"）。
-8. **车道基础设施留档**：后台 `Agent` 派单起跑即失败（无任何工具产出、`git status` 零残留）时，先核盘面再前台重派，不当作任务本身不可完成。
+9. **写型 RPC 折叠的真拒因（`call_log` 仲裁实录，勘误前一版的「负载说」）**：三次 `execute` 与一次 `omega_spec_create` 在客户端回 `-32603`，`call_log` 尾行给的是**干净业务拒因**——`execute` 三次是「Omega 强验证门禁：任务 [T0] 尚未创建语料，请先由语料创建者执行 omega_spec_create」，`omega_spec_create` 那次是「未知角色: 'lead-1109'」。根因是**我在根单描述里写了 `[omega:required]`**（该旗标只能 publish 期写、无工具可改描述 ⇒ 写上就必须走语料链），加上 `author` 只吃**闭集角色**（默认 `spec_author`，自报身份直接拒）。出路实录：`omega_spec_create(namespace=iter-1109, task_id=T0)`（省略 author）⇒ `spec:T0:r1` pending ⇒ `omega_spec_review(verdict=approve)` ⇒ `next_action=execute` ⇒ execute 当场落库（`status=执行中`、deliverable 已存）。**教训**：第一次误判成「sqlite 锁竞争/负载」，正是没先读 `call_log` 的代价——`-32603` 之后先仲裁再决定重发。
+10. **台账文本里的一处自造错字（如实留档，不是产品缺陷）**：入库的 deliverable 里「源码锚点」被我写成「源码锈点」（U+9508 误当 U+951A，是我自己的码点错误；同一条串里「徽章尺」逐字正确可反证通道无损）。仓内无工具可改已存 deliverable ⇒ 留在台账，报告与账本不受影响。
+11. **车道基础设施留档**：后台 `Agent` 派单起跑即失败（无任何工具产出、`git status` 零残留）时，先核盘面再前台重派，不当作任务本身不可完成。
 
 ## 五、后续建议
 
@@ -77,3 +78,22 @@
 - 取证件：`temp/pt_round182.log`（全量 2053/2053/0 + RC=0）、`temp/badge182.out`（徽章尺真跑）、`temp/findings_before.txt`（密封性 155 处逐脚本表）、`temp/mutation_control.py`（车道 F 变异对照）、`temp/sync_test_count_182.py`（计数面换尺）。
 - 台账面：`memory/bugs.md` BUG-580（同族原型）/ BUG-582（试点追记）/ BUG-583、584、585、586（本轮新立，584~586 同日销账）；`docs/AGENTS-precedents.md` 判例-46；`memory/2026-11-09.md` 轮 182 段。
 - 当前状态自述用配方不用快照：提交面现读 `git log --oneline -3`，全量读数现读 `python scripts/check_badge.py --fresh-if-stale temp/pt_badge182.log README.md`。
+
+## 八、闭环读数（T0 / ns `iter-1109`，服务端盖章时刻）
+
+| 环节 | 时刻(Z) | 读数 |
+|---|---|---|
+| publish → claim | 11:58:40 / 11:58:43 | `claim_ready=true`、`writable_agents=2` |
+| Omega 语料链 | 13:29:23 / 13:29:36 | `spec:T0:r1` pending → `approved`（七条可复跑判据；author 用缺省 `spec_author`，传 `lead-1109` 被「未知角色」拒） |
+| execute | 13:29:53 | `status=执行中`、deliverable 落库（前三次 `-32603` 实为「尚未创建语料」门，见 §四 9） |
+| submit | 13:30:47 | `status=待验收`（必带 `agent=lead-1109`，缺省身份 `manual` 被 sqlite 面 ACL fail-closed 拒） |
+| Omega 成果复验 | 13:33:03 | `result:T0:r1` `status=approved`，`next_action=verify` |
+| run_check（外部判据门） | 13:32:45 | `check:T0:r1` **status=passed**：服务端真 spawn `node cli.js version` 回 `FIST-Mbt v0.3.11` |
+| verify → archive | 13:33:16 / 13:33:20 | `已完成`（`completed_by=lead-1109`）→ `已归档` |
+
+统帅亲跑的包级读数（补齐语料判据 2 的独立测量，非取自车道自述）：
+`src/router` = `Total tests: 237, passed: 237, failed: 0`；`src/server` = `Total tests: 591, passed: 591, failed: 0`
+（原件 `temp/pkg_router_182.log` / `temp/pkg_server_182.log`）。
+
+**未开的门如实记**：`verify` 的可选 `docs_check` 本轮**没有打开**（默认 false）。本轮交付物的文档面由 `check_doc_surface`（J1–J19）与 `check_test_sync`/`check_badge`/`check_precedents_doc` 四把尺在仓内验，未走任务面文档门禁；
+若后续要把「文档即实现」钉进验收，应在 publish 期就写明开 `docs_check` 并按五段式回传，否则归档后不可 reopen（只能转结流程债）。
