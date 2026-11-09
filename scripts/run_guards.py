@@ -323,6 +323,15 @@ SPECIAL_CASES = [
     # 判据只报「**完整三段式被拼接**」（`##` 前一个字符非空白且非行号冒号）。
     case("check_bug_ledger_shape.py"),
     case("check_bug_ledger_shape.py", "--selftest"),
+    # —— BUG-565 后续动作：账本**外来条目**检测守卫 ——
+    # 别的项目（vq 等）的 bug 误落本仓 memory/bugs.md；本尺只做检测与棘轮：
+    # 既有外来条目登记为白名单基线（39 条：Pentad/p5c 13 + vools 10 + vq 勘误批 15 + 跨仓 1），
+    # 新增外来条目（基线外 id 命中外来路径/署名标签信号）才红。处置（搬走/改判）是 owner 裁决项。
+    # 信号取数面 = 条目自己的 summary/detail 行（evidence 里的路径引用是证据不是缺陷位置）；
+    # 项目署名只认 summary 行首 [Pentad/ / [p5c / [vools] 标签（BUG-406 的
+    # 「外部项目 Pentad 统帅实测报告」是报告人署名，裸子串会误伤）。 ——
+    case("check_foreign_ledger_entries.py"),
+    case("check_foreign_ledger_entries.py", "--selftest"),
     # —— `docs/warning-ledger.md` 的**可核性**判据（Lane DU）——
     # 台账是「我说这些 warning 不用改」的清单。**一份没人能核的清单，和没有清单是一样的** ——
     # 下一个人不知道它是「真核过」还是「作者自己的声明」。
