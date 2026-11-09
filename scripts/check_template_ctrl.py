@@ -64,13 +64,22 @@ CTRL_INFO = {
 }
 
 
-def md_files():
+def md_files_in(dir_path):
+    """枚举 dir_path 下全部 .md（递归、排序）。**纯 I/O 外壳按显式目录参数**，
+    供 `--selftest` 用 temp 合成夹具真调（R183 车道 I hermetic 改造，判例-29 实现路径格：
+    自检考的必须是这份枚举实现本身，而不是真仓现状）。"""
     out = []
-    for dp, dn, fn in os.walk(TPL_DIR):
+    for dp, dn, fn in os.walk(dir_path):
         for f in sorted(fn):
             if f.endswith(".md"):
                 out.append(os.path.join(dp, f))
     return sorted(out)
+
+
+def md_files():
+    """现状面外壳：扫本仓 templates/。真枚举非空的契约由 main() 自拒守着
+    （一份 .md 都没枚举到 ⇒ FATAL rc=2），电池裸跑本格 ⇒ 现状覆盖在主面。"""
+    return md_files_in(TPL_DIR)
 
 
 def scan(path):
@@ -157,9 +166,18 @@ def selftest():
         cell("bare-cr-caught", len(p) >= 2 and all(x[2] == 0x0d for x in p), True)
         print("  ok  bare-cr-caught（裸 CR 仍被抓：%d 个违例）" % len(p))
 
-        # 空扫描面自拒（由 main 判，这里考枚举函数）
-        cell("md-enum-nonempty", len(md_files()) > 0, True)
-        print("  ok  md-enum-nonempty（templates/ 枚举到 %d 份 .md）" % len(md_files()))
+        # 枚举逻辑自证（R183 车道 I hermetic）：temp 合成树真调 md_files_in ——
+        # 递归收 .md、滤非 .md、整体排序。「真 templates/ 枚举非空」的契约归主面：
+        # main() 对空枚举自拒 rc=2（上面 fatal-exit-code 格刚考过这条路），电池裸跑常驻。
+        tpl_fx = os.path.join(d, "tpl_fx")
+        os.makedirs(os.path.join(tpl_fx, "sub"))
+        for rel_fx in ("b.md", "a.md", "notes.txt", os.path.join("sub", "c.md")):
+            with open(os.path.join(tpl_fx, rel_fx), "wb") as fh_fx:
+                fh_fx.write(b"x\n")
+        got_fx = [os.path.relpath(x, tpl_fx).replace("\\", "/") for x in md_files_in(tpl_fx)]
+        cell("md-enum-recursive-md-only", got_fx == ["a.md", "b.md", "sub/c.md"], True)
+        print("  ok  md-enum-recursive-md-only（合成树枚举到 %d 份：子目录递归、.txt 被滤、整体排序）"
+              % len(got_fx))
 
         # 出口码自证（BUG-369 建议①：改行为必须同时补一支「FATAL 的码真是 2」格）。
         # 子进程里把 TPL_DIR 指向空目录、跑真 main()，考的是**进程退出码**，不是函数返回值。
@@ -194,7 +212,7 @@ def selftest():
             print("  - %s：%s" % (n, w))
         return 1
     print("SELFTEST OK（%d 格：干净不误红 / CR 必红 / ESC+VT 必红 / TAB 放行 / CRLF 容忍 / 裸CR 必红 / "
-          "枚举非空 / **判据空转的退出码真是 2**）" % len(cells))
+          "合成树枚举递归+过滤 / **判据空转的退出码真是 2**）" % len(cells))
     return 0
 
 
