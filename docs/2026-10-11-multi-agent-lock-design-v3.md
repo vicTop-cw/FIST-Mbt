@@ -166,7 +166,8 @@ CREATE TABLE IF NOT EXISTS assistant_reg (
 | `lock_release` | project_dir, lock_id?, batch_id?, agent | `{released: n}` | 限持有者；缺参报全量（防误删） |
 | `lock_status` | project_dir, path?, agent? | `{locks:[...]}` | 纯读 |
 
-**TTL 可配置实现**：`lock_acquire` 的 `ttl_sec` 缺省读 store 级配置（`memory/lock-config.json` 或环境变量 `FIST_LOCK_TTL_SEC`），默认 600。心跳阈值 = ttl/3（由助理 sweep 端算，不存库）。
+**TTL 可配置实现（设计稿原设想，未采纳）**：设计稿设想 `lock_acquire` 的 `ttl_sec` 缺省读 store 级配置（配置文件暂名 lock-config.json，放 `memory/` 下）或环境变量 FIST_LOCK_TTL_SEC，默认 600。心跳阈值 = ttl/3（由助理 sweep 端算，不存库）。
+> **2026-11-09 落地对表**：现读 `src/server/server.mbt` 的 `lock_acquire` schema —— TTL 走 **`ttl_until`（ISO 字符串）必填参数**，由调用方直接给值；`grep -r "FIST_LOCK_TTL_SEC" src/` 与 `lock-config.json` 的读取点**均为空**，配置文件这一形态从未采纳。裁决记录见 `reports/2026-10-26-plan-landing-b-class-verdict.md`（B1/B9：判 (iii) 计划本身作废，并纠正了「`memory/` 被 .gitignore」那条错理由）。
 
 **`idle_suggestion`**：blocked 时由 `task_triage` 纯读算一件"可做其它事"——待领取任务中挑一件其声明文件作用域与 blocked 文件**不相交**的（复用 `team_task.write_scopes`；若任务无声明则按 description 关键词粗匹配）。把"等待先做其它事"落成调用方循环。
 
@@ -209,7 +210,8 @@ CREATE TABLE IF NOT EXISTS assistant_reg (
   e. native 构建返回明确拒绝（同 executor_run）
 ```
 
-**argv 构造文件**：`src/executor/kill_argv.mbt`（纯计算零 IO，仿 `cli_argv.mbt` 的 `prompt_ok`/`external_executors` 模式）。
+**argv 构造文件（设计稿原设想，未采纳）**：设计稿给它起的名字是 src/executor/kill_argv.mbt（纯计算零 IO，仿 `cli_argv.mbt` 的 `prompt_ok`/`external_executors` 模式）；配套的 spawn 文件原名 src/server/kill_exec.mbt。
+> **2026-11-09 落地对表**：**两个文件都不存在、也不该存在**——kill 的执行力被后续设计决定改成「只出方案、真杀由指挥官人工执行」：现读 `src/engine/engine_supervisor.mbt` 的 `supervisor_kill_plan`（六门链纯计算方案）与 `supervisor_kill_apply_pause`（唯一可逆动作 pause），注册面在 `src/server/supervisor_tools.mbt` 的 `supervisor_kill_plan` 工具；`src/executor/` 下只有 `cli_argv.mbt` / `registry.mbt` / `mcp_delegate.mbt` 等，无 kill_argv 那份。裁决见 `reports/2026-10-26-plan-landing-b-class-verdict.md` B3/B5（判 (iii) 作废：不可逆操作不自动化）。
 
 ---
 
@@ -310,14 +312,14 @@ B 成为新主助理，可执行 sheriff 职责
 ## 7. 分期落地（每期独立可验、可回滚）
 
 ### 阶段 1 · 锁核心（约 400 行）
-- 文件：`src/store/store_locks.mbt`（双后端 `locks_*`）+ `src/engine/engine_lock.mbt`（引擎层）+ `src/server/locks_ops.mbt`（server 工具）
+- 文件（设计稿起的三个新文件名：src/store/store_locks.mbt + src/engine/engine_lock.mbt + src/server/locks_ops.mbt）⇒ **2026-11-09 落地对表：三个文件都没建，能力以「并入既有分层」的形态落地**——双后端 `locks_*` 在 `src/store/store.mbt`（`StoreBackend::locks_try_acquire` 分派）+ `src/store/store_rsv.mbt`（`MemoryStore::locks_*`）+ `src/store/store_sqlite.mbt`（`SqliteStore::locks_*`）；引擎层转发在 `src/engine/engine_rsv.mbt`（`FistEngine::locks_upsert` / `locks_try_acquire`）；server 四工具 `lock_acquire`/`lock_renew`/`lock_release`/`lock_status` 直接注册在 `src/server/server.mbt`。裁决见 `reports/2026-10-26-plan-landing-b-class-verdict.md` B2/B6/B7（判 (ii) 已以别的形态实现）
 - 工具：`lock_acquire`/`lock_renew`/`lock_release`/`lock_status`
 - 表：`file_locks`
 - 测试：lk1~lk6
 - 验收：双后端测试全绿；`lock_acquire` 多文件 all-or-nothing 实测
 
 ### 阶段 2 · 助理选举 + 清扫（约 500 行）
-- 文件：`src/store/store_assistant.mbt` + `src/engine/engine_assistant.mbt` + `src/server/assistant_ops.mbt`
+- 文件：`src/store/store_assistant.mbt` + `src/engine/engine_assistant.mbt` +（设计稿起的第三个新文件名 src/server/assistant_ops.mbt **未建**）⇒ **2026-11-09 落地对表**：助理工具直接注册在 `src/server/server.mbt`（现读 `assistant_claim` / `assistant_sweep` 等条目），未拆 assistant_ops 那份；store/engine 两件确按设计稿落地
 - 工具：`assistant_claim`/`assistant_deputy_claim`/`assistant_status`/`assistant_sweep`/`assistant_resign`/`assistant_heartbeat`
 - 表：`assistant_reg`、`lock_violations`
 - 复用：`heal_stale_tasks_from_store` 的判活逻辑、`phi_accrual`
@@ -325,7 +327,7 @@ B 成为新主助理，可执行 sheriff 职责
 - 验收：助理 sweep 能释放过期锁；助理死亡后新助理能 take_over；副助理 mode 互斥
 
 ### 阶段 3 · 警察权 kill（约 200 行）
-- 文件：`src/executor/kill_argv.mbt`（纯计算 argv）+ `src/server/kill_exec.mbt`（spawn）
+- 文件（设计稿起的两个新文件名：src/executor/kill_argv.mbt 纯计算 argv + src/server/kill_exec.mbt spawn）⇒ **2026-11-09 落地对表：两个都没建，且不建**——kill 定成「只出方案」，见 §3.3 下方那行对表与 `reports/2026-10-26-plan-landing-b-class-verdict.md` B3/B5
 - 工具：`assistant_kill`
 - 复用：`executor_run` 的固定 argv 模式、`run_check_guard` 的 spawn 封装
 - 测试：lk9、lk10、lk11、lk12、lk13
@@ -338,7 +340,7 @@ B 成为新主助理，可执行 sheriff 职责
 
 ### 阶段 5 · 生态接线（约 200 行）
 - `watchdog_tick` 加 `sweep_locks=true` 分支（无人值守自动清扫，仿 `flush_bug_queue` 先例）
-- `templates/lock_wait_loop.md`：client 侧等待循环模板
+- client 侧等待循环模板（设计稿暂名 lock_wait_loop，拟放 `templates/`）⇒ **2026-11-09 对表：未采纳，该模板文件不存在**。等待语义现由 `lock_acquire` 回执里的 `ttl_until` 承载、调用方自行退避；另有一条 client 侧「等待/换单」的实际形态落在 `docs/loop-mode-skill.md` 描述的自驱环上。裁决见 `reports/2026-10-26-plan-landing-b-class-verdict.md` B8（判 (iii) 计划本身作废）
 - `task_plan_deep` 可选标注 `write_scopes`（供 idle_suggestion 过滤）
 - `executor_register` 加 `role` 参数（worker/sublead/planner）
 
@@ -346,15 +348,22 @@ B 成为新主助理，可执行 sheriff 职责
 
 ## 8. 文件落点（避开并发 WIP 密集区）
 
-| 新文件 | 职责 | 避免冲突点 |
+> ⚠️ **2026-11-09 落地对表**（本表原样保留设计稿的模块划分设想，右侧「实际落点」为现读真路径）：
+> 设计稿给锁/助理/kill 起了 **7 个新文件名**，其中 **5 个从未建立**（store_locks / engine_lock / locks_ops /
+> assistant_ops / kill_argv，另加 §7 阶段 3 点名的 src/server/kill_exec.mbt 同样未建），
+> 能力**并入了既有分层**而不是拆新文件——即「设计级模块划分未执行、能力已实现」那一档。
+> 逐条证据与统帅裁决见 `reports/2026-10-26-plan-landing-b-class-verdict.md`（B2/B4/B6/B7 判 (ii) 已以别的形态实现，
+> B3/B5 判 (iii) 作废：不可逆的 kill 不自动化）。
+
+| 设计稿新文件名（纯文本＝历史设想，非落点承诺） | 职责 | 实际落点（现读） |
 |---|---|---|
-| `src/store/store_locks.mbt` | 双后端 `locks_*` | 新文件，不改 `store.mbt`/`store_sqlite.mbt` 主体 |
-| `src/store/store_assistant.mbt` | 双后端 `assistant_*` | 同上 |
-| `src/engine/engine_lock.mbt` | 引擎层锁编排（仿 `engine_rsv.mbt` 纯转发） | 新文件 |
-| `src/engine/engine_assistant.mbt` | 引擎层助理编排 | 同上 |
-| `src/server/locks_ops.mbt` | server 锁工具 impl（仿 `server.mbt:4334` 范式） | 新文件，不改 `server.mbt` 尾部 |
-| `src/server/assistant_ops.mbt` | server 助理工具 impl | 同上 |
-| `src/executor/kill_argv.mbt` | kill argv 纯计算（仿 `cli_argv.mbt`） | 新文件 |
+| src/store/store_locks.mbt（未建） | 双后端 `locks_*` | `src/store/store.mbt` + `src/store/store_rsv.mbt` + `src/store/store_sqlite.mbt` 的 `locks_*` 三层（并入既有主体，与设计稿「不改主体」相反） |
+| `src/store/store_assistant.mbt` | 双后端 `assistant_*` | ✅ 按设计稿建立 |
+| src/engine/engine_lock.mbt（未建） | 引擎层锁编排（仿 `engine_rsv.mbt` 纯转发） | `src/engine/engine_rsv.mbt`（`FistEngine::locks_upsert` / `locks_try_acquire`） |
+| `src/engine/engine_assistant.mbt` | 引擎层助理编排 | ✅ 按设计稿建立 |
+| src/server/locks_ops.mbt（未建） | server 锁工具 impl（仿 `server.mbt:4334` 范式） | `src/server/server.mbt` 直接注册 `lock_acquire`/`lock_renew`/`lock_release`/`lock_status` |
+| src/server/assistant_ops.mbt（未建） | server 助理工具 impl | `src/server/server.mbt` 直接注册 `assistant_*` 那组工具 |
+| src/executor/kill_argv.mbt（未建） | kill argv 纯计算（仿 `cli_argv.mbt`） | 无此形态：kill 只出方案，见 `src/engine/engine_supervisor.mbt` 的 `supervisor_kill_plan` / `supervisor_kill_apply_pause` |
 
 **修改既有文件**（最小侵入）：
 - [src/store/store_sqlite.mbt:91](src/store/store_sqlite.mbt#L91) `create_schema`：`sqls` 数组追加 3 条 `CREATE TABLE IF NOT EXISTS`（已有 14 条，加在末尾）
@@ -376,7 +385,7 @@ B 成为新主助理，可执行 sheriff 职责
 ## 10. 待你确认（v3 相对 v2 的差异点）
 
 1. **Agent 分级 `role` 字段**：执行者(worker)/拳节(sublead)/拳长(planner)，kill 仅 worker。`executor_register` 加 `role` 参数。✅ 已按你要求设计
-2. **TTL 可配置**：`lock_acquire(ttl_sec=?)` 缺省读 `FIST_LOCK_TTL_SEC` 环境变量或 `memory/lock-config.json`，默认 600。✅ 已按你要求设计
+2. **TTL 可配置**：设计稿那一版写的是「`lock_acquire(ttl_sec=?)` 缺省读 FIST_LOCK_TTL_SEC 环境变量或配置文件 memory/lock-config.json，默认 600」。✅ 当时按你要求设计 ⇒ ⚠️ **2026-11-09 对表改判：该形态未采纳**，现读实现是 `ttl_until` 必填参数（见 §3.1 下方的落地对表与 `reports/2026-10-26-plan-landing-b-class-verdict.md` B1/B9）。
 3. **reason 先行**：`assistant_kill(reason=)` 必填，空 reason 拒绝。✅ 已统一
 4. **副助理机制**：`assistant_deputy_claim(mode=)`，主助理可让渡部分 mode 给副助理并行。✅ 已按你要求设计
 5. **阶段 3 kill 已批准**（仅 worker），可直接落地。

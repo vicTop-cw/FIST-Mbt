@@ -48,7 +48,10 @@
 
 ## 提交卫生事件（已修正）
 
-- 首次 `git commit -m $msg`（无路径约束）误把并发 agent 暂存的 `scripts/fix_esm_require.py` 扫进提交（`87c476d`，8 files）。
+- 首次 `git commit -m $msg`（无路径约束）误把并发 agent 暂存的 scripts/fix_esm_require.py 扫进提交（`87c476d`，8 files）。
+  > 2026-11-09 对表补注：这里点的是**并发 agent 工作树里的临时件**，随那次误提交短暂进过 index，被下面那笔 reset 撤销后
+  > **从未进本仓跟踪面**（现读 `git ls-files -- scripts/fix_esm_require.py` 与磁盘都为空）⇒ 它是**事件叙述**，不是本仓落点承诺；
+  > 同类「给 ESM 产物补 require shim」的现役件是 `scripts/patch_esm_main.py`。
 - 修正：`git reset HEAD~1` 撤销 → 显式 `git add <7 paths>` → `git commit -m $msg -- <7 paths>` → `d010592`（7 files，331+/13-）。
 - 教训：并发工作树下 `git commit` **必须带路径约束**，否则会吞并发侧暂存内容。
 

@@ -79,7 +79,7 @@ moon test --target js
 | **Bug 修复** | `fix/` | `fix/dag-cost-route-tiebreak` | 修 bug（账本有 OPEN 条） |
 | **守卫族** | `guard/` | `guard/check-skill-inject` | 新增 CI 守卫判据 |
 | **重构** | `refactor/` | `refactor/router-multi-pool` | 不改语义、只优化结构 |
-| **文档** | `docs/` | `docs/polish-plan-point-A` | 纯文档改动（README、AGENTS、docs/） |
+| **文档** | `docs/` | polish-plan-point-A（与上一列前缀拼成完整**分支名**；分支名不是仓内路径，故这里不进反引号） | 纯文档改动（README、AGENTS、docs/） |
 | **无** | `misc/` | `misc/typo-in-comments` | 什么都不算的小东西 |
 
 **绝对禁止**：直接在 `main`/`master` 上开发；分支名无前缀；分支名用中文；分支名超过 40 字符。

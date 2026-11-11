@@ -84,7 +84,7 @@ AIGC:
 | 判活 + TTL 兜底 | `heal_stale_tasks_from_store` + `phi_accrual`（BUG-119 修复产物） | light-wt GC、lock sweep 复用 |
 | 固定 argv 执行 | `cli_argv.mbt` + `run_check_guard` | 沙箱 spawn 一律固定 argv |
 | 工具注册范式 | `server.mbt:4334` `instrumented_tool` | 新工具照搬 |
-| 引擎层转发 | `engine_rsv.mbt` 纯转发范式 | `engine_worktree.mbt` 照搬 |
+| 引擎层转发 | `engine_rsv.mbt` 纯转发范式 | 设计稿假想名 engine_worktree.mbt（**2026-11-09 对表：未建，实际落点在 server 层**，见 §P2 的落地对表） |
 | schema 初始化 | `store_sqlite.mbt:91` `create_schema.sqls` 数组 | 新表追加 |
 | 逻辑项互斥 | `src/claimguard/`（decide_claim 复用 rsv_action 同序） | 接入 claim/publish 生命周期 |
 
@@ -155,7 +155,7 @@ AIGC:
 - 新建 `bin/`：`light-wt`、`light-wt-teardown`、`light-wt-status`、`light-wt-drift-check`、
   `light-wt-age-check`、`light-wt-merge-predict`、`diff-scope`、`light-wt-integrate`、`light-wt-collector`；
   （Windows 优先 PowerShell 实现，Linux/macOS 保留 bash 版，双轨同语义）
-- `FIST_BASE` / `LIGHT_WT_ROOT` 等环境变量接入 `memory/lock-config.json` 或启动配置；
+- `FIST_BASE` / `LIGHT_WT_ROOT` 等环境变量接入配置文件 memory/lock-config.json 或启动配置（**2026-11-09 对表：该配置文件未采纳**——现读 src/ 与 scripts/ 都没有 FIST_BASE / LIGHT_WT_ROOT 这两个名字的读取点；light worktree 的沙箱根现由 `scripts/run_light_wt.py` 的 `--repo`（必填）与 `--root` 命令行参数给定）；
 - 验收：
   - [ ] 脚本全套本地可跑（至少 bash 轨 + PowerShell 轨任一）；
   - [ ] `light-wt` 创建出 sparse cone 沙箱，磁盘占用显著低于全量 checkout；
@@ -163,8 +163,18 @@ AIGC:
 
 ### 阶段 P2 · worktree 生命周期管理（约 500 行）
 
-- 新建 `src/engine/engine_worktree.mbt` + `src/store/store_worktree.mbt`（双后端同构，照 `store_rsv` 范式）；
+- 新建 src/engine/engine_worktree.mbt + src/store/store_worktree.mbt（双后端同构，照 `store_rsv` 范式）；
+  > **2026-11-09 落地对表（A 档：能力已落地，但分层设想未执行）**：这两个文件都**没有建立**，store 层也**没有** `worktrees` 表。
+  > worktree 生命周期最终落在 **`src/server/wt_tools.mbt`**（文件头自述「wt_create / wt_status / wt_destroy 三工具」），
+  > 账不落库而落文件：每个沙箱一条 `<project>/.fist-mbt/data/wt-<task>.json`（gitignore 面、跨进程可复现），
+  > 状态由「目录 / git / 时间」三方读数裁决；脚本面同源实现见 `scripts/run_light_wt.py`（七档状态机与 wt_tools 同名同义）。
+  > 计划里的 6 件工具（wt_create/wt_status/wt_rebase/wt_teardown/wt_list/wt_ledger_write）收敛成 3 件
+  > （`wt_create` / `wt_status` / `wt_destroy`）。此前的 2026-10-26 裁决（`reports/2026-10-26-plan-landing-b-class-verdict.md`
+  > B11/B12）当时判「src/ 内零 worktree 代码、按 (iii) 作废」，那是**当时读数**；本条对表说明它已被 server 层实现超越，
+  > 作废的是「engine/store 分层」这个设想，不是「worktree 生命周期管理」这件事本身。
 - 新表 `worktrees`：`wt_id / task_id / branch / path / cone_json / base_commit / status / created_at / heartbeat_at / ttl_until`；
+  > **2026-11-09 对表：未建表**（现读 src/store 无 worktrees 表），同一条账改由 `<project>/.fist-mbt/data/wt-<task>.json` 承载，
+  > 字段面见 `src/server/wt_tools.mbt`；因此 BUG-28 的「每张表要么有写入点」门并不涉及这一格。
 - 新工具（建议 6 件，纯追加）：`wt_create` / `wt_status` / `wt_rebase` / `wt_teardown` / `wt_list` / `wt_ledger_write`；
 - dispatcher 集成：claim 被认领 → 读任务 pkg 声明 → `wt_create` 注入 agent cwd/env；
 - 验收：
@@ -198,7 +208,7 @@ AIGC:
 - 验收：
   - [ ] 越界 diff 被 CI 拒（实证：故意改 cone 外文件 → 红）；
   - [ ] 偏离超阈值被拒（实证：落后 main 超过阈值 → 红）；
-  - [ ] 契约路径改动被拒（实证：worker 改 `src/core/types.mbt` → 红）；
+  - [ ] 契约路径改动被拒（实证示例原写 src/core/types.mbt —— **该文件本仓从来没有**；2026-11-09 对表：类型按领域分文件，契约文件的真名是 `src/core/core_task.mbt` / `src/core/core_role.mbt` / `src/core/core_principle.mbt`，实证请改指这三件）；
   - [ ] 覆盖检测生效（实证：B 基于旧 base 改动 A 已合入的文件 → 要求 rebase 重跑，不静默合并）。
 
 ### 阶段 P5 · 回收 / 监控 / 生态接线（约 300 行）
@@ -206,7 +216,7 @@ AIGC:
 - `light-wt-collector` 接 crontab/计划任务：每 5 分钟扫一遍（merged 回收 / 超龄废弃 / drift 检查）；
 - 磁盘水位告警：>80% 自动收紧并发池（`LIGHT_WT_POOL_SIZE` 动态下调）；
 - `watchdog_tick` 加 `sweep_worktrees=true` 分支（无人值守自动回收，仿 `flush_bug_queue` 先例）；
-- `templates/worktree_wait_loop.md`：client 侧等待/换单模板；
+- client 侧等待/换单模板（设计稿假想名 worktree_wait_loop，拟放 `templates/`）⇒ **2026-11-09 对表：该模板未建**（现读 `templates/` 下只有 pipeline/cron/review 那几份元提示词与 `tool_use_rubric.md`）；等待/换单的能力面落在 `scripts/run_light_wt.py`（create/teardown/status + TTL 回收）与 `src/server/wt_tools.mbt`（同名同义的产品面），调用方拿 `wt_status` 读数自行退避，不再有独立 md 模板；
 - 版本：0.3.x → 0.4.0 minor（能力纯增量，无破坏）；
 - 验收：
   - [ ] collector 能识别 merged/stale/abandoned 并回收；
