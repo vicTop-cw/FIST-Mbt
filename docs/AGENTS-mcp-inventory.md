@@ -33,7 +33,7 @@
 | `list` | 列出任务 |
 | `get` | 查询任务详情 |
 
-### 运维（14）
+### 运维（15）
 | 工具 | 说明 |
 |---|---|
 | `task_plan_deep` | AO 式递归拆解（可选 `gradient=true` 使子任务带难度梯度与"更简单变体 → 先易后逆推"LADDER 自举提示；可选 `calibrate` 按切片给真实难度 0..5 覆盖位置档；可选 `reinject_context=true` 把父计划+剩余兄弟回注进子任务描述，防上下文漂移；可选 `boundary_probe=true` 追加一条『边界审视叶』作为全局输入域 owner，并给每条叶挂『边界四问(空输入/极值/非法输入/资源极限)』，治弱语料下的 Goodhart 下界（atgc-merge 归因报告机理 1/2）；两者默认 false 零回归） |
@@ -50,6 +50,7 @@
 | `circuit_succeed` | 熔断器·上报成功（R104）：外部调用成功后回灌——Closed 复位计数；Half-Open 探测成功 → Closed（恢复） |
 | `circuit_status` | 熔断器·查询状态（R104）：查三态并做 Half-Open 到期判定——Open 且 elapsed≥recovery_secs → 转 Half-Open（放行探测请求，其余仍快速失败） |
 | `tx_contract` | 迁移契约检查（R109，Design by Contract 蒸馏：Meyer precondition/invariant/postcondition 三件套只读预检）——对 (task, action) 任一契约件失败 → verdict=rejected 整笔拒绝、状态 A 回稳（不落库）；全通过 → allowed。纯计算只读不写库（决策建议，执行权在调用方） |
+| `ocr_scan` | OCR LLM review（与 `issue_scan` 的规则扫描双轨互补：扫描给规则命中，OCR 给可读文本复核） |
 
 > 无人值守流水线统一元提示词模板：`templates/cron_pipeline_meta_prompt.md`（**统一版**，取代原 `watchdog_tick_meta_prompt.md`：单一提示词 + 单一定时任务，一次唤醒内四分支自决策——①心跳新鲜即退出；②心跳超时只交给 `watchdog_tick` 的 heal 分支、不自行重启；③无活跃任务且最新提示词未消费则用该提示词接一个新根任务；④无活跃任务且提示词已消费则分析项目现状生成下一份 `yyyyMMdd.HH.mm.ss.md`。含按目标项目替换的参数清单与无人值守边界说明，仅用于定时任务场景）。
 
@@ -104,7 +105,7 @@
 | `atgc_old_run` | ATGC-old 运行（DNA 程序执行） |
 | `atgc_old_talk` | ATGC-old 会话（叙事/模式切换） |
 
-### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（29）
+### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（35）
 
 > worktree 三件工具的真源是 `src/server/wt_tools.mbt`：**存在性 ≠ 生命周期**。它们补的是**账**，状态由「目录 / git / 时间」三方读数裁决；七档与 `scripts/run_light_wt.py` 的 `classify` 同名同义（一源四态）。判定顺序承重：**脏先看**（已并入 + 有未提交改动 ⇒ `blocked`，先判 merged 会把没落盘的活一起销毁）、`idle` 只认账上的创建锚点（ff 合并后主线尖 == 分支尖，靠 git/年龄都会误判）、**git 读不到 ⇒ `unknown`**（绝不顺着年龄写成 fresh/stale）。
 | 工具 | 说明 |
@@ -178,7 +179,7 @@
 | `store_list` | 列出已打开 ns |
 | `store_close` | 关闭命名空间 |
 
-### Omega 强验证（可选开关，默认关闭）
+### Omega 强验证（6，可选开关，默认关闭）
 
 `task_plan_deep` 的可选参数 `omega_strong_verify`（默认 `false`）控制本功能：不传 / `false` 时行为与既有完全一致；传 `true` 时，递归拆解写出的每个子任务带 `omega:required` 标记，进入「语料驱动」强验证流程——**语料创建者 `spec_author`** 创建语料（落 `specs` 表）→ **验证者 `verifier`** 审核并质疑语料（不合格打回创建者重做）→ 执行者执行 → 验证者复验成果与语料（不达标继续打回）。
 
@@ -237,7 +238,7 @@
 | `model_router_reset` | 清窗口：所有模型 `used`/`window_start` 归零（等价"这 5 小时重新开始"），档位与游标保持；`hard=true` 连档位/游标/切换计数一起复位 |
 | `executor_run` | 把任务真交给外部执行器（宿主命令能力，**默认收紧**）：`executor` 只接受登记表 `aider \| atomcode \| ofm`。aider/atomcode 走本地 CLI spawn，argv 形状固定在 `src/executor/cli_argv.mbt`（不经 shell ⇒ 提示词里的 `;` `$()` 反引号都只是**一个** argv 元素），可执行文件名由登记表推导 ⇒ 调用方无法注入任意命令；**`ofm` 走并存 HTTP 通道**（`executor_run_impl` 按 `executor` 分流，不经 `build_command`）：真 POST `{ofm_endpoint}/chat/completions`，端点 env `FIST_OFM_ENDPOINT` 优先、`config.ofm_endpoint` 兜底，`Authorization: Bearer` 的 key 只在 server 进程环境变量里读、**回执绝不回显**，失败按 `classify_ofm_failure` 归因（网络/401/5xx/其他，回执 `failure_kind`）。`model` 留空则先向路由器要一个模型并记账（路由↔执行器接线点）；`dry_run=true`（新增可选参数）只回显 argv（CLI）或将发送的请求体+URL（ofm）、**一个进程/一个网络请求都不起**；native 构建返回明确拒绝。密钥只来自 server 进程环境变量，本仓库不读 `.env`、不回显 key。参数：`project_dir`(必填)、`executor`(必填)、`prompt`(必填非空且不含 NUL)、`model`(可选)、`namespace`(可选)、`timeout_ms`(可选默认 180000)、`dry_run`(可选默认 false) |
 
-### 六顶帽 · 辩论裁决（4，R118 P1-b，`src/ops/ops_hats.mbt` 真源）
+### 六顶帽 · 辩论裁决（7，R118 P1-b，`src/ops/ops_hats.mbt` 真源）
 | 工具 | 说明 |
 |---|---|
 | `hat_list` | 列出六顶思考帽（White/Red/Black/Yellow/Green/Blue）的 role/color/forbid/output_keys 与默认三帽（White/Black/Yellow）。纯计算只读 |
