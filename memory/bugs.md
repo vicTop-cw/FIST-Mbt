@@ -15767,6 +15767,24 @@ src/engine/omega_strong_test.mbt 本次改动：
 - evidence: `find` 现读两库路径 / `store_open` 回显 `data_dir=.fist-mbt/data` / `temp/` 内 sqlite 直读结果（T0 status 与 deliverable 长度）/ 同轮 `refresh_dist.py` 与 `check_badge --fresh` 的命令回执原文
 - reported_by: lead
 
+### 追记（2026-11-09 / 轮 183 收口期：同根又现两面，活证据）
+同一条根「连接器 server cwd = `_build/js/release/build/cmd/cli`」本轮再抓到两面，
+都**不新开单**（同一根因、同一修法面），登记在此以免下一人当成两件事：
+1. **`run_check` 的相对判据路径按 server cwd 解析**：ns `iter-1109b`/T0 传
+   `cmd=python, args=["scripts/check_plan_landing.py","--gate"]` ⇒ 实际去跑
+   `_build/js/release/build/cmd/cli/scripts/check_plan_landing.py`（不存在）⇒ status=failed
+   （`call_log` seq 4 / `check:T0:r1`）。改传绝对路径后同一条判据 passed（seq 5 / `check:T0:r2`）。
+   **注意**：这不违反「workdir 必须在 project_dir 子树内」的守卫——守卫判的是 workdir，
+   而 argv 里的相对路径由子进程自己按 cwd 解析，两道面在此错位。
+2. **`verify(docs_check=true)` 的必填项按 server cwd 找**：同一任务回
+   「文档一致性门禁未通过：必填项 README.md: 缺失；CHANGELOG.md: 缺失；reports: 缺失」
+   （`call_log` seq 6）——本仓三样都在根目录，是 cwd 落在 `_build` 里 ⇒ **该门在连接器
+   场景下是恒假红**，不是交付物缺件。关闭 docs_check 后 verify 正常通过。
+⇒ 修法候选与本单同源：① 把启动器 cwd 钉到项目根（首选，一次修三面）；
+② 或让 `run_check`/`verify` 的路径解析显式相对**任务 project_dir** 而非进程 cwd。
+未动任何代码（越界），留给 owner 在 ①/② 里裁决。
+- reported_by: lead
+
 ## BUG-588 [2026-11-09T14:26:00Z] [low] OPEN
 - summary: mcpcf 工具面可测性缺口两条：① `tool_circuit`/`tool_watchdog` 的 `now_secs` 内部现算墙钟、无注入点 ⇒ 2038 档在 mcpcf 调用层写不出锁；② `ops_data_dir()` 只读 `MCPCONFTEST_DATA_DIR`/`LOCALAPPDATA`，MoonBit 侧无 env 写接口，且 `mcpcf_embed.mbt:48` 库名硬编码 ⇒ 任何 mcpcf 测试**必须先 `set_engine`**，否则直接往 `%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 写
 - detail: 定位：`src/server/mcpcf_embed.mbt:267/:360`（`let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`，参数面只有 `circuit`/`action`/`ns`）、`:10-16`（模块级 `holder`，`set_engine` 只注入引擎不注入时钟）、`:48/:181`（库名硬编码）与 `ops_data_dir()`。后果不是行为错（BUG-583 才是），而是**验证面在调用层被结构封住**：BUG-583 的 2039 臂只能退到引擎层锁（等价但不等于调用面覆盖），车道 H 因此把「缺口本身」钉成 `mcpcf_embed_bug583_wbtest.mbt` 的 `bug583_04`（传 `now_secs=-2117514496` 被静默丢弃、落库仍是墙钟正值）——将来谁加了时钟入参，那一格就红，逼修复者改写而不是留一条与产品码脱节的假锁。另注：`check_selftest_hermetic` 的 G/S 档口径只管 `--selftest` 密封性，管不到「产品测试会不会写真用户库」这一格，无尺在看。
