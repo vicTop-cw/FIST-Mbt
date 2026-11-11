@@ -15793,6 +15793,20 @@ src/engine/omega_strong_test.mbt 本次改动：
 - evidence: `src/server/mcpcf_embed.mbt:10-16/:48/:267/:360` 现读 + `src/server/mcpcf_embed_bug583_wbtest.mbt` `bug583_01/:131`（holder 注入可达性实证）与 `bug583_04/:261`（缺口断言原文）+ 车道 H 回传「零污染实证：`%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 跑完 mtime 未变」
 - reported_by: lead
 
+### 追记（2026-11-11 / 轮 186：关闭条件①「可注入时钟」已满足，状态仍 OPEN）
+- **落地**：`mcpcf.circuit` / `mcpcf.watchdog` 新增可选 `now_secs`（`src/server/mcpcf_embed.mbt`
+  的 `arg_now_secs`；Number 与数字串两形态同效，越界/非法回落墙钟），schema 与工具描述同步点名该参数。
+  注入影响**到期判定**（不只回显 `opened_at`）：`now_secs ≈ opened_at + recovery` ⇒ `half_open`。
+- **缺陷行为锁按原提示改写**：`bug583_04` 由「注入被静默丢弃」改为「注入生效 + 2038 域可在工具层锁」，
+  含判别式断言（`half_open`）与数字串/非法值两条附格。
+- **证据（现跑）**：`moon test --target js src/server` 597/597；变异对照 A（只回退 watchdog 接线）
+  红在 `mcpcf_embed_bug583_wbtest.mbt:300-304`，B（只回退 circuit）红在 `:274-278`，跑后逐字节还原；
+  首版断言「两入口 opened_at 同值」**被变异 A 证明是假锁**（opened_at 是回显字段，不吃 now_secs）⇒ 已换成到期判定断言。
+- **仍 OPEN 的理由**：关闭条件是「时钟**或**数据目录任一」——本轮只满足时钟这一条；
+  ② `ops_data_dir()` 不可改道 + `mcpcf_embed.mbt` 库名硬编码仍在，任何 mcpcf 测试仍须先 `set_engine`，
+  且这一格没有尺在看。另：2038 档现在**可锁**但**尚未锁**——引擎层 Int32 到期算术属 BUG-583（时钟 Int64 化专项）。
+- reported_by: lead
+
 ## BUG-589 [2026-11-09T14:32:00Z] [medium] OPEN
 - summary: `check_plan_landing.py --gate` 现读 **rc=1**：判定面 30 条 > 棘轮上限 `VERDICT_GAP_CEILING=25` ⇒ 比已核存量多 5 条「计划点名而跟踪面不存在」的落点；该尺在 ci.yml 被跑两次（约 :67 与 :253），**下一次 push 触发 CI 时这一格会红**
 - detail: 现状：本地 main 领先 origin/main 91 笔未推（`git rev-list --count origin/main..HEAD` 现读），所以 CI 面上还没红——这是**延迟引爆**而不是没问题。增量的主要形状集中在 `docs/2026-10-11-multi-agent-lock-design-v3.md`：它点名 `src/engine/engine_lock.mbt`、`src/store/store_locks.mbt`、`src/server/locks_ops.mbt`、`src/server/assistant_ops.mbt`、`src/executor/kill_argv.mbt`、`src/server/kill_exec.mbt`、`templates/lock_wait_loop.md`、`memory/lock-config.json` 等 8 条，而锁族能力的真实落点是另一套（`reserve_scope` / `lock_renew` / `file_bind` / `filebind.mbt`）⇒ 设计稿命名与实现分家，文档用完成时口吻指着一个从来没存在过的路径。另有 `docs/2026-10-12-fist-mbt-supervisor-tools-plan.md` 点名 `src/server/supervisor_tools_test.mbt`（磁盘与跟踪面都没有）。
@@ -15818,6 +15832,19 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 车道 K 在写逐条分档汇总前因账户额度耗尽中断 ⇒ 只提交了工作树上**逐条带证据**的改动，
   无半成品结论入库；逐条 A/B/C/D 清单未落盘，下一轮接手时按本文档现读重做即可。
 - reported_by: lead
+## BUG-591 [2026-11-11T06:20:00Z] [low] OPEN
+- summary: 五条「文档自称有守卫、实际上没有尺在看」的自述面缺口（轮 183 车道 J 审计；2026-11-11 轮 186 终审入账）。命名的守卫大多存在，缺的是**把该守卫接到被检面**或**把断言打到分组/归属级**。
+- detail:
+  1. `docs/AGENTS-mcp-inventory.md:12`（同形 :30/:36/:56/:69/:100/:107/:164/:174/:197/:215）——「### 生命周期（14）」这类**分组计数**无尺：`check_tools_sync` R1/R2 只比工具名（AGENTS+清单合并面）、`check_doc_surface` J3 只扫 README、J14 只比总数 ⇒ 组头可以漂而名字都在。修法（~15 行）：在 `check_tools_sync` 解析 `^### .*（(\d+)）`，断言 N == 该节表格行数、ΣN == `real_tools()`。
+  2. `USAGE.md:184`（`scripts/mcp_smoke.py` 每次跑都与之对表）——`mcp_smoke.py:102` 自述「本冒烟不碰文档数字」；真正的文档面对表是 `check_usage_tool_count` Part B。修法：改这句署名，或给 Part B 加源码锚点自证。
+  3. `USAGE.md:549`「对表守卫 `scripts/check_usage_tool_count.py` 每次跑都核」——`ci.yml` 现读 **0** 处接线，只有电池 `run_guards.py` 的 `case()`；「每次跑都核」对 CI 不成立。修法：`run_guards --list` 对 `CI=no` 的 `check_*` 非零退出，或把该 case 接进 ci.yml。
+  4. `README.md:319`「镜像由 CI 自动同步（只增不删）」——唯一相关尺 `check_sync_workflow_reports_failures.py` 在 `sync-from-gitcode.yml` 仅 1 处出现（车道 J 判为注释提及），S1–S5 只断言失败可见性、不断言不删分支。修法需真远端才能证；先计入本单不代修。
+  5. `README.md:145`「六件事…都由一支活体探针复验」——`blackbox/e2e_acceptance_recheck.py` 只在 `run_guards.py` REGISTRY（豁免、无 case），`ci.yml` 现读 **0** 处 ⇒ 六条承诺无人执行。修法：加 `--selftest` 级电池格，证明探针六格仍可解析。
+- 边界：本单只登记不改断言口径（改判据=改契约，属人的决定）；①③ 是「接一根线/加一层聚合」的廉价修法，可由下一轮直接落。
+- evidence: 上述 file:line 现读 grep 确认（`grep -n "生命周期（" docs/AGENTS-mcp-inventory.md` = :12；`USAGE.md` :184/:549；`README.md` :145/:319）；`grep -c check_usage_tool_count .github/workflows/ci.yml` = 0；`grep -c e2e_acceptance_recheck .github/workflows/ci.yml` = 0；`grep -c check_sync_workflow_reports_failures .github/workflows/sync-from-gitcode.yml` = 1
+- task_id: T0（ns=iter-1109b，轮 183 车道 J）
+- reported_by: lead
+
 ## BUG-590 [2026-11-10T11:41:24Z] [medium] OPEN
 - summary: [explore R1 口径分叉三则] ① Skill 主文档与 references/tool-reference.md 均写 170 工具 / 35 份 src/server/*.mbt，本机实测 182 工具 / 41 份；② CLI auto_convert 把 --spec 的 JSON 字符串转成 object 触发 inputSchema mismatch，改用 --raw 又令 split_n/reinject_context 全部变字符串同样被拒，task_plan_deep 无法注入语义化 laws，T0.1~T0.5 子任务描述退化为根描述复制；③ scripts/laya_decide.py --probe 返回 rc=0 表示可用，但 MCP 工具 laya_decide 实测 available:false / source:fallback 规则式决策，探针与 MCP 工具口径不一致。另记 explore 并行门边界：lane4/5 因命令超时中断，conflicts_check 回执是认领后补跑的『已由本人认领』而非认领前『可安全认领』，状态回读证明 5 路均无他人持有。
 

@@ -253,33 +253,79 @@ test "bug583_03_watchdog_reads_the_same_breaker_state_as_circuit_tool" {
 }
 
 ///|
-/// 【格 4｜可测性缺口本身被钉住】mcpcf 的参数面没有时钟入参 ⇒ 假时钟传不进去。
-/// 意图：把「这一层锁不到 2038 档」从口头结论变成一条会过期的断言。
-/// 现在传 `now_secs=-2117514496` 被**静默丢弃**，落库的仍是墙钟截断值（正域）。
-/// 将来若有人为可测性给 mcpcf 加了时钟入参（BUG-583 修复的必要前置之一），
-/// 这一格会红 ⇒ 他必须把本格改写成「注入生效」的期望形状，而不是留下一条假锁。
-test "bug583_04_mcpcf_has_no_clock_injection_point_so_2038_is_unreachable_here" {
+/// 【格 4｜时钟注入点已落地（BUG-588 ①）】mcpcf 的 `now_secs` 参数被采纳：
+/// 传假时钟 ⇒ `opened_at` 逐字等于注入值，2038 域在**工具调用层**就可锁。
+/// 历史：本格原先钉的是「注入被静默丢弃」（缺陷行为锁）；按该格自己的提示，
+/// 注入点落地后改写为「注入生效」+ 两入口同基 + 数字串形态同效（BUG-590 ② 口径）。
+test "bug583_04_mcpcf_clock_injection_makes_2038_arm_reachable_here" {
   ignore(b583_sandbox_engine())
-  let circuit = "b583-mcpcf-noclock"
-  let neg_2039 : Int32 = -2117514496
-  // 三次都带着「假时钟」调用：期望它被忽略（当前行为），落库仍是墙钟
+  let circuit = "b583-mcpcf-clock"
+  // 2038-01 之后、Int32 上界之前：旧「墙钟截断」路径拿不到这个值
+  let injected : Int32 = 2147483000
   let fake = Json::object({
     "circuit": Json::string(circuit),
     "action": Json::string("fail"),
-    "now_secs": Json::number(neg_2039.to_double()),
+    "now_secs": Json::number(injected.to_double()),
   })
   ignore(tool_circuit(fake))
   ignore(tool_circuit(fake))
   let opened_via_fake = b583_mcpcf_json(tool_circuit(fake))
   assert_eq(b583_str_field(opened_via_fake, "state"), "open")
-  let opened = b583_int_field(opened_via_fake, "opened_at")
-  assert_true(
-    opened != neg_2039,
-    msg="传入的 now_secs 竟然生效了 ⇒ mcpcf 已有时钟注入点，本格需改写为「注入生效 + 2038 档可在这一层锁」的形状（并回看引擎层是否重复覆盖）",
+  assert_eq(
+    b583_int_field(opened_via_fake, "opened_at"),
+    injected,
+    msg="now_secs 注入未生效 ⇒ 时钟注入点回退（BUG-588 ① 复现）",
   )
+  // 注入必须影响「到期判定」，不是只回显 opened_at。
+  // 变异对照 A：watchdog 回退墙钟（circuit 保持注入）⇒ 本格必须红，而上一格仍绿。
+  let due_circuit = circuit + "-due"
+  let open_due = Json::object({
+    "circuit": Json::string(due_circuit),
+    "action": Json::string("fail"),
+    "now_secs": Json::number(injected.to_double()),
+  })
+  ignore(tool_circuit(open_due))
+  ignore(tool_circuit(open_due))
+  ignore(tool_circuit(open_due))
+  let wd = b583_mcpcf_json(
+    tool_watchdog(
+      Json::object({
+        "circuit": Json::string(due_circuit),
+        "now_secs": Json::number((injected + 31).to_double()),
+      }),
+    ),
+  )
+  let wd_inner = b583_field(wd, "circuit")
+  assert_eq(b583_int_field(wd_inner, "opened_at"), injected)
+  assert_eq(
+    b583_str_field(wd_inner, "state"),
+    "half_open",
+    msg="watchdog 没吃到注入的 now_secs（或只接了 circuit 没接 watchdog）⇒ 注入只对部分入口生效",
+  )
+  // 数字串形态与 Number 形态同效（参数面口径与 BUG-590 ② 一致）。
+  // 熔断要达阈值才 open ⇒ 与上面同形，连发三次。
+  let str_form = Json::object({
+    "circuit": Json::string(circuit + "-s"),
+    "action": Json::string("fail"),
+    "now_secs": Json::string("1234567890"),
+  })
+  ignore(tool_circuit(str_form))
+  ignore(tool_circuit(str_form))
+  let via_str = b583_mcpcf_json(tool_circuit(str_form))
+  assert_eq(b583_str_field(via_str, "state"), "open")
+  assert_eq(b583_int_field(via_str, "opened_at"), 1234567890)
+  // 非法注入不生效也不崩：回落墙钟（正域）
+  let bad = Json::object({
+    "circuit": Json::string(circuit + "-bad"),
+    "action": Json::string("fail"),
+    "now_secs": Json::string("not-a-number"),
+  })
+  ignore(tool_circuit(bad))
+  ignore(tool_circuit(bad))
+  let via_bad = b583_mcpcf_json(tool_circuit(bad))
   assert_true(
-    opened > 0,
-    msg="时钟注入点已存在但落库的不是注入值 ⇒ 注入只对部分入口生效，需把 :267 与 :360 两行一起收（BUG-583 的两处同形）",
+    b583_int_field(via_bad, "opened_at") > 1000000000,
+    msg="非法 now_secs 应回落墙钟，不应被当作 0 或其他值写入",
   )
   reset_engine()
 }
