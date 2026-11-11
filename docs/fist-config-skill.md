@@ -1,6 +1,6 @@
 # fist-config-skill.md · 目标项目连接配置（fist-mbt）
 
-> **真源**：`src/server/mcp_config_scaffold_impl.mbt` + `fist-config.html`（纯静态前端）
+> **真源**：`src/server/mcp_config_scaffold.mbt` + `fist-config.html`（纯静态前端）
 > **对应计划**：`docs/improvement-plan-20261010.md` §2 方向一 P0-b
 > **单源纪律**：MCP 连接参数的 JSON schema 只通过 `mcp_config_scaffold` 服务端校验，fist-config.html / CLI / 文档三态都不得另写一套参数规则。
 
