@@ -1,6 +1,6 @@
 # 执行者能力路由 Skill（executor_register / executor_route / executor_auction / executor_clear / selfdrive_dispatch）
 
-> 一源四态 cl3 补齐 · 9/10。真源 = `AGENTS.md`「Marketplace·执行者能力路由」段 + `src/executor/` + `src/ops/dispatch.mbt`。本组 5 工具构成 **执行者 Marketplace** 从「能力登记 → 路由推荐 → 竞拍 → 自动派单 → 整洁」的闭环：把"任务该派给谁"从 agent 自选升级为**按能力 + 历史信任 + 负载**的确定性分派。
+> 一源四态 cl3 补齐 · 9/10。真源 = `AGENTS.md`「Marketplace·执行者能力路由」段 + `src/executor/` + `src/server/server.mbt`（`executor_register`/`executor_route`/`executor_auction`/`executor_clear` 注册面）。本组 5 工具构成 **执行者 Marketplace** 从「能力登记 → 路由推荐 → 竞拍 → 自动派单 → 整洁」的闭环：把"任务该派给谁"从 agent 自选升级为**按能力 + 历史信任 + 负载**的确定性分派。
 
 ## 何时用
 

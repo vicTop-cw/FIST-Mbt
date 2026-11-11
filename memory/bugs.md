@@ -15857,3 +15857,27 @@ src/engine/omega_strong_test.mbt 本次改动：
 
 **状态：保持 OPEN**——②的代码面已收口，①在仓库面未复现、③归 BUG-587 待裁决。
 - reported_by: lead
+
+### 追记（2026-11-11 / 轮 185：判定面 11 → 6，仍 OPEN）
+- **改法仍按本单的分档，没碰上限、没扩白名单、没删任何计划承诺**（`VERDICT_GAP_CEILING` 现读仍 25）：
+  1. `docs/executor-marketplace-skill.md:3` 的「真源」写成 `src/ops/dispatch.mbt`（**从未存在**）⇒
+     改为现读存在的 `src/server/server.mbt`（`executor_register/route/auction/clear` 注册面）。
+  2. `docs/fist-config-skill.md:3` 点名 `src/server/mcp_config_scaffold_impl.mbt`（不存在）⇒
+     改为现存的 `src/server/mcp_config_scaffold.mbt`（同目录另有 `_contracts_wbtest` / `_wbtest`）。
+  3. `docs/DOCS-STRUCTURE.md:39` 的 `memory/当日.md` 是**中文占位**（字面量永远不会存在）⇒
+     改为 `memory/YYYY-MM-DD.md`（当日日志），与同文件 :15 的口径一致。
+  4. `docs/plans/2026-10-26-4pools-rhop-roadmap-proposal.md:127` 把**命令**写进反引号
+     （`scripts/moon_test_env.py --root ../rx-mbt`）⇒ 把参数移出代码跨，路径回到真实存在的脚本。
+  5. `docs/probe-authoring.md:115` 引用的是**被截断的失败正文片段**（`src/engine/zz_calib_wbtest`，
+     连 `.mbt` 都没有）⇒ 按本尺既有的「形态说明」桶写成 `src/engine/<…>_wbtest`，只出数不比对。
+  6. **真落地**：按 `docs/DOCS-STRUCTURE.md` 的「今后落位」建立 `docs/skills/`，并写 `README.md`
+     说明新文件进这里、存量平铺文件暂不迁移（迁移需同批改互链与判据引用面）。
+- 读数：`python scripts/check_plan_landing.py --gate` 判定面 **11 → 6**（609 条点名 / 98 份文档 /
+  形态 44 / 搬家 6 / 豁免 18 / 存档 19），rc=0。
+- **仍 OPEN 的 4 条（都是「计划/选项/上游路径」，不是完成态虚报，本轮不动）**：
+  `templates/pipeline_mode_loop.md`（SHIP-PLAN 标「新增」，属未执行计划）、
+  `docs/assets/README.md`（improvement-plan 里写「建议」）、
+  `scripts/sync_host_skills.py`（known-boundaries 的 owner 待裁决选项 A）、
+  `src/lib/fist_ops.mbt`（mcpcf-embed-skill 写的是**上游仓库**路径，不是本仓）。
+  ⇒ 上限是否收紧至 4 仍是人的决定。
+- reported_by: lead

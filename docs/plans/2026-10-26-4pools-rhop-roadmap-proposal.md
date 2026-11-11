@@ -124,7 +124,7 @@ decision: deferred
   - **前置（2026-10-29 补 → 2026-10-30 订正）**：本条原文写的「rx-mbt/rhop 为 0 个测试」是**错的**——测试放在 `test-suit/rhop/`（163 格，实测 163/163 全绿），
     所以"先补测试"这个前置**已经满足**。真正的 M2 缺口改为：`rhop_native.mbt` 仍是 47 行占位 stub（MoonBit core 无文件系统 API，属有意设计），
     以及 4 池的跨机目录（`fist-mbt/pool/`）未建。另注：在本地裸跑 rx-mbt 的 `moon test` 会撞 fist-mbt 已诊断的 BUG-380
-    （PATH 上的 node.cmd 垫片吞引号），要用 fist-mbt 的 `scripts/moon_test_env.py --root ../rx-mbt` 才能出汇总行。
+    （PATH 上的 node.cmd 垫片吞引号），要用 fist-mbt 的 `scripts/moon_test_env.py`（在 rx-mbt 树里运行时另传 `--root ../rx-mbt`） 才能出汇总行。
 - **M3（阶段三）**：fist-mbt 接入 rhop，4 池工具可走通同机收发 + 跨机 shared path 同步；对照 vools-rhop 判据 1-5 全部通过。
 
 ## 七、参考
