@@ -59,7 +59,7 @@
 | `src/server/server.mbt` | 最小侵入 | 仅插入一行 `s1 = register_supervisor_tools(s1)`（assistant 工具之后） |
 | `src/engine/engine_supervisor.mbt` | **新增** | 任务树聚合、kill 硬门链评估（纯计算）、task upsert 编排 |
 | `src/core/core_task.mbt` | 追加 | `Task::with_description` 纯函数（无状态机改动） |
-| `src/server/supervisor_tools_test.mbt` | **新增** | 黑盒/白盒测试锁 |
+| `src/server/supervisor_tools_wbtest.mbt` | ✅ 已落地（2026-11-09 对表） | 黑盒/白盒测试锁——计划原写「src/server/supervisor_tools_test.mbt（黑盒名）」，**该文件名从未存在**：工具的内部可变性面（guidance 队列、门链私有 fn）只有白盒才测得到，故按本仓惯例落名为 `_wbtest.mbt`；实测读数与四组覆盖见 `reports/2026-10-14-supervisor-tools-test-report.md`（同批裁决另记 `reports/2026-10-26-plan-landing-b-class-verdict.md` B16） |
 
 不碰：store.mbt / store_sqlite.mbt / engine.mbt / ops / router（其他 agent 正在改）。
 

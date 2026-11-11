@@ -296,7 +296,9 @@ feedback 记忆「子代理车道的并发事实」（任务包路径先对真�
 **事实**：刷新 `dist/fist-mbt.js` 那一笔，统帅在提交正文与判据面文本里把它写成 `e4667f851`；
 本车道现读 `git rev-parse --verify 'e4667f851^{commit}'` ⇒ **`fatal: Needed a single revision`**，
 而真号是 `e4667f85814fb07541f1b88923ba8df6141345a9`（短号 `e4667f858`，**同样现读可解析**）。
-命中面（跟踪面 grep 现读）：`memory/2026-11-06.md:251` 仍是旧幻影号（历史日志 append-only，留原样）；
+命中面（跟踪面 grep 现读）：memory/2026-11-06.md 第 251 行（**日日日志**——`.gitignore` 的 `memory/2026-*.md`
+规则把它长期挡在跟踪面之外，只在盘上、永不进 `git ls-files`，故这里按纯文本而不是落点路径指认）仍是旧幻影号
+（历史日志 append-only，留原样）；
 `scripts/check_dist_snapshot.py` docstring 与 `scripts/README.md` 同名条目已由统帅同批改真为 `e4667f858`；
 `memory/bugs.md` 里剩下的那一处是 BUG-578 追记**点名它是幻影**的登记句（合法提及，不是引用）。
 
@@ -417,9 +419,9 @@ GitHub UI 上的号在本仓不可解析，一律判红就是恒红门）；③ 
 
 **事实**：BUG-583 要锁的是「2038 年后 mcpcf 把 Unix 秒 `.to_int()` 截断成负值喂熔断器」。
 直觉做法是在 **mcpcf 调用面**锁——但现读结论是：**调用面写不出那一档**。
-`src/server/mcpcf_embed.mbt:267/:360` 的 `now_secs` 是内部现算墙钟，参数面只有 `circuit`/`action`/`ns`，
+`src/server/mcpcf_embed.mbt:267/360` 的 `now_secs` 是内部现算墙钟，参数面只有 `circuit`/`action`/`ns`，
 `set_engine` 只注入**引擎**、不注入**时钟**；要注入就得先改产品码，而这一单的边界是「只加测试不改行为」。
-⇒ 退一层锁在引擎（`engine_circuit.mbt:136/:170` 两枚正性哨兵，`now_secs` 是入参、想喂什么喂什么），
+⇒ 退一层锁在引擎（`engine_circuit.mbt:136/170` 两枚正性哨兵，`now_secs` 是入参、想喂什么喂什么），
 并**把退层理由写进文件头**；调用面只锁「可达的那一半」，其中 `mcpcf_embed_bug583_wbtest.mbt::bug583_04`
 钉的是**缺口本身**：传 `now_secs=-2117514496` 被静默丢弃、落库仍是墙钟正值。
 

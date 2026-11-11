@@ -235,9 +235,13 @@ pub struct RouterConfig {
   锁双向区分：正确降级通过 / panic 或静默坏值即红。
 - **验证**：router **171/171**，全仓 **1176/1176**，0 errors。
 
-**接线建议（R36 起）**：CAF 逻辑放独立文件 `src/server/model_router_caf_ops.mbt`，只加最少调用点；
+**接线建议（R36 起）**：CAF 逻辑放独立文件（建议名 src/server/model_router_caf_ops.mbt），只加最少调用点；
 提交用 `git commit --only <path>` 防共享 repo commit 污染（R35 已实际踩到：误提交并发 agent 3 文件，
 已回滚）。
+> **2026-11-09 落地对表（A 档：能力已落地，文件按别的名字分家）**：那个建议文件名**从未建立**（现读 src/ 无 model_router_caf_ops 这一件）。
+> CAF 的真实分家是 **router 层** `src/router/model_router_caf.mbt` + `src/router/router_caf.mbt`（含 dryrun/replay/persist/ext 各件）
+> 与 **server 层** `src/server/model_router_ops.mbt`（现读该文件 CAF 引用密集，工具注册与调用点都在这一份里）；
+> 裁决记录见 `reports/2026-10-26-plan-landing-b-class-verdict.md` B20（判 (ii) 已以别的形态实现）。
 
 ---
 
