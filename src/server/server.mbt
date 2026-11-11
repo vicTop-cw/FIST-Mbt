@@ -1034,10 +1034,52 @@ fn substring_at(s : String, start : Int32, end : Int32) -> String {
 }
 
 ///|
+/// BUG-590：把「字符串形态的整数」解析成 Int64（十进制，允许前后空白与 `+/-` 号）。
+/// 客户端 `--raw` 一类模式会把所有参数序列化成字符串（`split_n="3"`），旧 `get_int`
+/// 只认 `Number` ⇒ 静默回落默认值（拆分数被悄悄改成 3，调用方看不出）。
+/// 非数字串 / 溢出返回 None（调用方回落默认，与 BUG-194 同规）。
+fn parse_int_literal(raw : String) -> Int64? {
+  let s = raw.trim().to_owned()
+  let cs = s.to_array()
+  if cs.length() == 0 {
+    return None
+  }
+  let mut i = 0
+  let mut neg = false
+  if cs[0] == '-' {
+    neg = true
+    i = 1
+  } else if cs[0] == '+' {
+    i = 1
+  }
+  if i >= cs.length() {
+    return None
+  }
+  let mut acc : Int64 = 0L
+  while i < cs.length() {
+    let d = cs[i].to_int() - 48
+    if d < 0 || d > 9 {
+      return None
+    }
+    if acc > 922337203685477580L {
+      return None
+    }
+    acc = acc * 10L + d.to_int64()
+    i = i + 1
+  }
+  if neg {
+    Some(-acc)
+  } else {
+    Some(acc)
+  }
+}
+
+///|
 /// 从 JSON 参数中读取整数，缺省回退默认值。
 /// BUG-194：`Double::to_int()` 对超 Int32 域的值**饱和**（BUG-26 实测：1e300 → Int max），
 /// 会让超时/阈值/配额类参数静默变成天量值（如 `timeout_ms=2147483647` 永不超时、
 /// `phi_threshold` 永不判 suspect）；越界/NaN 一律回落默认。
+/// BUG-590：同时接受**字符串形态**的整数（`"3"` / `" 42 "` / `"+7"`），域守卫不变。
 fn get_int(args : Json, key : String, default~ : Int32 = 3) -> Int32 {
   match args {
     Object(map) =>
@@ -1047,6 +1089,16 @@ fn get_int(args : Json, key : String, default~ : Int32 = 3) -> Int32 {
             default
           } else {
             n.to_int()
+          }
+        Some(String(s)) =>
+          match parse_int_literal(s) {
+            Some(v) =>
+              if v < -2_000_000_000L || v > 2_000_000_000L {
+                default
+              } else {
+                v.to_int()
+              }
+            None => default
           }
         _ => default
       }
@@ -1103,12 +1155,22 @@ fn get_double(args : Json, key : String, default~ : Double = 0.0) -> Double {
 }
 
 ///|
+/// BUG-590：布尔参数同样接受字符串形态（`"true"` / `"FALSE"` / `"1"` / `"0"` / `"yes"` /
+/// `"no"` / `"on"` / `"off"`，大小写不敏感）——客户端把参数整体字符串化时，
+/// 旧实现只认 `True`/`False` ⇒ `reinject_context="true"` 被静默当成 false。
+/// 无法识别的字符串仍回落默认（不猜）。
 fn get_bool(args : Json, key : String, default~ : Bool = false) -> Bool {
   match args {
     Object(map) =>
       match map.get(key) {
         Some(True) => true
         Some(False) => false
+        Some(String(s)) =>
+          match s.trim().to_owned().to_lower() {
+            "true" | "1" | "yes" | "on" => true
+            "false" | "0" | "no" | "off" => false
+            _ => default
+          }
         _ => default
       }
     _ => default
