@@ -15820,3 +15820,40 @@ src/engine/omega_strong_test.mbt 本次改动：
 - reported_by: lead
 ## BUG-590 [2026-11-10T11:41:24Z] [medium] OPEN
 - summary: [explore R1 口径分叉三则] ① Skill 主文档与 references/tool-reference.md 均写 170 工具 / 35 份 src/server/*.mbt，本机实测 182 工具 / 41 份；② CLI auto_convert 把 --spec 的 JSON 字符串转成 object 触发 inputSchema mismatch，改用 --raw 又令 split_n/reinject_context 全部变字符串同样被拒，task_plan_deep 无法注入语义化 laws，T0.1~T0.5 子任务描述退化为根描述复制；③ scripts/laya_decide.py --probe 返回 rc=0 表示可用，但 MCP 工具 laya_decide 实测 available:false / source:fallback 规则式决策，探针与 MCP 工具口径不一致。另记 explore 并行门边界：lane4/5 因命令超时中断，conflicts_check 回执是认领后补跑的『已由本人认领』而非认领前『可安全认领』，状态回读证明 5 路均无他人持有。
+
+### 追记（2026-11-11 / 轮 184：②已修 + ①③现读裁定，状态仍 OPEN）
+**② 服务端参数面已容忍字符串化标量（本条唯一动了代码的一面）。**
+- 病灶（代码级现读）：`src/server/server.mbt:1083` 的 `get_int` 只认 `Number`、`:1162` 的
+  `get_bool` 只认 `True/False` ⇒ 调用方把参数整体字符串化时（`split_n="5"` /
+  `reinject_context="true"`）**静默回落默认值**，没有任何报错。`split_n` 的缺省恰好是 3，
+  于是「传了 5 变成 3」在回执里看不出来——这比报错更难发现。
+- 修法：新增私有 `parse_int_literal`（十进制、允许前后空白与 `+/-`、Int64 溢出即 `None`），
+  `get_int` 增加 `Some(String(s))` 分支并**沿用 BUG-194 的 ±2e9 域守卫**；`get_bool` 识别
+  `true/1/yes/on` 与 `false/0/no/off`（大小写不敏感），**无法识别的串仍回落默认（不猜）**。
+- 锁与自证：`src/server/get_int_wbtest.mbt` 新增两格（`BUG-590` 标记）；两发变异对照
+  （`-acc → None` 杀负号格、布尔字面量 `true → false` 杀布尔格，597 跑出 `failed: 2`）；
+  再把**产品码换回 HEAD 版本**复跑，同两格仍红（`3 != 5` / `false is not true`）
+  ⇒ 锁确实在测新行为，不是恒绿。恢复后 sha256 与备份逐字节相同。现读 `src/server` 包
+  **597/597 passed, failed: 0**；`moon info` 无 `.mbti` 变化（全是私有函数）。
+- **边界如实**：若拒绝发生在调用方 schema 校验层（客户端行为），本修不覆盖——本轮**没有**
+  在活体复现该 CLI 的拒绝路径，故不主张「你的那条 `--spec` 调用已能跑通」；服务端现读已能接受
+  这两种字符串形态。`spec` 传 JSON **对象**（而非字符串）仍会被 `get_str` 读成空串，本轮未改。
+
+**③ 口径不一致现读 = BUG-587 的第三/第四面，不新开单。**
+- `src/server/server.mbt:5259`（`laya_decide` 工具）与 `:3347`（`task_plan_deep` 的
+  `laya_auto` 分支）都用相对路径 `["scripts/laya_decide.py", "--probe"]` + workdir `"."`；
+  连接器 server cwd = `_build/js/release/build/cmd/cli`，该目录下**没有** `scripts/laya_decide.py`
+  （本轮 `ls` 实证）⇒ 探测必失败 ⇒ `available:false` + 规则式 fallback；
+  而项目根 `python scripts/laya_decide.py --probe` 现读 **rc=0**。
+  ⇒ 与 BUG-587 同根（路径按 server cwd 解析），归该单的 ①/② 修法候选，待 owner 裁决。
+
+**① 仓库跟踪面现读干净，未复现。**
+- `plugins/source/` 全文 grep `170` 零命中；`python scripts/check_tools_sync.py` rc=0
+  「server.mbt 注册 182 个，AGENTS/README/deliverable/scoring_rubric 对齐」。
+  ⇒ 巡逻看到的是**已安装的插件副本**（`%USERPROFILE%\.qoder-cn\plugins\cache\local\fist-mbt\0.1.0`，
+  且其 `references/` 里根本没有 `tool-reference.md`）里的话术，不是仓库现状面；
+  该副本与 `plugins/source` 的漂移属「部署面陈旧」（BUG-377 族），处置是重装/重投影，不是改仓库文档。
+  本项未立新单：待下一轮用 `gen_plugins` 后的副本与本机缓存逐文件比对再定。
+
+**状态：保持 OPEN**——②的代码面已收口，①在仓库面未复现、③归 BUG-587 待裁决。
+- reported_by: lead
