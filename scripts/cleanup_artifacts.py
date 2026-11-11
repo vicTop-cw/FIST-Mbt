@@ -43,8 +43,20 @@ KEEP_SIDECAR = {"fist-mbt.db-shm", "fist-mbt.db-wal"}
 SUFFIXES = (".db", ".db-shm", ".db-wal")
 
 
+def _db_name_is_stray(name):
+    """name 是否为「应清理的库生成物名」（纯函数：供 stray_root_dbs 分类、供 selftest 直接打）。
+
+    按 `name.strip()` 归一后再判 `.db/.db-shm/.db-wal` 后缀（轮 204 守卫缺口）：`FIST_DB_PATH`/
+    重定向带尾随空格会把库落成 `fist-mbt.db `（名字末尾一个空格）这类文件名——`.endswith(".db")`
+    与 `.gitignore *.db` 都只认「以 .db 结尾」，于是这种杂库能同时穿过 git 状态面与 CI 干净度门。
+    归一化只放行「带空格的变体」：KEEP/KEEP_SIDECAR 的精确匹配在 stray_root_dbs 里**先行**，
+    交付库 `fist-mbt.db`（无空格）本身在此之前就被挡掉，不会走到这里。
+    """
+    return name.strip().endswith(SUFFIXES)
+
+
 def stray_root_dbs(root):
-    """仓库根下应删的生成物（排除 KEEP）。返回相对路径列表。"""
+    """仓库根下应删的生成物（排除 KEEP）。返回相对路径列表。后缀归一见 `_db_name_is_stray`。"""
     out = []
     for name in sorted(os.listdir(root)):
         full = os.path.join(root, name)
@@ -52,7 +64,7 @@ def stray_root_dbs(root):
             continue
         if name in KEEP or name in KEEP_SIDECAR:
             continue
-        if name.endswith(SUFFIXES):
+        if _db_name_is_stray(name):
             out.append(name)
     return out
 
@@ -244,7 +256,11 @@ def selftest():
     - S2 豁免生效：`stray_underscore_scripts()` 不得包含 `_tool_registry.py`。
     - S3 仍抓真临时脚本：在夹具里新建 untracked `_` 脚本，必须出现在候选中（否则规则被豁免规则误杀）。
     - S4/S5/S6 是纯函数格（`format_lines`），不碰盘。
-    S1-S3 全打在 temp 合成仓根上，真 `scripts/` 树一字节不动（R153 的 hermetic 律）。
+    - R1/R1b 打 `_db_name_is_stray` 纯函数本体（轮 204 守卫缺口 · OS 无关）：R1 尾随空格的 `.db`
+      名必被判成残留（此格即变异对照：把 `name.strip().endswith` 改回 `name.endswith` 必红）；
+      R1b 反向对照（普通 .db 名仍判残留、非 .db 名不误伤）。R2 打 `stray_root_dbs` 文件系统集成：
+      交付库 `fist-mbt.db` 与其 WAL/SHM sidecar 必被 KEEP 精确挡住（归一化只放行带空格的变体）。
+    S1-S3 + R2 打在 temp 合成仓根上、R1/R1b 纯函数不碰盘，真 `scripts/` 树一字节不动（R153 的 hermetic 律）。
     """
     fails = []
     box = None
@@ -296,6 +312,41 @@ def selftest():
                     os.remove(tmp_abs)
                 except OSError:
                     pass
+        # R1（轮 204 守卫缺口锁 · 纯函数 · OS 无关 · 即变异对照）：尾随空格的 `.db` 名必须被
+        # 归一判成残留。直接打 `_db_name_is_stray` 本体（机制格==实现路径格，非注释、非逻辑拷贝）：
+        # 把归一化从 `name.strip().endswith` 改回 `name.endswith`，下面探针立刻判 False ⇒ 此格必红。
+        # **不在盘上造尾空格文件**——Win32 非扩展长度 API 会把末尾空格剥掉（实测 `fist-mbt.db `
+        # 落成 `fist-mbt.db`、落进 KEEP），盘上造不出探针，锁就退化成假红/假绿。
+        r1_strays = ["fist-mbt.db ", "alpha.db ", "wal-a.db  "]   # 单空格 ×2 + 双空格变体
+        for nm in r1_strays:
+            if not _db_name_is_stray(nm):
+                fails.append("R1: 尾空格杂库名 %r 归一化后未被判成残留（守卫缺口复现）" % nm)
+        # R1b（反向对照 · 判例-29）：不带尾空格的普通 .db 名仍判残留、非 .db 名不误伤
+        if not _db_name_is_stray("alpha.db"):
+            fails.append("R1b: 普通 .db 名 alpha.db 未被判成残留（归一化误伤正常面）")
+        if _db_name_is_stray("notes.txt"):
+            fails.append("R1b: 非 .db 名 notes.txt 被误判成残留（归一化过宽）")
+        # R2（KEEP 精确匹配先行）：交付库 `fist-mbt.db` 本身与其 WAL/SHM sidecar 绝不能被抓成
+        # 残留——归一化只放行「带空格的变体」，不带空格的精确名必须继续被 KEEP 挡住。
+        r2_keep = ["fist-mbt.db", "fist-mbt.db-wal", "fist-mbt.db-shm"]
+        r2_made = []
+        try:
+            for nm in r2_keep:
+                with open(os.path.join(box, nm), "w", encoding="utf-8") as fh:
+                    fh.write("")
+                r2_made.append(nm)
+            caught2 = stray_root_dbs(box)
+            for nm in r2_keep:
+                if nm in caught2:
+                    fails.append("R2: 交付库/其 sidecar %r 被误判为残留（KEEP 保护失效）" % nm)
+        except OSError as e:
+            fails.append("R2: 无法创建 KEEP 探针库：%s" % e)
+        finally:
+            for nm in r2_made:
+                try:
+                    os.remove(os.path.join(box, nm))
+                except OSError:
+                    pass
     finally:
         if box is not None:
             _rmtree(box)
@@ -324,7 +375,9 @@ def selftest():
         print("SELFTEST FAIL: " + "; ".join(fails))
         sys.exit(1)  # NO_CALL_FACE J2
     print("SELFTEST PASS: S0 夹具形状自证（含 M1 变异对照）/ S1 tracked 识别 / S2 `_tool_registry.py` 豁免 / "
-          "S3 真临时脚本仍被抓（S0-S3 打在 temp 合成仓根）/ S4 逐条点名 / S5 超上限折叠且报总数 / S6 豁免面可见")
+          "S3 真临时脚本仍被抓 / R1 尾空格杂库名仍判残留（守卫缺口锁变异对照）/ R1b 普通 .db 判残留且非 .db 不误伤 "
+          "/ R2 交付库+sidecar 精确豁免（S0-S3+R2 打在 temp 合成仓根，R1/R1b 纯函数不碰盘）/ "
+          "S4 逐条点名 / S5 超上限折叠且报总数 / S6 豁免面可见")
     sys.exit(0)  # NO_CALL_FACE J2
 
 
