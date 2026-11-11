@@ -265,3 +265,12 @@ memory/archive/thinking.archive.md
 /scripts/explore_watchdog_wrapper.ps1
 /scripts/explore_watchdog_prompt.md
 /scripts/explore_watchdog_hidden.vbs
+
+# ── 2026-11-11 治理（r199 唤醒巡检）：外部 AI 工具机本地产物 ───
+# Aider / Qoder / WorkBuddy 等外部 AI 编码工具触碰本仓留下的本地脚手架
+# （Aider 对话/输入历史、Qoder agent worktree、WorkBuddy 记忆文件），非项目材料、
+# 机本地不可复现。同 .opencode/（line 256-259）判例：只挡跟踪面与 `git add .` 误入面，
+# 不删文件。`.qoder/worktrees/` 实测 5 个 agent worktree、`du -sh` 60s 超时 ⇒ 体量大，更须挡。
+/.aider*
+/.qoder/
+/.workbuddy/
