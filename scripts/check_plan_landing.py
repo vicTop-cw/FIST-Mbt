@@ -340,11 +340,12 @@ def design_exempt_reason(p, doc, daily_logs_ignored=None,
     """P8/P9 纯判据：命中「设计性排除」⇒ 返回 (态名, 处置话术)；否则 None。
 
     两个参数都可注入，供 selftest 造夹具与**变异对照**（判例-29/30）：
-      daily_logs_ignored : `_gitignore_excludes_daily_logs()` 的结果（None ⇒ 现读）
+      daily_logs_ignored : `_gitignore_excludes_daily_logs()` 的结果。**现读由 main 侧接线注入**
+        （R183 车道 I，与 rename_lookup 的 L864 同形：selftest 各格显式注入 False ⇒
+        「.gitignore 现读」这条锚点读只在主面可达，自检闭包 hermetic；
+        None 在这里只按「无 P8 排除输入」处理，不再触发现读）
       proposal_prefix    : 提案目录前缀（变异格可置空，以证明排除真在起作用）
     """
-    if daily_logs_ignored is None:
-        daily_logs_ignored = _gitignore_excludes_daily_logs()
     if daily_logs_ignored and _RE_DAILY_LOG.match(p):
         return ("ignored-log",
                 "**设计性排除面**（`.gitignore` 明确排除 `memory/20XX-*.md` 日日志）"
@@ -863,7 +864,10 @@ def main():
 
     # P5 扩展·改名态（R123）只在真跑路径接线：selftest 的 judge 不传 rename_lookup ⇒
     # hermetic 静态图不添 subprocess 面（find_renamed 只从 main 可达）。
+    # R183 车道 I 同形接线：P8 的 .gitignore **现读也只在这里发生**（自愈契约不变：规则被删 ⇒
+    # ignored-log 掉回 missing ⇒ 判定面漂移现形），selftest 各格显式注入 False 不触发现读。
     findings, n = judge(doc_paths, tracked_set, disk_set, tracked_dirs,
+                        daily_logs_ignored=_gitignore_excludes_daily_logs(),
                         rename_lookup=lambda p: find_renamed(p, tracked_set))
     # 三条空转判据收进 fatal_reason 一次出（顺序=枚举→可读→条数）。原来这里是两处
     # `raise SystemExit("FATAL …")`，实测发现那样只会给出 rc=1 ⇒ docstring 承诺的 rc=2 是幻影。
