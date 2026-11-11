@@ -15679,6 +15679,21 @@ src/engine/omega_strong_test.mbt 本次改动：
 - **边界如实**：剩余 134 处红档是基线内接受债（守卫绿态文案自称「不是零违例，是没比基线更差」），BUG-582 整体处置方向仍 OPEN 待 owner——推广三类分流：干净 temp 夹具/主面冗余类（约 15–20 脚本可照试点批量）、校准读类（HERMETIC_CALIBRATION 声明机制走不走须裁决）、结构冲突/G 档（call-face J2 ⟂ 读锚点，temp 夹具解不了，挂 BUG-492 选项 C）。守卫 docstring 明示「要求标定格清零＝更假不是更严」，零红不是设计终态。
 - reported_by: lead
 
+### 追记（2026-11-09 / 轮 183 车道 I：四把判据自检密封化，R 92→87）
+- 批次内容：`check_plugin_sync.py`（自检的 version 基线改读临时合成 moon.mod，它只是
+  `collect_problems` 的输入数据、不是断言对象）/ `check_skill_inject.py`（注入路径断言归主面 S1/S2，
+  自检只用 temp 合成真源）/ `check_template_ctrl.py`（新增纯函数 `md_files_in(dir_path)`，
+  `md_files()` 退化成取仓库目录的薄壳）/ `check_plan_landing.py`（新增纯函数
+  `daily_logs_ignored_from_text` + 壳，`.gitignore` 现读上移到 `main()` 注入，与 `rename_lookup` 同形）。
+- 读数（统帅实跑，非车道自述）：四把 `--selftest` 全 rc=0（8/64 格等，含退出码真为 2 的变异对照）；
+  `check_selftest_hermetic` rc=0，R 档 **92→87**（同一批 5 处债），W/G 不变（8/34）；基线常量未动。
+- **基线为什么不跟着降**（裁决，照 BUG-516 ②/`blessed_source()`）：棘轮按 `max(现读, 基线)` 只许升，
+  文件里明写「不许悄悄改常量」；还债的正确姿势是「把格子挪出 `--selftest` 归主面」——
+  本轮做的正是这个。**⇒ 进展没被钉住的残余风险如实记账**：基线仍 92，未来退回 92 以内不触发红。
+- 入库：`310f5f50a`（四把脚本）+ `ee289b8f2`（plan_landing 现读上移收尾）。
+- 车道 I 在写汇总前因账户额度耗尽中断，本追记内容全部由统帅现读复跑确认，未转抄车道结论。
+- reported_by: lead
+
 ## BUG-583 [2026-11-09T13:14:00Z] [high] OPEN
 - summary: mcpcf 内嵌路径把裸 Unix 秒 `.to_int()` 截断喂 Int32 熔断器 ⇒ 2038-01-19T03:14:07Z 起正性哨兵恒假、熔断永久卡 Open 且 stale 复位失效；且 mcpcf 面零测试覆盖
 - detail: 定位：`src/server/mcpcf_embed.mbt:267` 与 `:360` `let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`（Int64→Int32 截断，core 语义 `%i64_to_i32`），分别喂 `circuit_fail/succeed/status`；消费点 `src/engine/engine_circuit.mbt:136` `opened_at > 0 &&`（恢复门）与 `:170` `rec > 0 && last_ts > 0 && now_secs - last_ts >= rec`（stale 复位）——全文件 Int32、无域声明。2039-01-01 探针：`trunc(2177452800000L/1000) = -2117514496`；两臂实测（车道 E 独立 MoonBit 探针，17/17 PASS）——臂 A（opened=2026 正、now=2039 负）减法经双回绕同余还原真实 elapsed ⇒ 门 true（**减法形安全，勿报**，与 BUG-580 的 600000 风暴臂同一机理）；臂 B（两端同为 2039 后截断负值、差 60s）差值同余正确但 `opened_at > 0` 假 ⇒ 卡 Open。坏的是**正性哨兵**不是算术。
@@ -15759,3 +15774,31 @@ src/engine/omega_strong_test.mbt 本次改动：
 - task_id: T0（ns=iter-1109b，轮 183 车道 H 现场抓出）
 - evidence: `src/server/mcpcf_embed.mbt:10-16/:48/:267/:360` 现读 + `src/server/mcpcf_embed_bug583_wbtest.mbt` `bug583_01/:131`（holder 注入可达性实证）与 `bug583_04/:261`（缺口断言原文）+ 车道 H 回传「零污染实证：`%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 跑完 mtime 未变」
 - reported_by: lead
+
+## BUG-589 [2026-11-09T14:32:00Z] [medium] OPEN
+- summary: `check_plan_landing.py --gate` 现读 **rc=1**：判定面 30 条 > 棘轮上限 `VERDICT_GAP_CEILING=25` ⇒ 比已核存量多 5 条「计划点名而跟踪面不存在」的落点；该尺在 ci.yml 被跑两次（约 :67 与 :253），**下一次 push 触发 CI 时这一格会红**
+- detail: 现状：本地 main 领先 origin/main 91 笔未推（`git rev-list --count origin/main..HEAD` 现读），所以 CI 面上还没红——这是**延迟引爆**而不是没问题。增量的主要形状集中在 `docs/2026-10-11-multi-agent-lock-design-v3.md`：它点名 `src/engine/engine_lock.mbt`、`src/store/store_locks.mbt`、`src/server/locks_ops.mbt`、`src/server/assistant_ops.mbt`、`src/executor/kill_argv.mbt`、`src/server/kill_exec.mbt`、`templates/lock_wait_loop.md`、`memory/lock-config.json` 等 8 条，而锁族能力的真实落点是另一套（`reserve_scope` / `lock_renew` / `file_bind` / `filebind.mbt`）⇒ 设计稿命名与实现分家，文档用完成时口吻指着一个从来没存在过的路径。另有 `docs/2026-10-12-fist-mbt-supervisor-tools-plan.md` 点名 `src/server/supervisor_tools_test.mbt`（磁盘与跟踪面都没有）。
+- 边界与禁忌（修法约束）：**放宽上限是人的决定**（该尺 docstring 自述），存量按声明接受、**增量必须归零**。不许为了让尺变绿而改 `VERDICT_GAP_CEILING`、扩白名单或删掉计划承诺；真未落地的那几条要么落地、要么转 owner 裁决，不由旁观者代翻。
+- task_id: T0（ns=iter-1109b，轮 183 车道 K 正在做逐条分档：A 措辞失真→文档改真名 / B 计划作废→进存档面 / C 真未落地→只登记不糊 / D 形状应归豁免）
+- evidence: `python scripts/check_plan_landing.py --gate` rc=1 与原文「判定面 30 > 上限 25」（快照 `temp/plan_gate_183.txt`）/ 默认模式逐条清单 / `grep -n "check_plan_landing" .github/workflows/ci.yml` 两处 `--gate` 接线 / `git rev-list --count origin/main..HEAD`=91
+- reported_by: lead
+
+### 追记（2026-11-09 / 轮 183 车道 K 半成品 + 统帅终审：增量已归零，状态仍 OPEN）
+- **现读推翻上面 summary 的 rc=1**：`python scripts/check_plan_landing.py --gate` ⇒ **rc=0**，
+  判定面 **11 条**（上限 25）、611 条点名 / 98 份文档 / 搬家态 6 / 豁免态 18 / 存档面 19 只报不判。
+  即「下一次 push 必红」这一条**已被解除**（增量 19 条归零）。
+- 改法（严格按本单卡里定的分档，**没碰上限、没扩白名单、没删承诺**）：A 档「措辞失真⇒文档改真名」
+  6 份文档，每条带日期戳与证据；历史设想文件名保留为纯文本并逐条标「未建 / ✅ 已建 / 实际落点」。
+  `VERDICT_GAP_CEILING` 现读仍 25。入库 `cb4a77c64`。
+- 终审现核（非车道自述）：`wt_tools.mbt` / `run_light_wt.py` / `supervisor_tools_wbtest.mbt` /
+  `model_router_caf.mbt` / `router_caf.mbt` / `core_task·core_role·core_principle.mbt` 逐一 ls 存在；
+  `src/core/types.mbt`、`supervisor_tools_test.mbt`、`model_router_caf_ops.mbt` 逐一确认**从未存在**。
+- **仍 OPEN 的理由（不许含糊）**：剩下 11 条 C 档（真未落地/措辞待定）**只登记未处置**——
+  `docs/skills`、`templates/pipeline_mode_loop.md`、`src/ops/dispatch.mbt`、
+  `src/server/mcp_config_scaffold_impl.mbt`、`src/lib/fist_ops.mbt`、`scripts/sync_host_skills.py`、
+  `src/engine/zz_calib_wbtest` 等；尺子自己提示「可把上限收紧至 11」，**收紧是人的决定，本轮不动**。
+- 车道 K 在写逐条分档汇总前因账户额度耗尽中断 ⇒ 只提交了工作树上**逐条带证据**的改动，
+  无半成品结论入库；逐条 A/B/C/D 清单未落盘，下一轮接手时按本文档现读重做即可。
+- reported_by: lead
+## BUG-590 [2026-11-10T11:41:24Z] [medium] OPEN
+- summary: [explore R1 口径分叉三则] ① Skill 主文档与 references/tool-reference.md 均写 170 工具 / 35 份 src/server/*.mbt，本机实测 182 工具 / 41 份；② CLI auto_convert 把 --spec 的 JSON 字符串转成 object 触发 inputSchema mismatch，改用 --raw 又令 split_n/reinject_context 全部变字符串同样被拒，task_plan_deep 无法注入语义化 laws，T0.1~T0.5 子任务描述退化为根描述复制；③ scripts/laya_decide.py --probe 返回 rc=0 表示可用，但 MCP 工具 laya_decide 实测 available:false / source:fallback 规则式决策，探针与 MCP 工具口径不一致。另记 explore 并行门边界：lane4/5 因命令超时中断，conflicts_check 回执是认领后补跑的『已由本人认领』而非认领前『可安全认领』，状态回读证明 5 路均无他人持有。
