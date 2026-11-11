@@ -181,7 +181,8 @@ def rpc(method, **payload):
 
 > 本节按组给「怎么调 + 踩坑点」，**不承诺覆盖全量工具**；逐项权威表在
 > [`docs/AGENTS-mcp-inventory.md`](docs/AGENTS-mcp-inventory.md)（与 README「功能全景」的分组同源，
-> 真源是 server 注册表本身，`scripts/mcp_smoke.py` 每次跑都与之对表）。
+> 真源是 server 注册表本身；`scripts/mcp_smoke.py` 只对「运行态 `tools/list` ↔ 源码真源」，
+> 本手册的计数与 §6 参数列对表归 `scripts/check_usage_tool_count.py`）。
 > 标题里原来那个「140+ 个」既不是实测数也不是上限，已去掉 —— 写一个含糊的数，等于给下一次漂移留位置。
 
 > 参数表取自本机 `tools/list` 返回的真实 Schema。
@@ -545,8 +546,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:18326/v1/models" -Headers @{ Authorizat
 **验证结论**：publish → plan → claim/execute/submit/verify（叶子）+ verify（父自动上卷）→ archive 全链真实跑通，
 任务自动持久化到 `fist-mbt.db`。
 
-> 补充实测：`tools/list` 当时返回的工具数是**那次实跑的截面**，本手册不抄数（抄了就是第二份实现，BUG-525 两次复发）；
-> 当前总数以 server 注册表为唯一真源，对表守卫 `scripts/check_usage_tool_count.py` 每次跑都核；
+> 补充实测：`tools/list` 当时返回的工具数是**那次实跑的截面**，本手册不当契约抄死（抄死一个数就是第二份实现，BUG-525 两次复发）；
+> 当前总数以 server 注册表为唯一真源，出现的计数自述由 `scripts/check_usage_tool_count.py` 对表兜住 ——
+> 该守卫由仓内电池 `scripts/run_guards.py` 收录（`case()` 一格）；CI 面现读**未直接接线**
+> （`ci.yml` 只跑该电池的 `--selftest` / `--list` 普查，不跑这把尺的正文）；
 > `resources/read(fist://principles)` 返回七条金条 JSON；
 > `prompts/get(fist:check_in)` 返回 1 条 role=user 的打卡自查模板消息。
 

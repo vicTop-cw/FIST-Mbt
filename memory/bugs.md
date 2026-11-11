@@ -15845,6 +15845,21 @@ src/engine/omega_strong_test.mbt 本次改动：
 - task_id: T0（ns=iter-1109b，轮 183 车道 J）
 - reported_by: lead
 
+### 追记（2026-11-11 / 轮 187：① 已落地为真判据，②③ 转文档事实对齐，④⑤ 仍 OPEN）
+- ① **新判据 R8 落地**（`scripts/check_tools_sync.py` 规则 7）：解析 `docs/AGENTS-mcp-inventory.md` 各组 `### …（N…）`，
+  以「首列反引号标识符」为计数单元对表该组工具数，并断言 ΣN == 注册表实测 182（复用脚本既有真源取数，不另写一份）。
+  首跑即抓到 4 处真实漂移（都是**清单自身的滞后**，不是判据缺陷）：项目看板 29/35、六顶帽 4/7、
+  Omega 组无计数（实 6）、运维组漏 `ocr_scan`（14/15）；按事实修清单后现读
+  `R8 清单分组 19 组 ΣN=182（已与实测 182 对表）` rc=0。
+  `--selftest` 29 格（新增 8 格）全绿：合成违例必红（组头改一位）/ 多工具单元格变异 / 无计数 fail-closed /
+  0 组解析自拒 / 叙述列反引号不误计；变异在内存串上做，真文件与被检面 sha256 前后一致。
+- ②③ **转文档事实对齐**（`USAGE.md:183-185`、`:546-551`）：`mcp_smoke` 只归「运行态 `tools/list` ↔ 源码真源」，
+  文档面计数归 `check_usage_tool_count.py`，并如实写明「由电池 `run_guards.py` 收录、CI 面现读未直接接线」。
+  **接线面未动** ⇒ ②③ 的实质（CI 到底跑不跑这把尺）仍 OPEN，等 owner 决定接线还是在电池面维持。
+- ④（镜像「只增不删」无尺）、⑤（六件承诺无活体尺）仍 OPEN：需要真远端/新电池格，本轮未代修。
+- 边界重申：改判据口径=改契约，属人的决定；本轮只补尺 + 改文档事实，未放宽任何棘轮、未删任何承诺。
+- reported_by: lead
+
 ## BUG-590 [2026-11-10T11:41:24Z] [medium] OPEN
 - summary: [explore R1 口径分叉三则] ① Skill 主文档与 references/tool-reference.md 均写 170 工具 / 35 份 src/server/*.mbt，本机实测 182 工具 / 41 份；② CLI auto_convert 把 --spec 的 JSON 字符串转成 object 触发 inputSchema mismatch，改用 --raw 又令 split_n/reinject_context 全部变字符串同样被拒，task_plan_deep 无法注入语义化 laws，T0.1~T0.5 子任务描述退化为根描述复制；③ scripts/laya_decide.py --probe 返回 rc=0 表示可用，但 MCP 工具 laya_decide 实测 available:false / source:fallback 规则式决策，探针与 MCP 工具口径不一致。另记 explore 并行门边界：lane4/5 因命令超时中断，conflicts_check 回执是认领后补跑的『已由本人认领』而非认领前『可安全认领』，状态回读证明 5 路均无他人持有。
 

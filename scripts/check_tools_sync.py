@@ -13,6 +13,10 @@
      时钟由服务端盖章（BUG-1），广告一个没人读的参数就是契约在说谎；
   6. templates/pipeline_mode_*.md 里"工具名形状"的反引号词必须真实存在（BUG-37 的文档面）：
      形如 `publish_new_feature_task` 这种由真实动词前缀拼出来的臆造名，正是本条要抓的形状。
+  7. docs/AGENTS-mcp-inventory.md 的**分组计数**三向对表（BUG-591 第①条；编号取 **R8**——
+     R7 已被上面的三元组占用）：`### 组名（N）` 的 N == 该节声明的工具数，且 ΣN == 实测工具总数。
+     为什么单开这条：规则 1/2 只比「工具名在不在」、规则 3 只比「总数」⇒ **组头可以漂而全绿**
+     （首跑实测 `六顶帽（4）` 节里躺着 7 个工具、`项目看板（29）` 节里有 35 个）。
 任一漂移即 FAIL（退出码非 0）。
 
 判据范围自述（J10：自述==实现，少写=声明滞后、多写=幻影判据）：
@@ -22,7 +26,7 @@ R3b/R7 是唯一遍历 tracked_docs() 的两条规则，也是唯一受 BUG-139 
   * CHANGELOG.md 只取最顶部第一个 `## v...` 段（append-only 历史账的当前段），
     其下所有旧版本段视为历史跳过；读不到 `## v` 标题则整份按历史面跳过（保守）；
   * docs/improvement-plan-YYYYMMDD.md 系列只把日期最新那份当现状面，其余视为历史。
-R3b/R7 之外的规则（1/2/3/4/5/6）不对 CHANGELOG 做检查，行为不因本豁免改变。
+R3b/R7 之外的规则（1/2/3/4/5/6/7）不对 CHANGELOG 做检查，行为不因本豁免改变。
 
 R1 的「工具名单元」口径（BUG-500 / 判例-38 收紧，替代此前的「整行首个反引号名」）：
 「表格行首个反引号名 = 工具名」只对**工具清单表**成立——它写成 `| `tool_name` | 说明 |`，
@@ -32,6 +36,12 @@ R1 的「工具名单元」口径（BUG-500 / 判例-38 收紧，替代此前的
 ⇒ 收紧为：**只有「首列本身以单个反引号标识符开头」的行**才算工具声明。
 豁免的是「表格的哪一列有权声明工具」，不是「哪一类表格免检」——
 工具清单表仍在比对面里，工具名漂移照样红（--selftest 有对照格锁这一条）。
+
+R8 的扫描面（J10：自述==实现）：**只读 `docs/AGENTS-mcp-inventory.md` 这一份**（不遍历
+tracked_docs()、不进历史豁免面），统计单元是「节内首列声明的工具名个数」，不是行数
+（多工具行 `| `a` / `b` / `c` |` 记 3；叙述列的反引号不计）。文件不存在 ⇒ 判红（fail-closed：
+清单若被搬回 AGENTS.md，这把尺必须跟着搬，不许静默失效）；一个 `### ` 组都解析不出 ⇒
+FATAL 拒绿（不做「扫到 0 组 + 0 违例 = 绿」的假绿）。
 
 用法：python scripts/check_tools_sync.py
       python scripts/check_tools_sync.py --selftest   # BUG-139 历史豁免反向对照 + BUG-500 R1 口径变异对照
@@ -147,6 +157,106 @@ def declared_tool_names(text, require_first_cell=True):
         out.add(name)
     return out
 
+
+# ---------------------------------------------------------------- R8 分组计数（BUG-591 第①条）
+# 口径是**先打印真文件结构再定**的（2026-11-11 实测 docs/AGENTS-mcp-inventory.md），不是猜的：
+#   * 标题形如 `### 生命周期（14）` / `### 六顶帽 · 辩论裁决（4，R118 P1-b，…）` /
+#     `### Marketplace·执行者能力路由（Dynamic 范式） （5，R30-R33/R87）` ⇒ 取**最后一个**
+#     `（数字`（贪婪），且不要求数字后紧跟 `）`（真文件里后面跟的是 `，附加说明`）。
+#   * **不能数行**：`| `reserve_scope` / `reserve_check` / `reserve_release` |` 一行三个工具，
+#     项目看板组 28 行装着 35 个工具；且 `开发模式与模板（2）` 节里还有第二张 mode 表（7 行，
+#     首列是 `advance` 这类纯文本、第二列满是 `` `publish` ``）⇒ 数行或数整行反引号都会被喂成假阳。
+#   * 表头行（首列 `工具`）与分隔行（`|---|---|`）首列不带反引号 ⇒ 天然不计数，不需要特判。
+RE_GROUP_DECL = re.compile(r"^###\s+.*（(\d+)")     # 贪婪 ⇒ 取最后一个「（数字」
+RE_GROUP_TITLE = re.compile(r"^###\s+(.*\S)\s*$")
+RE_CELL_TOKEN = re.compile(r"`([^`]+)`")
+# 工具名形状：允许点号（`mcpcf.ops_init` 是链式 `s.tool` 注册的真名），拒绝空格/`--`
+# （`--` 是判例-35 的 git 语义表，`git grep -l -- x` 这种带空格的命令行片段不是工具名）。
+RE_GROUP_IDENT = re.compile(r"^[A-Za-z_][\w.\-]*$")
+
+
+def group_tool_names(section_lines, multi_per_cell=True):
+    """一节内声明的工具名（按出现顺序去重）。纯函数，--selftest 直接考它。
+
+    multi_per_cell=True（**线上口径**）：首列里每个反引号标识符各算一个工具
+      —— `| `a` / `b` / `c` |` 记 3 个（真文件里 reserve/lock/file_bind 三行就是这样）。
+    multi_per_cell=False（**变异态**，仅 --selftest 反向对照用）：每行只取第一个 ⇒
+      退化成「数行数」，多工具行被按 1 计 ⇒ 合成违例必须复现为红。
+
+    只看**首列**（_table_first_cell）：叙述列里的反引号是散文引用（`` `publish` `` 出现在
+    mode 表的约束列里），把它们算进来就是 BUG-500 同族的「整行反引号」假阳。"""
+    out = []
+    for line in section_lines:
+        s = line.strip()
+        if not s.startswith("|"):
+            continue
+        toks = RE_CELL_TOKEN.findall(_table_first_cell(s))
+        if not multi_per_cell:
+            toks = toks[:1]
+        for tok in toks:
+            tok = tok.strip()
+            if RE_GROUP_IDENT.match(tok) and tok not in out:
+                out.append(tok)
+    return out
+
+
+def inventory_groups(text, multi_per_cell=True):
+    """把清单正文按 `### ` 切组：[(标题行号, 组名, 声明 N 或 None, 工具名列表)]。纯函数。
+
+    节的结束边界 = 下一个 `## ` / `### `（`#### ` 不算边界，仍属本节；真文件里没有）。"""
+    lines = text.splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        if not line.startswith("### "):
+            continue
+        end = len(lines)
+        for j in range(i + 1, len(lines)):
+            if lines[j].startswith("## ") or lines[j].startswith("### "):
+                end = j
+                break
+        m = RE_GROUP_DECL.match(line)
+        title = RE_GROUP_TITLE.match(line)
+        out.append((
+            i + 1,
+            title.group(1) if title else line[4:].strip(),
+            int(m.group(1)) if m else None,
+            group_tool_names(lines[i + 1:end], multi_per_cell),
+        ))
+    return out
+
+
+def check_inventory_groups(text, real_total, multi_per_cell=True):
+    """R8：分组三向对表 —— ①每组「声明 N == 该节工具数」②「ΣN == 注册表实测」。
+
+    返回 (problems, groups, sum_declared)；problems 为空 ⇔ 三面一致。
+    违例文案按验收口径点名「组名 / 声明 N / 实际行数 / ΣN / 实测总数」。"""
+    groups = inventory_groups(text, multi_per_cell)
+    problems = []
+    for ln, title, declared, names in groups:
+        short = title.split("（")[0].strip()
+        if declared is None:
+            if names:
+                problems.append(
+                    f"R8 清单:{ln} 组「{short}」组头没有（N）计数，但节内声明了 {len(names)} 个工具"
+                    f" —— 无计数的组会让 ΣN 静默漏算（fail-closed：组头补（{len(names)}））"
+                )
+            continue
+        if declared != len(names):
+            problems.append(
+                f"R8 清单:{ln} 组「{short}」声明 {declared} / 实际 {len(names)} 个工具"
+                f"（差 {len(names) - declared:+d}）—— {', '.join(names) or '本节无工具行'}"
+            )
+    sum_declared = sum(d for _, _, d, _ in groups if d is not None)
+    if groups and sum_declared != real_total:
+        detail = "；".join(
+            f"{t.split('（')[0].strip()} {d if d is not None else '无计数'}/{len(names)}"
+            for _, t, d, names in groups
+        )
+        problems.append(
+            f"R8 ΣN={sum_declared} ≠ 实测总数 {real_total}（差 {real_total - sum_declared:+d}）"
+            f" —— 逐组「声明/实际」：{detail}"
+        )
+    return problems, groups, sum_declared
 
 
 def real_tools():
@@ -453,13 +563,33 @@ def main():
                     f"{tpl.name} 以调用形状引用了未注册工具 `{tok}(...)`（BUG-38：按模板执行必然调空）"
                 )
 
+    # 7) R8：清单分组计数 ↔ 节内工具行 ↔ 注册表实测（BUG-591 第①条）
+    #    规则 1/2 比「名字在不在」、规则 3 比「总数」，于是组头（`### 生命周期（14）`）无人认领
+    #    ⇒ 组头写错也能全绿。这里把三层打进一条：每组 N == 该节工具数，且 ΣN == 实测 n。
+    r8_groups, r8_sum = [], 0
+    if not inv.is_file():
+        problems.append(
+            f"R8 {inv.name} 不存在 —— 分组计数无从比对（清单若搬回 AGENTS.md，本判据必须跟着搬，"
+            f"不许静默失效）"
+        )
+    else:
+        r8_probs, r8_groups, r8_sum = check_inventory_groups(
+            inv.read_text(encoding="utf-8"), n
+        )
+        # 反幻影：一组都没解析到 ⇒ 判据已退化（空文本也是「0 违例」），拒绝出绿灯
+        if not r8_groups:
+            print(f"FATAL R8 在 {inv.name} 里一个 `### ` 分组都没解析到（判据已退化，拒绝出绿灯）")
+            return 2
+        problems.extend(r8_probs)
+
     if problems:
         print(f"FAIL 工具清单不一致（实测 {n} 个；R3b/R7 扫现状面 {scanned} 份，历史面豁免 {history_skipped} 份）：")
         for p in problems:
             print("  - " + p)
         return 1
     print(f"PASS 工具单一真源一致：server.mbt 注册 {n} 个，AGENTS/README/deliverable/scoring_rubric 对齐；"
-          f"R3b/R7 扫现状面 {scanned} 份，历史面豁免 {history_skipped} 份（CHANGELOG 历史段/旧版 improvement-plan）")
+          f"R3b/R7 扫现状面 {scanned} 份，历史面豁免 {history_skipped} 份（CHANGELOG 历史段/旧版 improvement-plan）；"
+          f"R8 清单分组 {len(r8_groups)} 组 ΣN={r8_sum}（已与实测 {n} 对表）")
     return 0
 
 
@@ -717,7 +847,99 @@ def selftest():
     done[0] += 1
     print("  ok  case37-mutation-reds-exemption-not-decorative")
 
-    print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由 run_case 实测累加，非手写）")
+    # ---------------------------------------------------------------- R8 分组计数（BUG-591 ①）
+    # 合成清单，形状**逐条对齐真文件**：表头行+分隔行、多工具行（`| `a` / `b` |`）、
+    # 带点号的链式注册名、节内第二张表（首列纯文本、叙述列有反引号）、组头带附加说明。
+    print("SELFTEST BUG-591 R8 清单分组计数（合成清单，不碰仓库）")
+    R8_TOTAL = 5          # 下面 CLEAN 夹具的 ΣN = 3 + 2，也是「合成注册表实测总数」
+    CLEAN_INV = (
+        "## MCP Server\n\n"
+        "### 生命周期（3，R118 附加说明）\n"
+        "| 工具 | 说明 |\n|---|---|\n"
+        "| `publish` | 发布 |\n"
+        "| `claim` | 认领 |\n"
+        "| `mcpcf.ops_init` | 链式注册（名字带点号） |\n\n"
+        "### 看板 / 预订（2）\n"
+        "| 工具 | 说明 |\n|---|---|\n"
+        "| `reserve_scope` / `reserve_check` | 一行两个工具 |\n\n"
+        "7 种模式（第二张表：首列纯文本，叙述列满是反引号 —— 不许被喂成工具行）：\n\n"
+        "| mode | 禁用工具 |\n|---|---|\n"
+        "| advance | 禁用 `publish` / `claim` / `archive` |\n"
+    )
+
+    def _r8_case(name, text, want=None, want_none=None, total=R8_TOTAL, multi=True):
+        probs, _groups, _sum = check_inventory_groups(text, total, multi_per_cell=multi)
+        if want is not None and not any(want in p for p in probs):
+            print(f"SELFTEST FAIL [{name}] 期望命中 «{want}» 实际 {probs or '无违例'}")
+            return False
+        if want_none is not None and any(want_none in p for p in probs):
+            print(f"SELFTEST FAIL [{name}] 不该命中 «{want_none}» 实际 {probs}")
+            return False
+        done[0] += 1
+        print(f"  ok  {name}")
+        return True
+
+    # 1) 干净输入不误红（多工具行按名字数=2、叙述列反引号不计数、ΣN==实测）
+    if not _r8_case("clean-inventory-no-false-red", CLEAN_INV, want_none="R8"):
+        return 1
+    # 2) 合成违例必红：组头数字改错一位（3→4）
+    if not _r8_case(
+        "group-header-off-by-one-reds",
+        CLEAN_INV.replace("生命周期（3", "生命周期（4"),
+        want="组「生命周期」声明 4 / 实际 3 个工具",
+    ):
+        return 1
+    # 3) 变异对照（改代码不是改注释）：把「一格多工具」的解析改坏成「每行只取第一个」，
+    #    同一份干净夹具必须复现为红 —— 证明多工具行计数不是可省的装饰（判例-29/30）。
+    if not _r8_case(
+        "multi-tool-cell-mutation-reds",
+        CLEAN_INV,
+        want="组「看板 / 预订」声明 2 / 实际 1 个工具",
+        multi=False,
+    ):
+        return 1
+    # 4) 组头无（N）计数但节内有工具行 ⇒ 必红（真文件 `### Omega 强验证（可选开关，默认关闭）`
+    #    的形状：6 个工具行没有被任何组头计数，ΣN 因此静默漏算）
+    if not _r8_case(
+        "heading-without-count-reds",
+        "## MCP Server\n\n### Omega 强验证（可选开关，默认关闭）\n"
+        "| 工具 | 说明 |\n|---|---|\n| `omega_status` | 查询 |\n",
+        want="组头没有（N）计数",
+    ):
+        return 1
+    # 5) 每组自洽但 ΣN ≠ 实测 ⇒ 必红（对应真文件「组头数字整体落后于注册表」那一档）
+    if not _r8_case(
+        "sigma-mismatch-reds",
+        CLEAN_INV,
+        want="ΣN=5 ≠ 实测总数 6",
+        total=6,
+    ):
+        return 1
+    # 6) 空组（声明 N 但节内零工具行）⇒ 必红，不被「0 行也算一致」蒙过
+    if not _r8_case(
+        "empty-group-claim-reds",
+        "## MCP Server\n\n### 空组（3）\n\n本节没有表格。\n",
+        want="组「空组」声明 3 / 实际 0 个工具",
+    ):
+        return 1
+    # 7) 叙述列反引号不喂针（单独一支，锁住「只看首列」这条口径）
+    if not _r8_case(
+        "narrative-backticks-not-counted",
+        "## MCP Server\n\n### 单行（1）\n"
+        "| 工具 | 说明 |\n|---|---|\n| `publish` | 禁用 `publish` / `claim` |\n",
+        want_none="R8",
+        total=1,
+    ):
+        return 1
+    # 8) 反幻影：一个 `### ` 组都解析不出 ⇒ inventory_groups 返回空（main 据此 FATAL rc=2，
+    #    绝不把「0 组 + 0 违例」读成绿）
+    if inventory_groups("") or inventory_groups("# 只有一级标题\n\n正文\n"):
+        print("SELFTEST FAIL [no-group-parsed] 空/无组正文应解析出 0 组")
+        return 1
+    done[0] += 1
+    print("  ok  no-group-parsed-refuses-green")
+
+    print(f"SELFTEST PASS {done[0]} 个变体各自命中自己指名的判据（计数由各 case 助手实测累加，非手写）")
     return 0
 
 
