@@ -18,6 +18,7 @@
 ///|
 /// CAF dry_run 预览结果：建议模型 + 历史依据。
 /// 验收标准 3 预期产物形状：`{"suggestion": model, "basis": [{model, rate, avg_cost, count, ...}]}`。
+#derive(Debug)
 pub struct CafDryRun {
   /// 不含 CAF 的 base pick 决策（对照）
   base : RouteDecision
@@ -29,7 +30,7 @@ pub struct CafDryRun {
   basis : Array[CafModelStats]
   /// 检索的 k 值
   top_k : Int32
-} derive(Debug)
+}
 
 ///|
 pub extend CafDryRun with @moonbitlang/core/debug.Debug::{to_repr}

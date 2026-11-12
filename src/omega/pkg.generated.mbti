@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "vicTop-cw/fist-mbt/src/omega"
 
+import {
+  "moonbitlang/core/json",
+}
+
 // Values
 pub const ROOT_CAUSE_FORMAT_DEVIATION : String = "format_deviation"
 
@@ -12,63 +16,63 @@ pub const ROOT_CAUSE_STRUCT_MISSING : String = "struct_missing"
 
 pub const ROOT_CAUSE_UNKNOWN : String = "unknown"
 
-pub fn apply_fix(Json, String) -> Json
+pub fn apply_fix(@json.Json, String) -> @json.Json
 
-pub fn batch_verify(Array[(String, String)]) -> Json
+pub fn batch_verify(Array[(String, String)]) -> @json.Json
 
-pub fn batch_verify_fix(Array[Json], max_rounds? : Int32) -> Json
+pub fn batch_verify_fix(Array[@json.Json], max_rounds? : Int32) -> @json.Json
 
-pub fn calc_coverage(Array[String], Json) -> Double
+pub fn calc_coverage(Array[String], @json.Json) -> Double
 
-pub fn canonical_json(Json) -> String
+pub fn canonical_json(@json.Json) -> String
 
-pub fn check_expected(Json, Json) -> (Bool, String)
+pub fn check_expected(@json.Json, @json.Json) -> (Bool, String)
 
-pub fn check_report_format(String) -> Array[Json]
+pub fn check_report_format(String) -> Array[@json.Json]
 
-pub fn check_structure(String) -> Array[Json]
+pub fn check_structure(String) -> Array[@json.Json]
 
 pub fn classify_root_cause(String) -> String
 
-pub fn compute_fingerprint(Json) -> String
+pub fn compute_fingerprint(@json.Json) -> String
 
-pub fn expand_parameters(Json) -> Json
+pub fn expand_parameters(@json.Json) -> @json.Json
 
-pub fn fix_format_deviation(Json) -> Json
+pub fn fix_format_deviation(@json.Json) -> @json.Json
 
-pub fn fix_fp_mismatch(Json) -> Json
+pub fn fix_fp_mismatch(@json.Json) -> @json.Json
 
-pub fn fix_semantic_error(Json) -> Json
+pub fn fix_semantic_error(@json.Json) -> @json.Json
 
-pub fn fix_struct_missing(Json) -> Json
+pub fn fix_struct_missing(@json.Json) -> @json.Json
 
 pub fn fnv1a64(String) -> String
 
-pub fn parse_spec(String) -> Result[Json, String]
+pub fn parse_spec(String) -> Result[@json.Json, String]
 
 pub fn regex_lite(String, String) -> Bool
 
-pub fn run_tests(Json, (Json) -> Result[Json, String]) -> Array[Json]
+pub fn run_tests(@json.Json, (@json.Json) -> Result[@json.Json, String]) -> Array[@json.Json]
 
-pub fn score_to_json(ScoreResult) -> Json
+pub fn score_to_json(ScoreResult) -> @json.Json
 
-pub fn spec_scoring(Json, Int32, Int32) -> ScoreResult
+pub fn spec_scoring(@json.Json, Int32, Int32) -> ScoreResult
 
-pub fn spec_scoring_str(String, Int32, Int32) -> Json
+pub fn spec_scoring_str(String, Int32, Int32) -> @json.Json
 
-pub fn summarize(Array[Json]) -> Json
+pub fn summarize(Array[@json.Json]) -> @json.Json
 
-pub fn validate_full(String) -> Json
+pub fn validate_full(String) -> @json.Json
 
-pub fn validate_schema(Json) -> Array[String]
+pub fn validate_schema(@json.Json) -> Array[String]
 
-pub fn validate_spec_json(String) -> Result[Json, String]
+pub fn validate_spec_json(String) -> Result[@json.Json, String]
 
-pub fn verify_fingerprint(Json) -> Result[Unit, String]
+pub fn verify_fingerprint(@json.Json) -> Result[Unit, String]
 
-pub fn verify_fix_with_evidence(Array[(String, String)], max_rounds? : Int32) -> Json
+pub fn verify_fix_with_evidence(Array[(String, String)], max_rounds? : Int32) -> @json.Json
 
-pub fn verify_single_spec(String, String) -> Json
+pub fn verify_single_spec(String, String) -> @json.Json
 
 // Errors
 

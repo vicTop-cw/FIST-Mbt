@@ -13,10 +13,11 @@
 
 ///|
 /// 模型档位：免费池 / 付费池
+#derive(Eq, Debug)
 pub enum ModelTier {
   Free
   Paid
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelTier with Eq::{not_equal, equal}
@@ -47,6 +48,7 @@ pub fn ModelTier::from_string(s : String) -> ModelTier? {
 ///
 /// `lane`：OFM 渠道维度元数据（P0.1，如 zen/kilo/eac）。空串 = 未标注渠道，
 /// 语义是「未知」而不是「默认渠道」——调用方不得把空 lane 当成某个具体渠道路由。
+#derive(Eq, Debug)
 pub struct ModelQuota {
   name : String
   tier : ModelTier
@@ -62,7 +64,7 @@ pub struct ModelQuota {
   rank : Int32
   /// P1.1：冷却截止（ISO 8601），"" = 无冷却
   mut cooldown_until : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelQuota with Eq::{not_equal, equal}
@@ -340,6 +342,7 @@ pub fn soldier_label_reason(label : String) -> String {
 ///
 /// **本结构体刻意没有 API key 字段**：配置会被四态投影到 skill/插件目录，密钥一旦进结构体
 /// 就会进投影。密钥只从进程环境变量读（`FIST_OFM_KEY`），由 `src/server` 层注入。
+#derive(Eq, Debug)
 pub struct RouterConfig {
   window_seconds : Int32
   threshold_pct : Double
@@ -355,7 +358,7 @@ pub struct RouterConfig {
   caf_default_preference : Array[String]
   // P2d：视为「记忆充足」的最小证据数。默认 10；0 表示任何证据都算充足。
   caf_min_evidences : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RouterConfig with Eq::{not_equal, equal}
@@ -441,6 +444,7 @@ pub fn RouterConfig::default() -> RouterConfig {
 
 ///|
 /// 路由决策结果
+#derive(Eq, Debug)
 pub struct RouteDecision {
   model_name : String
   tier : ModelTier
@@ -452,7 +456,7 @@ pub struct RouteDecision {
   fallback_chain : Array[String]
   /// P2：laya 参与时标注 `laya:<tier>`（如 laya:paid），未参与 = 空串
   laya_reason : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend RouteDecision with Eq::{not_equal, equal}
@@ -817,6 +821,7 @@ fn pool_pick(
 
 ///|
 /// 模型路由器（档位状态机 + 池内轮询游标）
+#derive(Eq, Debug)
 pub struct ModelRouter {
   config : RouterConfig
   mut free_idx : Int32
@@ -828,7 +833,7 @@ pub struct ModelRouter {
   // 本次真正选中/使用的模型名（BUG-56：游标 free_idx/paid_idx 指向的是**下一个**候选，
   // 不能拿它当"当前模型"报给调用方，否则同一响应里 decision.model 与 usage.current_model 自相矛盾）
   mut last_pick : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend ModelRouter with Eq::{not_equal, equal}

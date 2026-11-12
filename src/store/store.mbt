@@ -119,6 +119,7 @@ pub fn MemoryStore::new() -> MemoryStore {
 
 ///|
 /// 文件锁记录（跨后端统一结构）。
+#derive(Eq, Debug)
 pub struct FileLock {
   lock_id : String
   batch_id : String
@@ -129,7 +130,7 @@ pub struct FileLock {
   ts : String
   ttl_until : String
   meta : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend FileLock with Eq::{not_equal, equal}
@@ -218,13 +219,14 @@ pub fn FileLock::to_json(self : FileLock) -> Json {
 
 ///|
 /// 锁违例记录。
+#derive(Eq, Debug)
 pub struct LockViolation {
   ts : String
   agent : String
   scope : String
   reason : String
   lock_id : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend LockViolation with Eq::{not_equal, equal}
@@ -246,6 +248,7 @@ pub fn LockViolation::new(
 
 ///|
 /// 项目助理登记（multi-agent-lock v3 阶段2 精简版）。
+#derive(Eq, Debug)
 pub struct AssistantReg {
   agent : String
   /// all | lock_keeper | reaper | sheriff | auditor（逗号分隔）
@@ -256,7 +259,7 @@ pub struct AssistantReg {
   heartbeat_at : String
   /// active | dead | resigned
   status : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend AssistantReg with Eq::{not_equal, equal}

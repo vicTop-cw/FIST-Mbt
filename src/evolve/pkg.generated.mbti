@@ -3,6 +3,7 @@ package "vicTop-cw/fist-mbt/src/evolve"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "vicTop-cw/fist-mbt/src/store",
 }
 
@@ -27,7 +28,7 @@ pub fn critic_dup_sim() -> Double
 
 pub fn critic_most_similar(Archive, String) -> (String, String, Double)?
 
-pub fn critic_review(Archive, String, Double, threshold? : Double) -> Json
+pub fn critic_review(Archive, String, Double, threshold? : Double) -> @json.Json
 
 pub fn curl_repo_search(String, token? : String) -> String
 
@@ -134,8 +135,8 @@ pub struct Artifact {
   created_at : String
 }
 pub fn Artifact::create(id~ : String, parent_id~ : String?, goal~ : String, note~ : String, code~ : String, score~ : Double, parts~ : Map[String, Double], created_at~ : String) -> Self
-pub fn Artifact::from_json(Json) -> Self
-pub fn Artifact::to_json(Self) -> Json
+pub fn Artifact::from_json(@json.Json) -> Self
+pub fn Artifact::to_json(Self) -> @json.Json
 pub fn Artifact::with_children(Self, Int32) -> Self
 
 pub struct CurriculumItem {
@@ -144,12 +145,13 @@ pub struct CurriculumItem {
   min_score : Double
 }
 
+#derive(Eq, @debug.Debug)
 pub enum CurriculumLevel {
   L1
   L2
   L3
   L4
-} derive(Eq, @debug.Debug)
+}
 pub fn CurriculumLevel::equal(Self, Self) -> Bool
 pub fn CurriculumLevel::not_equal(Self, Self) -> Bool
 pub fn CurriculumLevel::to_repr(Self) -> @debug.Repr
@@ -170,13 +172,14 @@ pub struct GhRepo {
   topics : Array[String]
 }
 
+#derive(Eq, @debug.Debug)
 pub enum MutationKind {
   Rewrite
   Simplify
   Generalize
   Specialize
   Combine
-} derive(Eq, @debug.Debug)
+}
 pub fn MutationKind::equal(Self, Self) -> Bool
 pub fn MutationKind::not_equal(Self, Self) -> Bool
 pub fn MutationKind::to_repr(Self) -> @debug.Repr

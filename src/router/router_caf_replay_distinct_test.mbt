@@ -285,6 +285,6 @@ test "caf_c1_6_无邻域保留原始顺序" {
   let single : Array[String] = ["m_unknown"]
   let r3 = @router.caf_soft_reorder(single, stats)
   if r3.length() != 1 || r3[0] != "m_unknown" {
-    abort("单元素无邻域候选应保原序，实际 " + r3.to_string())
+    abort("单元素无邻域候选应保原序，实际 \{Repr(r3)}")
   }
 }

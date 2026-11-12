@@ -3,6 +3,7 @@
 
 ///|
 /// 八角色
+#derive(Eq, Debug)
 pub enum Role {
   /// 人类指挥官（唯一拥有任务的最终主权）
   HumanSteward
@@ -22,7 +23,7 @@ pub enum Role {
   Observer
   /// 语料创建者（Omega 强验证：为本轮任务编写 Omega 语料）
   SpecAuthor
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Role with Eq::{not_equal, equal}
@@ -89,10 +90,11 @@ pub fn Role::description(self : Role) -> String {
 
 ///|
 /// 每个任务的完整操作清单（仅保留 Omega 强验证相关 Action）
+#derive(Eq, Debug)
 pub enum Action {
   CreateSpec // 创建语料（Omega 强验证：语料创建者）
   ReviewSpec // 审核语料 / 复验成果（Omega 强验证：验证者）
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Action with Eq::{not_equal, equal}

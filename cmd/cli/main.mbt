@@ -511,7 +511,7 @@ fn run_doctor() -> Bool {
         ns="doctor-sqlite-check",
       )
       println(
-        "✅ [5/5] SQLite store 可打开 (open_sqlite + publish 闭环, pub=\{pub_res.to_string()})",
+        "✅ [5/5] SQLite store 可打开 (open_sqlite + publish 闭环, pub=\{Repr(pub_res)})",
       )
       ref_ok[0] = ref_ok[0] + 1
     }

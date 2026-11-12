@@ -4,13 +4,14 @@ package "vicTop-cw/fist-mbt/src/store"
 import {
   "daqing/sqlite",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "vicTop-cw/fist-mbt/src/core",
 }
 
 // Values
 pub fn agent_record_is_process_self(AgentRecord) -> Bool
 
-pub fn aggregate_stats(@sqlite.Database) -> Json
+pub fn aggregate_stats(@sqlite.Database) -> @json.Json
 
 pub fn assistant_claim_action(AssistantReg?, String, String, String) -> (Bool, String, String)
 
@@ -63,6 +64,7 @@ pub struct AgentRecord {
   status : String
 }
 
+#derive(Eq, @debug.Debug)
 pub struct AssistantReg {
   agent : String
   mode : String
@@ -70,11 +72,11 @@ pub struct AssistantReg {
   registered_at : String
   heartbeat_at : String
   status : String
-} derive(Eq, @debug.Debug)
+}
 pub fn AssistantReg::equal(Self, Self) -> Bool
 pub fn AssistantReg::new(agent~ : String, mode~ : String, is_primary~ : Bool, registered_at~ : String, heartbeat_at~ : String, status~ : String) -> Self
 pub fn AssistantReg::not_equal(Self, Self) -> Bool
-pub fn AssistantReg::to_json(Self) -> Json
+pub fn AssistantReg::to_json(Self) -> @json.Json
 pub fn AssistantReg::to_repr(Self) -> @debug.Repr
 
 pub struct ExecutionRecord {
@@ -91,6 +93,7 @@ pub struct ExecutionRecord {
   created_at : String
 }
 
+#derive(Eq, @debug.Debug)
 pub struct FileLock {
   lock_id : String
   batch_id : String
@@ -100,7 +103,7 @@ pub struct FileLock {
   ts : String
   ttl_until : String
   meta : String
-} derive(Eq, @debug.Debug)
+}
 pub fn FileLock::agent_of(Self) -> String
 pub fn FileLock::equal(Self, Self) -> Bool
 pub fn FileLock::new(lock_id~ : String, batch_id~ : String, scope~ : String, agent~ : String, status? : String, ts? : String, ttl_until? : String, meta? : String) -> Self
@@ -108,9 +111,10 @@ pub fn FileLock::not_equal(Self, Self) -> Bool
 pub fn FileLock::renew(Self, ttl_until~ : String, ts~ : String) -> Self
 pub fn FileLock::scope_of(Self) -> String
 pub fn FileLock::status_of(Self) -> String
-pub fn FileLock::to_json(Self) -> Json
+pub fn FileLock::to_json(Self) -> @json.Json
 pub fn FileLock::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub struct LockAcquireOutcome {
   granted : Bool
   action : String
@@ -118,29 +122,30 @@ pub struct LockAcquireOutcome {
   agent : String
   ttl_until : String
   violation_logged : Bool
-} derive(@debug.Debug)
+}
 pub fn LockAcquireOutcome::denied_by_permission() -> Self
 pub fn LockAcquireOutcome::relabel(Self, String, Bool) -> Self
 pub fn LockAcquireOutcome::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct LockViolation {
   ts : String
   agent : String
   scope : String
   reason : String
   lock_id : String
-} derive(Eq, @debug.Debug)
+}
 pub fn LockViolation::equal(Self, Self) -> Bool
 pub fn LockViolation::new(ts~ : String, agent~ : String, scope~ : String, reason~ : String, lock_id~ : String) -> Self
 pub fn LockViolation::not_equal(Self, Self) -> Bool
-pub fn LockViolation::to_json(Self) -> Json
+pub fn LockViolation::to_json(Self) -> @json.Json
 pub fn LockViolation::to_repr(Self) -> @debug.Repr
 
 pub struct MemoryStore {
   tasks : Map[String, @core.Task]
   specs : Map[String, SpecRecord]
   mut default_ns : String
-  call_logs : Array[Json]
+  call_logs : Array[@json.Json]
   reservations : Map[String, (String, String, String)]
   executors : Map[String, (String, String)]
   file_locks : Map[String, FileLock]
@@ -175,7 +180,7 @@ pub fn MemoryStore::locks_sweep(Self, String) -> Int32
 pub fn MemoryStore::locks_try_acquire(Self, FileLock) -> LockAcquireOutcome
 pub fn MemoryStore::locks_upsert(Self, FileLock) -> Unit
 pub fn MemoryStore::new() -> Self
-pub fn MemoryStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn MemoryStore::recent_call_logs(Self, limit? : Int32) -> Array[@json.Json]
 pub fn MemoryStore::rsv_get(Self, String) -> (String, String, String)?
 pub fn MemoryStore::rsv_list(Self) -> Array[(String, String, String)]
 pub fn MemoryStore::rsv_release(Self, String, String) -> Bool
@@ -197,7 +202,7 @@ pub fn MultiStore::data_dir_ok(String) -> Bool
 pub fn MultiStore::get(Self, String) -> SqliteStore?
 pub fn MultiStore::new(data_dir? : String) -> Self
 pub fn MultiStore::ns_list(Self) -> Array[String]
-pub fn MultiStore::ns_stats(Self) -> Json
+pub fn MultiStore::ns_stats(Self) -> @json.Json
 pub fn MultiStore::ns_task_count(Self, String) -> Int32
 pub fn MultiStore::open(Self, ns~ : String, data_dir~ : String) -> Bool
 pub fn MultiStore::safe_ns(String) -> String?
@@ -211,6 +216,7 @@ pub struct RsvOutcome {
 }
 pub fn RsvOutcome::relabel(Self, String) -> Self
 
+#derive(Eq, @debug.Debug)
 pub struct SpecRecord {
   id : String
   task_id : String
@@ -219,11 +225,11 @@ pub struct SpecRecord {
   status : String
   created_at : String
   updated_at : String
-} derive(Eq, @debug.Debug)
+}
 pub fn SpecRecord::equal(Self, Self) -> Bool
 pub fn SpecRecord::new(id~ : String, task_id~ : String, spec_type? : String, content? : String, status? : String, created_at? : String, updated_at? : String) -> Self
 pub fn SpecRecord::not_equal(Self, Self) -> Bool
-pub fn SpecRecord::to_json(Self) -> Json
+pub fn SpecRecord::to_json(Self) -> @json.Json
 pub fn SpecRecord::to_repr(Self) -> @debug.Repr
 
 pub struct SqliteStore {
@@ -265,7 +271,7 @@ pub fn SqliteStore::delete_heartbeat(Self, String) -> Result[Unit, String]
 pub fn SqliteStore::delete_task(Self, String) -> Result[Unit, String]
 pub fn SqliteStore::ensure_specs_table(Self) -> Bool
 pub fn SqliteStore::evolve_bump_child(Self, String) -> Bool
-pub fn SqliteStore::evolve_list(Self) -> Array[Json]
+pub fn SqliteStore::evolve_list(Self) -> Array[@json.Json]
 pub fn SqliteStore::evolve_upsert(Self, id~ : String, parent_id~ : String, goal~ : String, note~ : String, code~ : String, score~ : Double, parts_json~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn SqliteStore::executor_clear(Self) -> Bool
 pub fn SqliteStore::executor_list(Self) -> Array[(String, String, String)]
@@ -292,7 +298,7 @@ pub fn SqliteStore::new() -> Self?
 pub fn SqliteStore::open(String) -> Self?
 pub fn SqliteStore::open_preflight_ok(String) -> Bool
 pub fn SqliteStore::read_heartbeat(Self, String) -> (String, String, String)
-pub fn SqliteStore::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn SqliteStore::recent_call_logs(Self, limit? : Int32) -> Array[@json.Json]
 pub fn SqliteStore::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn SqliteStore::rsv_get(Self, String) -> (String, String, String)?
 pub fn SqliteStore::rsv_list(Self) -> Array[(String, String, String)]
@@ -329,7 +335,7 @@ pub fn StoreBackend::challenge_pending_count(Self, String, String) -> Int32
 pub fn StoreBackend::challenge_persisted(Self) -> Bool
 pub fn StoreBackend::challenge_total_count(Self) -> Int32
 pub fn StoreBackend::clear(Self) -> Unit
-pub fn StoreBackend::cost_stats(Self) -> Json
+pub fn StoreBackend::cost_stats(Self) -> @json.Json
 pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn StoreBackend::delete_heartbeat(Self, String) -> Result[Unit, String]
 pub fn StoreBackend::delete_task(Self, String) -> Result[Unit, String]
@@ -355,7 +361,7 @@ pub fn StoreBackend::locks_upsert(Self, FileLock) -> Unit
 pub fn StoreBackend::mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
 pub fn StoreBackend::memory() -> Self
 pub fn StoreBackend::read_heartbeat(Self, String) -> (String, String, String)
-pub fn StoreBackend::recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn StoreBackend::recent_call_logs(Self, limit? : Int32) -> Array[@json.Json]
 pub fn StoreBackend::record_execution(Self, task_id~ : String, executor~ : String, model~ : String, tokens_in~ : Int32, tokens_out~ : Int32, cost~ : Double, duration_ms~ : Int32, rate_limited~ : Bool, failure_reason~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn StoreBackend::rsv_get(Self, String) -> (String, String, String)?
 pub fn StoreBackend::rsv_list(Self) -> Array[(String, String, String)]
@@ -387,7 +393,7 @@ pub struct StoreMigration {
 }
 pub fn StoreMigration::skipped(String) -> Self
 pub fn StoreMigration::skipped_at(String, String, String) -> Self
-pub fn StoreMigration::to_json(Self) -> Json
+pub fn StoreMigration::to_json(Self) -> @json.Json
 
 // Type aliases
 

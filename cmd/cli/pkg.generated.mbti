@@ -3,6 +3,7 @@ package "vicTop-cw/fist-mbt/cmd/cli"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -28,12 +29,13 @@ pub async fn run_upgrade_full(String, String, String, Bool) -> Result[String, St
 
 pub async fn upgrade_fetch_latest(String, String, Int32) -> Result[String, String]
 
-pub async fn upgrade_io(String, String) -> Result[Json, String]
+pub async fn upgrade_io(String, String) -> Result[@json.Json, String]
 
 // Errors
 
 // Types and methods
-type Subcmd derive(Eq, @debug.Debug)
+#derive(Eq, @debug.Debug)
+type Subcmd
 
 // Type aliases
 

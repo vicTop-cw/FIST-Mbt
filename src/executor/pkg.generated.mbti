@@ -3,6 +3,7 @@ package "vicTop-cw/fist-mbt/src/executor"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "vicTop-cw/fist-mbt/src/core",
 }
 
@@ -38,6 +39,7 @@ pub fn split_need_tags(String) -> Array[String]
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub enum CliFailure {
   NotExecutable
   Timeout
@@ -45,7 +47,7 @@ pub enum CliFailure {
   SignalKilled
   DispatchFailed
   Unknown
-} derive(Eq, @debug.Debug)
+}
 pub fn CliFailure::equal(Self, Self) -> Bool
 pub fn CliFailure::label(Self) -> String
 pub fn CliFailure::not_equal(Self, Self) -> Bool
@@ -84,7 +86,7 @@ pub fn ExecResult::full(ok~ : Bool, deliverable~ : String, executor~ : String, m
 pub fn ExecResult::model_of(Self) -> String
 pub fn ExecResult::ok(String, String) -> Self
 pub fn ExecResult::succeeded(Self) -> Bool
-pub fn ExecResult::to_json(Self) -> Json
+pub fn ExecResult::to_json(Self) -> @json.Json
 pub fn ExecResult::tokens_in_of(Self) -> Int32
 pub fn ExecResult::tokens_out_of(Self) -> Int32
 pub fn ExecResult::with_duration_ms(Self, Int32) -> Self
@@ -97,14 +99,14 @@ pub struct ExecutorRegistry {
 }
 pub fn ExecutorRegistry::abilities_of(Self, String) -> Array[String]
 pub fn ExecutorRegistry::add_ability(Self, String, Array[String]) -> Self
-pub fn ExecutorRegistry::auction_pick(Self, String, Map[String, Int32], Map[String, Double], Map[String, Double]) -> Json
+pub fn ExecutorRegistry::auction_pick(Self, String, Map[String, Int32], Map[String, Double], Map[String, Double]) -> @json.Json
 pub fn ExecutorRegistry::get(Self, String) -> String?
 pub fn ExecutorRegistry::has(Self, String) -> Bool
 pub fn ExecutorRegistry::list(Self) -> Array[String]
 pub fn ExecutorRegistry::new() -> Self
 pub fn ExecutorRegistry::register(Self, String) -> Self
-pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int32]) -> Json
-pub fn ExecutorRegistry::route_pick_with_trust(Self, String, Map[String, Int32], Map[String, Double]) -> Json
+pub fn ExecutorRegistry::route_pick(Self, String, Map[String, Int32]) -> @json.Json
+pub fn ExecutorRegistry::route_pick_with_trust(Self, String, Map[String, Int32], Map[String, Double]) -> @json.Json
 
 pub struct McpDelegateExecutor {
   name : String

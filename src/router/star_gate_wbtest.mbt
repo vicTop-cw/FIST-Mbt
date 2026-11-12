@@ -277,7 +277,7 @@ test "star_gate_policy 齐备且验签通过 → 放行，verdict=Valid" {
   let p = star_gate_policy(sg_known_pk_hex, j, "alice", 1001L)
   inspect(p.gate_enabled, content="true")
   inspect(p.free_pool_unlocked, content="true")
-  inspect(p.verdict, content="Some(Valid)")
+  debug_inspect(p.verdict, content="Some(Valid)")
   if p.note.contains("验签通过") {
 
   } else {
@@ -293,7 +293,7 @@ test "star_gate_policy 齐备但公钥不符 → 拦截，verdict=BadSignature" 
   let p = star_gate_policy(other_pk, j, "octocat", 1001L)
   inspect(p.gate_enabled, content="true")
   inspect(p.free_pool_unlocked, content="false")
-  inspect(p.verdict, content="Some(BadSignature)")
+  debug_inspect(p.verdict, content="Some(BadSignature)")
   if p.note.contains("未放行") {
 
   } else {
@@ -308,7 +308,7 @@ test "star_gate_policy 齐备但 login 不在名单 → 拦截，verdict=NoSuchU
   let p = star_gate_policy(sg_known_pk_hex, j, "mallory", 1001L)
   inspect(p.gate_enabled, content="true")
   inspect(p.free_pool_unlocked, content="false")
-  inspect(p.verdict, content="Some(NoSuchUser)")
+  debug_inspect(p.verdict, content="Some(NoSuchUser)")
 }
 
 ///|
