@@ -173,10 +173,23 @@ fn SqliteStore::exec_if_ok(self : SqliteStore, sql : String) -> Unit {
 let default_db_path : String = "fist-mbt.db"
 
 ///|
-/// 由环境值决定库路径（纯函数，便于白盒判据；空串视为未设置）。
+/// 由环境值决定库路径（纯函数，便于白盒判据；空串视为未设置；首尾空白 trim）。
+///
+/// 为什么 trim（r197/r241 实证的上游成因面）：`FIST_DB_PATH` 被带尾随空格的值污染时
+/// （shell 变量未加引号、文档行尾误带空格），原样采用会去打开 `fist-mbt.db `（带空格），
+/// Windows 下落出 0 字节 stray 文件且「隔离成功」假象照旧。trim 只动首尾、不动路径中间
+/// 空白（`temp/ns db/x.db` 这类合法名不受影响）；trim 后为空串 ⇒ 与空串同语义回默认。
 pub fn SqliteStore::db_path_from_env(env_value : String?) -> String {
   match env_value {
-    Some(p) => if p.is_empty() { default_db_path } else { p }
+    Some(p) => {
+      // trim() 回 StringView（借用），落库路径要 owned String（同仓 store_bug475 先例：to_owned()）
+      let t = p.trim().to_owned()
+      if t.is_empty() {
+        default_db_path
+      } else {
+        t
+      }
+    }
     None => default_db_path
   }
 }

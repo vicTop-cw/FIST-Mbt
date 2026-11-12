@@ -22,3 +22,36 @@ test "db_path_from_env: 空串视为未设置，不当成路径" {
   assert_eq(SqliteStore::db_path_from_env(Some("")), "fist-mbt.db")
   assert_eq(SqliteStore::db_path_from_env(Some("a.db")), "a.db")
 }
+
+///|
+/// 首尾空白 trim（r197/r241 实证的上游成因面：FIST_DB_PATH 带尾随空格 ⇒
+/// 去打开 `fist-mbt.db `（带空格）⇒ Windows 落 0 字节 stray 文件）。
+/// 缺这一格时「尾随空格」再次静默逃逸——本仓 stray 复发的唯一根因锁。
+test "db_path_from_env: 首尾空白 trim 后采用" {
+  // 尾随空格（实测复发的精确形态）
+  assert_eq(SqliteStore::db_path_from_env(Some("fist-mbt.db ")), "fist-mbt.db")
+  // 前导 + 尾随
+  assert_eq(SqliteStore::db_path_from_env(Some(" fist-mbt.db ")), "fist-mbt.db")
+  // 任意路径同理
+  assert_eq(
+    SqliteStore::db_path_from_env(Some(" temp/ns-probe/run.db ")),
+    "temp/ns-probe/run.db",
+  )
+}
+
+///|
+/// trim 后为空串 ⇒ 与空串同语义回默认（「   」不是路径）。
+test "db_path_from_env: 纯空白视为未设置" {
+  assert_eq(SqliteStore::db_path_from_env(Some("   ")), "fist-mbt.db")
+  assert_eq(SqliteStore::db_path_from_env(Some(" \t ")), "fist-mbt.db")
+}
+
+///|
+/// 防过度修复对照：trim 只动首尾，**路径中间的空白**是合法名的一部分，不得动。
+/// 缺这一格时任何「把空白全删掉」的过修都会静默通过前面三格。
+test "db_path_from_env: 路径中间空白不受影响" {
+  assert_eq(
+    SqliteStore::db_path_from_env(Some("temp/ns db/x.db")),
+    "temp/ns db/x.db",
+  )
+}
