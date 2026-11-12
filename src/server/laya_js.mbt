@@ -15,7 +15,7 @@
 /// `{ ok, code, error, stdout, stderr }`. Never rejects.
 extern "js" fn js_run_laya(
   cmd : String,
-  args : Array[String],
+  args : FixedArray[String],
   workdir : String,
   input : String,
   timeout_ms : Int32,
@@ -67,7 +67,13 @@ pub async fn laya_probe_available(
   workdir : String,
   timeout_ms : Int32,
 ) -> Result[Bool, String] {
-  let raw = js_run_laya(cmd, args, workdir, "", timeout_ms).wait() catch {
+  let raw = js_run_laya(
+    cmd,
+    FixedArray::from_array(args),
+    workdir,
+    "",
+    timeout_ms,
+  ).wait() catch {
     _ => return Err("laya probe: 子进程调度失败（js 运行时异常）")
   }
   let parsed = @json.parse(raw) catch {
@@ -94,7 +100,13 @@ pub async fn laya_decide_external(
   input_json : String,
   timeout_ms : Int32,
 ) -> Result[Json, String] {
-  let raw = js_run_laya(cmd, args, workdir, input_json, timeout_ms).wait() catch {
+  let raw = js_run_laya(
+    cmd,
+    FixedArray::from_array(args),
+    workdir,
+    input_json,
+    timeout_ms,
+  ).wait() catch {
     _ =>
       return Err("laya decide: 子进程调度失败（js 运行时异常）")
   }
