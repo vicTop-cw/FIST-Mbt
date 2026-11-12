@@ -40,7 +40,14 @@ test "P1a open_preflight_ok: :memory: 与空串放行" {
 ///|
 /// P1b + P2a：父段是既存文件 ⇒ 预检 false，且 open 返回 None 而不是把 throw 漏出去。
 test "P1b/P2a 父段是既存文件：预检 false，open 返回 None" {
-  let blocker = "pf-blocker.db"
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let base = bug462_unique_dir("pf_p1b")
+  @fs.create_dir(base) catch {
+    _ => ()
+  }
+  let blocker = base + "/pf-blocker.db"
   pf_make_blocker(blocker)
   let path = "\{blocker}/ghost.db"
   assert_eq(SqliteStore::open_preflight_ok(path), false)
@@ -52,12 +59,22 @@ test "P1b/P2a 父段是既存文件：预检 false，open 返回 None" {
       )
   }
   pf_remove(blocker)
+  @fs.remove_dir(base) catch {
+    _ => ()
+  }
 }
 
 ///|
 /// P1c + P2b：目标名撞既存目录 ⇒ 预检 false，open 返回 None。
 test "P1c/P2b 目标名撞既存目录：预检 false，open 返回 None" {
-  let dir_db = "pf-dir.db"
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let base = bug462_unique_dir("pf_p1c")
+  @fs.create_dir(base) catch {
+    _ => ()
+  }
+  let dir_db = base + "/pf-dir.db"
   @fs.create_dir(dir_db) catch {
     _ => ()
   }
@@ -72,23 +89,43 @@ test "P1c/P2b 目标名撞既存目录：预检 false，open 返回 None" {
   @fs.remove_dir(dir_db) catch {
     _ => ()
   }
+  @fs.remove_dir(base) catch {
+    _ => ()
+  }
 }
 
 ///|
 /// P2c：`MultiStore::open` 是 `store_open` 工具真正走的那条路，同一条预检必须在这里也成立。
 test "P2c MultiStore::open 对建不出目录的 data_dir 返回 false 且不装进 ns 表" {
-  let blocker = "pf-ms-blocker.db"
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let base = bug462_unique_dir("pf_p2c")
+  @fs.create_dir(base) catch {
+    _ => ()
+  }
+  let blocker = base + "/pf-ms-blocker.db"
   pf_make_blocker(blocker)
   let ms = MultiStore::new(data_dir=".")
   assert_eq(ms.open(ns="pf-ms", data_dir="\{blocker}/sub"), false)
   assert_eq(ms.ns_list().length(), 0)
   pf_remove(blocker)
+  @fs.remove_dir(base) catch {
+    _ => ()
+  }
 }
 
 ///|
 /// P3：正向对照——干净可写路径预检放行，且 open 真能建库（预检不误拒）。
 test "P3 正向对照：干净路径放行且 open 真能建库" {
-  let path = "pf-ok.db"
+  @fs.create_dir("temp") catch {
+    _ => ()
+  }
+  let base = bug462_unique_dir("pf_p3")
+  @fs.create_dir(base) catch {
+    _ => ()
+  }
+  let path = base + "/pf-ok.db"
   pf_remove(path)
   assert_eq(SqliteStore::open_preflight_ok(path), true)
   match SqliteStore::open(path) {
@@ -101,4 +138,7 @@ test "P3 正向对照：干净路径放行且 open 真能建库" {
   pf_remove(path)
   pf_remove("\{path}-wal")
   pf_remove("\{path}-shm")
+  @fs.remove_dir(base) catch {
+    _ => ()
+  }
 }
