@@ -29,7 +29,7 @@
 /// 并如实带 `stdout_capped`/`stderr_capped` 旗——截断必须可见，不能伪装成完整。
 extern "js" fn js_run_command(
   cmd : String,
-  args : Array[String],
+  args : FixedArray[String],
   workdir : String,
   timeout_ms : Int32,
 ) -> @js_async.Promise[String] =
@@ -136,7 +136,12 @@ pub async fn run_check_external(
       timeout_ms.to_string(),
     ),
   )
-  let raw = js_run_command(cmd, args, workdir, timeout_ms).wait() catch {
+  let raw = js_run_command(
+    cmd,
+    FixedArray::from_array(args),
+    workdir,
+    timeout_ms,
+  ).wait() catch {
     _ => {
       ignore(
         server_log_write(

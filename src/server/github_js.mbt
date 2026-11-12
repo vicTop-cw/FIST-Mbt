@@ -60,7 +60,7 @@ extern "js" fn js_exec_curl(
 /// `{ results: [{ok, code, stdout, stderr, error}], total: N, succeeded: N }`.
 /// 永不 reject：单条失败不阻断后续，全部收集进 results。
 extern "js" fn js_exec_batch_curl(
-  commands : Array[String],
+  commands : FixedArray[String],
   workdir : String,
   timeout_ms_each : Int32,
 ) -> @js_async.Promise[String] =
@@ -203,7 +203,11 @@ pub async fn github_execute_batch(
   workdir : String,
   timeout_ms_each : Int32,
 ) -> Result[Json, String] {
-  let raw = js_exec_batch_curl(curl_commands, workdir, timeout_ms_each).wait() catch {
+  let raw = js_exec_batch_curl(
+    FixedArray::from_array(curl_commands),
+    workdir,
+    timeout_ms_each,
+  ).wait() catch {
     _ =>
       return Err(
         "github_execute_batch: 子进程调度失败（js 运行时异常）",
