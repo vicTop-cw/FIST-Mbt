@@ -22,23 +22,28 @@
   · 沙箱目录每次新建、带 RUN_ID，不复用上一轮残留（残留会把上一轮的绿读到这一轮）。
 
 用法：
-    python scripts/blackbox/e2e_acceptance_recheck.py            # 六格
-    python scripts/blackbox/e2e_acceptance_recheck.py --selftest  # 尺子自检 4 格 + 六格
-    python scripts/blackbox/e2e_acceptance_recheck.py --json      # 另存机器可读证据
+    python scripts/blackbox/e2e_acceptance_recheck.py                     # 六格活体复验
+    python scripts/blackbox/e2e_acceptance_recheck.py --selftest          # 内存级尺子自检（电池那格）
+    python scripts/blackbox/e2e_acceptance_recheck.py --selftest --live   # 自检 + 六格活体复验
+    python scripts/blackbox/e2e_acceptance_recheck.py --json              # 六格 + 另存机器可读证据
 环境变量：
     FIST_ACCEPT_JS  指定要验的 server 产物（默认按 _build → dist → LOCALAPPDATA 顺序找）。
                   相对路径按**调用方 cwd**归一；指不到文件即 rc=2 自拒，不静默回落默认候选。
+                  **非空即隐含 --live**（点名了产物就是要活体证据，命令语义不因改造而漂）。
     NODE            指定 node 可执行文件（默认 `node`）
     FIST_ACCEPT_ST4_GUARD  内部防递归哨兵（ST4 反证子进程自带），调用方不用管。
 退出码（契约，勿改档）：
-    0 = 六格全部 PASS（SKIP 不算 PASS，也不阻塞）
+    0 = 六格全部 PASS（SKIP 不算 PASS，也不阻塞）/ 内存级自检全 PASS
     1 = 任一 FAIL
-    2 = 探针自身不可用（找不到 server 产物 / node 起不来）—— 绝不冒用 1
+    2 = 探针自身不可用（找不到 server 产物 / node 起不来 / **六格承诺缺格 = 清单被搬走**）
+        —— 绝不冒用 1
     3 = --selftest 的合成违例没被抓到 ⇒ **尺子坏了**，六格的绿不可信
 
-自检格分层（BUG-529）：
-    ST2（路径归一）/ ST3（--help）/ ST4（前置缺失点名反证）不依赖 node/产物/server，
-    在一切前置检查**之前**执行；ST1 需要 MAIN_DB（server 建库才有表），留在起跑之后。
+自检格分层（BUG-529 / BUG-591 ⑤）：
+    ST5（A1 判据合成违例必红）/ ST6（干净输入不误红）/ ST7（六格承诺清单完整性：缺格即 rc=2）
+    与 ST2（路径归一）/ ST3（--help）/ ST4（前置缺失点名反证）**都不依赖 node/产物/server**，
+    在一切前置检查之前执行 —— `--selftest` 裸跑到此收口（电池跑的就是这一档：零 spawn server、
+    零 sqlite、零产物读取）；ST1 需要 MAIN_DB（server 建库才有表），只在 `--live` 面执行。
     走 rc=2 的各退出路径会打印「自检面点收」：逐格点名已执行/未执行——
     「没跑」不许长得像「跑过了」。
 
@@ -65,13 +70,22 @@ RUN_ID = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex
 SANDBOX = os.path.join(ROOT, "temp", "acceptance-recheck", RUN_ID, "box")
 ERRLOG = os.path.join(ROOT, "temp", "acceptance-recheck", RUN_ID + ".err")
 
-KNOWN_FLAGS = ("--selftest", "--json", "--help", "-h")
+KNOWN_FLAGS = ("--selftest", "--json", "--help", "-h", "--live")
 unknown = [a for a in sys.argv[1:] if a.startswith("-") and a not in KNOWN_FLAGS]
 if unknown:
     # 判例/R207：自检开关拼错 = 静默失去自检。未知旗标一律拒，不落进真检查分支。
     print("[FATAL] 未知参数 %s —— 已知：%s（rc=2）"
           % (" ".join(unknown), " / ".join(KNOWN_FLAGS)))
     sys.exit(2)
+
+# 活体面 vs 内存级自检面（BUG-591 ⑤）：`--selftest` 裸跑**不再需要 node / js 产物 / server**
+# （电池只能跑得起这一档）。要连同六格活体复验一起跑，用 `--live`。
+# `--json` 与「点名了 FIST_ACCEPT_JS」都隐含 --live —— 它们是「我要活体证据」的表达，
+# 不能因为这次改造让 README 里那两条命令悄悄退化成只跑自检。
+LIVE = ("--selftest" not in sys.argv[1:]
+        or "--live" in sys.argv[1:]
+        or "--json" in sys.argv[1:]
+        or bool((os.environ.get("FIST_ACCEPT_JS") or "").strip()))
 
 if "--help" in sys.argv[1:] or "-h" in sys.argv[1:]:
     # BUG-524②（R207 的另一半）：旗标**在白名单里但没有处理分支**，比未知旗标更阴——
@@ -225,6 +239,83 @@ def record(key, verdict, why, evidence):
     CELLS[key] = {"verdict": verdict, "why": why, "evidence": evidence}
 
 
+# ────────────────────── 六格承诺（README:145 对外的「六件事」）──────────────────────
+# 真源 = 本表：活体各格用 promised_key() 取格名（格名只有一处定义），收口时 promised_gate()
+# 逐条核「承诺的六格都记录过」—— 缺一格即 rc=2 拒绝出数，不许把「少跑一格」印成「全绿」。
+# 为什么现在才要它（BUG-591 ⑤）：README 承诺「六件事都由一支活体探针复验」，而这支探针
+# 只躺在 REGISTRY 里（无人自动执行）⇒ 承诺面上一格自动化核对都没有。
+PROMISED_CELLS = (
+    ("A1", "多租户物理隔离"),
+    ("A2", "自动修复三轮"),
+    ("A3", "可替换 Executor"),
+    ("A4", "native serve/demo"),
+    ("A5", "DAG 成环依赖"),
+    ("A6", "Omega 验收门"),
+)
+# 承诺的**格数**（对外说的是「六件事」）：表被删短/被搬走时承诺面就缩水了 ⇒ 这一格必红。
+# ⚠️ 它不是输出里的格数 —— 那些一律从 CELLS 反解（`len(CELLS)`），不抄数。
+PROMISE_ARITY = 6
+
+# 自检格分层登记（rc=2 的「点收」行按这两组点名：没跑的不许长得像跑过了）。
+# 这是**分类**不是计数 —— 输出里的格数仍从 CELLS 反解。
+ST_PRELIVE = ("ST2", "ST3", "ST4", "ST5", "ST6", "ST7")   # 零前置：无 node / 产物 / server
+ST_LIVE_ONLY = ("ST1",)                                    # 需要 MAIN_DB（server 建库才有表）
+ST_KNOWN = ST_LIVE_ONLY + ST_PRELIVE
+
+
+def promised_key(prefix):
+    """承诺格 → CELLS 里的键（`A1_多租户物理隔离`）。未知前缀直接炸，不静默造格名。"""
+    for p, label in PROMISED_CELLS:
+        if p == prefix:
+            return "%s_%s" % (p, label)
+    raise KeyError("%s 不在六格承诺表里（PROMISED_CELLS），拒绝凭空造格名" % prefix)
+
+
+def promised_gate(cells):
+    """六格承诺完整性闸 → (rc, 缺格清单)。缺任一承诺格 / 承诺表缩水 ⇒ rc=2（拒绝出数）。"""
+    if len(PROMISED_CELLS) != PROMISE_ARITY:
+        return 2, ["承诺表只剩 %d 格（对外承诺 %d 格）" % (len(PROMISED_CELLS), PROMISE_ARITY)]
+    seen = {k.split("_", 1)[0] for k in cells}
+    missing = [p for p, _ in PROMISED_CELLS if p not in seen]
+    return (2, missing) if missing else (0, [])
+
+
+def judge_a1(grew, mism, ns_total):
+    """A1 判据（纯函数：活体那一格与 --selftest 的 ST5/ST6 **共用同一份实现**）。
+
+    grew    = [(写路径名, 主库(ns=alpha)增量), …]
+    mism    = ns 库里列标签 != 库名的行数（库寻址与列值分家的另一半）
+    ns_total= ns 库总行数（0 = 看不见样本，判例-35：全 0 的分布先怀疑尺子）
+    返回 (bad 列表, verdict)。合成违例必红 / 干净输入不误红两格都打在这个函数上。
+    """
+    bad = [name for name, delta in grew if delta > 0]
+    if mism > 0:
+        bad.append("ns 库里有 %d 行列标签不等于库名（库寻址与列值分家）" % mism)
+    if bad:
+        return bad, "FAIL"
+    if ns_total <= 0:
+        return ["ns 库一条都没有 ⇒ 探针看不见样本（判例-35：全 0 的分布先怀疑尺子）"], "FAIL"
+    return [], "PASS"
+
+
+# 内存级自检在 temp/ 下造过的合成件（收口时删掉，不留脚印给下一轮读）。
+HERMETIC_ARTIFACTS = []
+
+
+def cleanup_hermetic():
+    """内存级自检收口：删合成产物 + 收掉本轮空的沙箱目录（temp/ 是 gitignored，仍要擦干净）。"""
+    for p in HERMETIC_ARTIFACTS:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+    for d in (SANDBOX, os.path.dirname(SANDBOX), os.path.dirname(ERRLOG)):
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
+
+
 def st_face_note():
     """BUG-529：rc=2 的退出路径必须点名自检格执行面——「没跑」不许长得像「跑过了」。
 
@@ -235,11 +326,13 @@ def st_face_note():
     if "--selftest" not in sys.argv[1:]:
         return
     ran = sorted(k.split("_", 1)[0] for k in CELLS if k.startswith("ST"))
-    missing = [s for s in ("ST1", "ST2", "ST3", "ST4") if s not in ran]
+    missing = [s for s in ST_KNOWN if s not in ran]
     print("[自检面点收] rc=2：已执行 %s；未执行 %s%s"
           % ("/".join(ran) if ran else "（无）",
              "/".join(missing) if missing else "（无）",
              "（ST1 缺 node/产物/server 前置，未到起跑点）" if missing else ""))
+    # 自检造过的合成件在这一档也要擦掉：rc=2 是「探针不可用」，不该留脚印给下一轮读。
+    cleanup_hermetic()
 
 
 def tid_of(res):
@@ -252,19 +345,80 @@ def tid_of(res):
     return ""
 
 
-# ──────────────────── 无前置尺子自检（ST2/ST3/ST4 · 先于一切 node/产物/server 前置）──
+# ──────────────── 无前置尺子自检（ST2~ST7 · 先于一切 node/产物/server 前置）──
 # BUG-529（分层前置）：ST2 是纯路径归一、ST3 只 spawn 本脚本自身的 --help、ST4 反证格
-# 同样不需要产物 ⇒ 三格提到 find_js()/Server 之前执行。否则任一前置缺失就 rc=2 退出，
-# 三格一支不跑，「尺子坏了（rc=3）」这一档在缺 node/产物的机器上永远不可达。
-# ST1 需要 MAIN_DB（server 建库才有表），留在起跑之后原处；rc=2 的各退出路径由
+# 同样不需要产物 ⇒ 都提到 find_js()/Server 之前执行。否则任一前置缺失就 rc=2 退出，
+# 这些格一支不跑，「尺子坏了（rc=3）」这一档在缺 node/产物的机器上永远不可达。
+# BUG-591 ⑤（本轮）：ST5/ST6/ST7 是**纯内存**的（零 spawn、零 sqlite、零产物）——
+# 它们才是电池要的那一档：六格承诺的判据与清单被搬走时真的会红。
+# ST1 需要 MAIN_DB（server 建库才有表），只在 --live 面留在起跑之后；rc=2 的各退出路径由
 # st_face_note() 逐格点名「已执行 / 未执行」，不让「没跑」长得像「跑过了」。
 if "--selftest" in sys.argv[1:]:
+    # ── ST5 A1 判据的合成违例必红（纯内存）──────────────────────────────────
+    # 三类漏点各造一发：主库增量>0 / 列标签与库名分家 / 零样本。判据看不见 = 恒绿尺子。
+    st5_shapes = [
+        ("主库增量>0", judge_a1([("publish", 1), ("heal", 0)], 0, 3)),
+        ("列标签分家", judge_a1([("publish", 0)], 2, 3)),
+        ("零样本", judge_a1([("publish", 0)], 0, 0)),
+    ]
+    st5_ok = all(v == "FAIL" and bad for _n, (bad, v) in st5_shapes)
+    record("ST5_A1判据合成违例", "PASS" if st5_ok else "FAIL",
+           "把三类合成违例喂给 A1 判据（活体那格共用同一份实现）：必须逐条判红；"
+           "任一类判绿 ⇒ 六格的绿不可信",
+           ["%s ⇒ bad=%s verdict=%s" % (n, bad, v) for n, (bad, v) in st5_shapes])
+    if not st5_ok:
+        print("[FATAL] ST5：A1 判据对合成违例判绿 ⇒ 尺子恒绿，六格结论不可信")
+        for k, v in CELLS.items():
+            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+        cleanup_hermetic()
+        sys.exit(3)
+
+    # ── ST6 干净输入不误红（反向对照：没有它，ST5 的「必红」可以靠恒红刷绿）────
+    st6_bad, st6_verdict = judge_a1(
+        [("publish", 0), ("report_bug", 0), ("heal", 0)], 0, 4)
+    st6_ok = st6_verdict == "PASS" and not st6_bad
+    record("ST6_A1判据不误红", "PASS" if st6_ok else "FAIL",
+           "八条写路径主库增量恒 0、列标签一致、ns 库有样本 ⇒ 必须判 PASS"
+           "（否则 ST5 的必红只是恒红）",
+           ["干净输入 ⇒ bad=%s verdict=%s" % (st6_bad, st6_verdict)])
+    if not st6_ok:
+        print("[FATAL] ST6：干净输入被判红 ⇒ A1 判据是恒红尺，两头的结论都不能读")
+        for k, v in CELLS.items():
+            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+        cleanup_hermetic()
+        sys.exit(3)
+
+    # ── ST7 六格承诺清单完整性（缺格/被搬走 ⇒ rc=2 自拒，绝不静默通过）────────
+    # 两头都测：① 承诺表缩水（被删短/被搬走）⇒ rc=2；② 六格都在但有一格没记录
+    # （record 调用被搬走）⇒ rc=2 且点名缺哪一格；③ 六格齐 ⇒ rc=0。
+    st7_full = {promised_key(p): {"verdict": "PASS"} for p, _ in PROMISED_CELLS}
+    st7_short = dict(st7_full)
+    st7_short.pop(promised_key("A4"))
+    st7_rc_full, st7_miss_full = promised_gate(st7_full)
+    st7_rc_short, st7_miss_short = promised_gate(st7_short)
+    st7_arity = len(PROMISED_CELLS) == PROMISE_ARITY
+    st7_ok = (st7_rc_full == 0 and not st7_miss_full and st7_arity
+              and st7_rc_short == 2 and st7_miss_short == ["A4"])
+    record("ST7_六格承诺完整性", "PASS" if st7_ok else "FAIL",
+           "承诺清单被搬走/某格没记录时必须 rc=2 拒绝出数（不许报绿）；六格齐时必须 rc=0",
+           ["表内格数=%d（承诺 %d）" % (len(PROMISED_CELLS), PROMISE_ARITY),
+            "六格齐 ⇒ rc=%d 缺格=%s" % (st7_rc_full, st7_miss_full),
+            "抽掉 A4 ⇒ rc=%d 缺格=%s" % (st7_rc_short, st7_miss_short)])
+    if not st7_ok:
+        # 清单面坏 ⇒ 自拒（2 号档），不冒用 3（3 的语义是「合成违例没抓到」）
+        print("[FATAL] ST7：六格承诺清单不完整/被搬走 ⇒ 探针拒绝出数（rc=2）")
+        for k, v in CELLS.items():
+            print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+        cleanup_hermetic()
+        sys.exit(2)
+
     # ── ST2 `FIST_ACCEPT_JS` 相对路径归一（BUG-524①，变异对照内建）──────────
     # 真跑一次 spawn 用的那副面罩：把 cwd 切到沙箱再判存在性。不做归一 ⇒ 这一格必红
     # （naive 形态是「原样交给 os.path.isfile」，在沙箱 cwd 下就是 False）。
     rel_target = os.path.join("temp", "acceptance-recheck", RUN_ID, "b524_probe.js")
     abs_target = os.path.join(ROOT, rel_target)
     io.open(abs_target, "w", encoding="utf-8").write("// 合成产物，只用于路径归一自检\n")
+    HERMETIC_ARTIFACTS.append(abs_target)
     _cwd0 = os.getcwd()
     try:
         os.chdir(SANDBOX)                      # 与 Server(...) 的 cwd 同一副面罩
@@ -283,6 +437,7 @@ if "--selftest" in sys.argv[1:]:
             "naive_isfile_in_sandbox=%s" % naive_ok])
     if not st2_ok:
         print("[FATAL] ST2：路径归一失灵 ⇒ FIST_ACCEPT_JS 是个被承认但不生效的旗标")
+        cleanup_hermetic()
         sys.exit(3)
 
     # ── ST3 `--help` 必须真的只出帮助（BUG-524②）──────────────────────────
@@ -299,6 +454,7 @@ if "--selftest" in sys.argv[1:]:
     if not st3_ok:
         print("[FATAL] ST3：--help 没被处理（rc=%d）⇒ 白名单里有旗标没人认领"
               % hp.returncode)
+        cleanup_hermetic()
         sys.exit(3)
 
     # ── ST4 前置缺失的点名契约（BUG-529 反证格 · 判例-36：新门必配必然红对照）──
@@ -330,7 +486,25 @@ if "--selftest" in sys.argv[1:]:
             print("[FATAL] ST4：rc=2 退出路径没有逐格点名自检面 ⇒ 「没跑」与「跑过了」不可分")
             for k, v in CELLS.items():
                 print("%-30s %s  why=%s" % (k, v["verdict"], v["why"]))
+            cleanup_hermetic()
             sys.exit(3)
+
+    # ── 内存级自检收口（BUG-591 ⑤）────────────────────────────────────────
+    # `--selftest` 裸跑到这里就结束：不发 spawn server、不碰 node、不读 js 产物、不开 sqlite。
+    # 电池跑的就是这一档；要六格活体复验请加 `--live`（或 --json / 点名 FIST_ACCEPT_JS）。
+    if not LIVE:
+        cleanup_hermetic()
+        bad = [k for k, v in CELLS.items() if v["verdict"] != "PASS"]
+        for k in sorted(CELLS):
+            v = CELLS[k]
+            print("%-30s %-5s  %s" % (k, v["verdict"], v["why"]))
+            for line in (v["evidence"] or [])[:4]:
+                print("      · %s" % line)
+        print("结论：内存级自检 %d 格 = %d PASS / %d FAIL"
+              "（格数从 CELLS 反解，不手写；零 spawn server、零 sqlite、零产物读取——"
+              "六格活体复验要 --live）"
+              % (len(CELLS), len(CELLS) - len(bad), len(bad)))
+        sys.exit(3 if bad else 0)
 
 # 存在性判据从模块顶部挪到这里（BUG-529）：无前置自检格先跑完，再判产物面。
 if JS_PIN and not os.path.isfile(JS_PIN):
@@ -383,10 +557,11 @@ def ns_rows():
 # ────────────────────────────── ST1 尺子自检（需要 MAIN_DB · server 建库才有表）──
 # BUG-523：自检格原来排在真检查**之后**——自检若崩，真检查已经跑过、结论面已污染。
 # 修法：fail-fast。尺子先自证健康，再做被测对象的检查（A1–A6）。
-# BUG-529（分层前置）：ST2/ST3/ST4 不依赖 server，已前移到「起跑」之前；ST1 依赖
-# MAIN_DB 只能留在原处。退出码契约不变：自检失败仍 rc=3（尺子坏了），
+# BUG-529（分层前置）：ST2~ST7 不依赖 server，已前移到「起跑」之前；ST1 依赖
+# MAIN_DB 只能留在原处，且只在 --live 面执行（BUG-591 ⑤：裸 `--selftest` 早已收口，
+# 走不到这里）。退出码契约不变：自检失败仍 rc=3（尺子坏了），
 # 前置缺失走 rc=2 时由 st_face_note() 点名「ST1 未执行」。
-if "--selftest" in sys.argv[1:]:
+if "--selftest" in sys.argv[1:] and LIVE:
     # 把探针的判据挪到一个「必然违例」的样本上：手工往主库塞一行 ns=<合成标签>，
     # 让 A1 那套读数逻辑再跑一遍 ⇒ 必须报出漏点。抓不到 = 尺子坏了，六格的绿不可信。
     synth = "synthetic-leak-" + RUN_ID[-6:]
@@ -443,7 +618,7 @@ A1_PATHS = [
         "project_dir": ".", "namespace": NS, "max_tasks": 1})),
     ("heal", lambda: srv.call("heal", {"namespace": NS, "timeout_sec": 1})),
 ]
-a1_bad, a1_detail = [], []
+a1_detail, a1_grew = [], []
 for name, fire in A1_PATHS:
     before_ns, before_main = ns_rows(), main_rows(NS)
     r = fire()
@@ -453,24 +628,18 @@ for name, fire in A1_PATHS:
         name, after_ns - before_ns, NS, grew_main,
         "" if not r["rejected"] else " [工具拒了: " + r["raw"][:70] + "]")
     a1_detail.append(line)
-    if grew_main > 0:
-        a1_bad.append(name)
+    a1_grew.append((name, grew_main))
 # 反向的另一半：ns 库里的行必须**也**带着 ns=<该库名> 的列标签。
 # 只查「行没落进主库」不够 —— 落进 alpha.db 却盖章 ns=default 同样是脑裂
 # （库寻址与列值分家，BUG-420/R114 实测过的那个形状），按 ns 过滤的读侧会两头看不见。
 mism = sql1(NS_DB, "select count(*) from tasks where ns<>?", (NS,)) or 0
-if mism > 0:
-    a1_bad.append("ns 库里有 %d 行列标签不等于库名 %s（库寻址与列值分家）" % (mism, NS))
 a1_detail.append("ns 库列标签核对：ns<>%s 的行数=%s" % (NS, mism))
 a1_total = ns_rows()
-why = ("主库长出 %d 条 ns=%s 的行 ⇒ 隔离未闭环（漏点：%s）"
-       % (sum(1 for _ in a1_bad), NS, ", ".join(a1_bad))) if a1_bad else \
+# 判据本体在 judge_a1()（纯函数）：--selftest 的 ST5/ST6 打的就是这同一份实现。
+a1_bad, a1_verdict = judge_a1(a1_grew, mism, a1_total)
+why = ("A1 漏点 %d 处 ⇒ 隔离未闭环（%s）" % (len(a1_bad), ", ".join(a1_bad))) if a1_bad else \
       ("八条写路径逐条过：主库 ns=%s 行数恒 0，行全部落 %s.db" % (NS, NS))
-verdict = "FAIL" if a1_bad else ("PASS" if a1_total > 0 else "FAIL")
-if not a1_bad and a1_total == 0:
-    verdict = "FAIL"
-    why = "ns 库一条都没有 ⇒ 探针看不见样本（判例-35：全 0 的分布先怀疑尺子）"
-record("A1_多租户物理隔离", verdict, why, a1_detail)
+record(promised_key("A1"), a1_verdict, why, a1_detail)
 
 # ───────────────────────────────────────────────── A5 DAG 成环依赖 ──
 ids = {}
@@ -514,7 +683,7 @@ if len(ids) == 3 and all(ids.values()):
         a5_bad.append("合法边被误杀")
 else:
     a5_bad.append("夹具没建起来（A/B/C  ids=%s）" % ids)
-record("A5_DAG 成环依赖", "FAIL" if a5_bad else "PASS",
+record(promised_key("A5"), "FAIL" if a5_bad else "PASS",
        "拒环漏点：%s" % (", ".join(a5_bad) if a5_bad else "无 —— 三条写边入口同过一道环闸"),
        a5_detail)
 
@@ -576,7 +745,7 @@ else:
                          % ("放行" if not c["rejected"] else "拒!! 门在错杀: " + c["raw"][:70]))
         if c["rejected"]:
             a6_bad.append("对照被误杀（合法任务也归不了档 ⇒ 这不是门的功劳）")
-record("A6_Omega 验收门", "FAIL" if a6_bad else "PASS",
+record(promised_key("A6"), "FAIL" if a6_bad else "PASS",
        "绕过点：%s" % (", ".join(a6_bad) if a6_bad else "verify 与 archive(force) 双向都拦得住"),
        a6_detail)
 
@@ -598,7 +767,7 @@ if not fixes:
     a2_bad.append("fixes_applied 为空（=评委读到的「零修复」）")
 if j.get("veto"):
     a2_bad.append("veto=true（一票否决 ⇒ 修复未成立）")
-record("A2_自动修复三轮", "FAIL" if a2_bad else "PASS", "; ".join(a2_bad) if a2_bad else
+record(promised_key("A2"), "FAIL" if a2_bad else "PASS", "; ".join(a2_bad) if a2_bad else
        "坏指纹被真修掉并复验通过，回执给出修复条目", a2_detail)
 
 # ───────────────────────────────────────────────── A3 可替换 Executor ──
@@ -631,7 +800,7 @@ ghost = srv.call("executor_run", {"project_dir": ".", "executor": "没注册过�
 a3_detail.append("未注册执行器：%s" % ("拒（安全线在）" if ghost["rejected"] else "放行!! 白名单被绕过"))
 if not ghost["rejected"]:
     a3_bad.append("未注册执行器被放行 ⇒ 「可替换」把把关的那道门换掉了")
-record("A3_可替换 Executor", "FAIL" if a3_bad else "PASS",
+record(promised_key("A3"), "FAIL" if a3_bad else "PASS",
        "; ".join(a3_bad) if a3_bad else
        "注册即可派发（binary=注册名、argv=[prompt] 不经 shell），未注册一律拒；"
        "trait 的包外可实现面由 tests/external_executor 独立编译自证",
@@ -768,7 +937,7 @@ else:
     a4_skip.append("本机(%s)没有可执行的 native 产物 ⇒ serve/demo/rc 两格只能 SKIP；"
                    "已发布 native 资产仅 linux-x64" % HOST)
 verdict = "FAIL" if a4_bad else ("PASS" if not a4_skip else "SKIP")
-record("A4_native serve/demo", verdict,
+record(promised_key("A4"), verdict,
        ("绕过点：" + "; ".join(a4_bad)) if a4_bad else
        ("PASS+披露：" + "; ".join(a4_skip)) if a4_skip else
        "; ".join(a4_skip),
@@ -797,6 +966,14 @@ n_self = len([k for k in CELLS if k.startswith("ST")])
 print("结论：%d 格（拒收项 %d + 尺子自检 %d）= %d PASS / %d FAIL / %d SKIP"
       "（格数与分类均从 CELLS 反解，不手写）"
       % (len(CELLS), len(CELLS) - n_self, n_self, n_pass, len(fails), len(skips)))
+# 六格承诺完整性闸（BUG-591 ⑤）：某一格的 record 被搬走 / 承诺表被删短 ⇒ 这里必须拒绝出数。
+# 没有它，「少跑一格」会以「五格全绿」的样子印出来——那正是这条承诺此前没人核的形状。
+gate_rc, missing_promised = promised_gate(CELLS)
+if gate_rc != 0:
+    print("[FATAL] 六格承诺不完整：%s ⇒ 探针清单被搬走/某格未执行，拒绝出数（rc=2，不报绿）"
+          % (", ".join(missing_promised) if missing_promised
+             else "承诺表格数≠%d" % PROMISE_ARITY))
+    sys.exit(2)
 if fails:
     sys.exit(1)
 sys.exit(0)

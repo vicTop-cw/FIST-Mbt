@@ -508,6 +508,15 @@ SPECIAL_CASES = [
     # 且需 js 产物 ⇒ 与 e2e_acceptance_recheck 同族不进自动无参面；电池只跑 --selftest
     # （纯判定函数 15 格正反对照 + 正则变异对照，零进程零产物）。
     case("blackbox/e2e_server_log_heartbeat.py", "--selftest"),
+    # —— BUG-591 ⑤（2026-11-11 轮 187）：六格承诺此前**没有任何自动化在核**——
+    # `README.md:145` 承诺「六件事都由一支活体探针复验」（`blackbox/e2e_acceptance_recheck.py`），
+    # 而它只在 REGISTRY 留了一行理由、`ci.yml` 现读 0 处 ⇒ 承诺面是「文档自称有守卫」。
+    # 现在 `--selftest` 是**内存级**的（不 spawn server、不碰 node/js 产物/sqlite，缺前置不走 rc=2）：
+    # ST5 A1 判据三类合成违例必红 / ST6 干净输入不误红 / ST7 六格承诺清单完整性（承诺表缩水或
+    # 某格 record 被搬走 ⇒ rc=2 自拒，不许印成「五格全绿」）+ 既有的 ST2 路径归一 / ST3 --help /
+    # ST4 前置缺失点名。六格**活体**复验（真 server + 真 sqlite，数分钟）仍不进电池，
+    # 用 `--selftest --live` 手动跑，跑法见 scripts/README.md。
+    case("blackbox/e2e_acceptance_recheck.py", "--selftest"),
     # —— R180：master 镜像判据（同一个「对齐 master」动作人工做了 5 次，治本是立一条命令）——
     # `gitcode/master` 是默认分支镜像，**没有任何自动化维护它**（实测 workflows 里
     # `refs/heads/master` 零命中）⇒ main 一推进它就落后，只看默认分支的人读到的都是旧基线。
@@ -998,11 +1007,11 @@ def _match_rule(base):
 # 平台前提/一次性补丁/纯辅助库）。点名失效（脚本删了）由 G2 扩展面抓。
 REGISTRY = {
     "award_demo.py": "演示脚本（无门禁语义）",
-    # 2026-10-31（BUG-501~508 整改轮）：黑客松拒收六项的**活体**复验探针。它有自己的 `--selftest`
-    # （合成违例格 ST1，抓不到就回 rc=3 判「尺子坏了」），但它每格都要**跨进程起真 server + 真读 sqlite**
-    # ⇒ 与 e2e_assistant_xproc / e2e_lock_xproc 同族：进 REGISTRY 带理由，不进自动电池（电池是只读面，
-    # 跑一次数分钟且会 spawn 子进程；判例-33 要求的是「生产同一份启动描述」，不能为省时间降级成静态扫）。
-    "blackbox/e2e_acceptance_recheck.py": "端到端探针：拒收六项活体复验（跨进程起真 server + 真读 sqlite，需 js 产物），跑法见 scripts/README.md",
+    # `blackbox/e2e_acceptance_recheck.py` 2026-11-11（BUG-591 ⑤）从本表**移出**：
+    # 改造前它只在这里留一行理由、`--selftest` 仍要真 server ⇒ 承诺面零自动化。
+    # 现在它的 `--selftest` 是内存级的，已进 SPECIAL_CASES（`case(..., "--selftest")`）
+    # ⇒ 不要把它抄回本表：同一脚本既有 case 又在 REGISTRY，读起来像「在册但不跑」。
+    # 六格**活体**面仍是手动/黑盒面（`--selftest --live`，需 js 产物 + node），跑法见 scripts/README.md。
     "blackbox/e2e_assistant_xproc.py": "端到端探针：跨进程起真 assistant，需运行前提，跑法见 scripts/README.md",
     "blackbox/e2e_lock_xproc.py": "端到端探针：跨进程锁竞争，需运行前提，跑法见 scripts/README.md",
     "blackbox/e2e_mirror_install.py": "端到端探针：真下载镜像安装（网络 + 沙箱），跑法见 scripts/README.md",
