@@ -15785,7 +15785,7 @@ src/engine/omega_strong_test.mbt 本次改动：
 未动任何代码（越界），留给 owner 在 ①/② 里裁决。
 - reported_by: lead
 
-## BUG-588 [2026-11-09T14:26:00Z] [low] OPEN
+## BUG-588 [2026-11-09T14:26:00Z] [low] FIXED
 - summary: mcpcf 工具面可测性缺口两条：① `tool_circuit`/`tool_watchdog` 的 `now_secs` 内部现算墙钟、无注入点 ⇒ 2038 档在 mcpcf 调用层写不出锁；② `ops_data_dir()` 只读 `MCPCONFTEST_DATA_DIR`/`LOCALAPPDATA`，MoonBit 侧无 env 写接口，且 `mcpcf_embed.mbt:48` 库名硬编码 ⇒ 任何 mcpcf 测试**必须先 `set_engine`**，否则直接往 `%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 写
 - detail: 定位：`src/server/mcpcf_embed.mbt:267/:360`（`let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`，参数面只有 `circuit`/`action`/`ns`）、`:10-16`（模块级 `holder`，`set_engine` 只注入引擎不注入时钟）、`:48/:181`（库名硬编码）与 `ops_data_dir()`。后果不是行为错（BUG-583 才是），而是**验证面在调用层被结构封住**：BUG-583 的 2039 臂只能退到引擎层锁（等价但不等于调用面覆盖），车道 H 因此把「缺口本身」钉成 `mcpcf_embed_bug583_wbtest.mbt` 的 `bug583_04`（传 `now_secs=-2117514496` 被静默丢弃、落库仍是墙钟正值）——将来谁加了时钟入参，那一格就红，逼修复者改写而不是留一条与产品码脱节的假锁。另注：`check_selftest_hermetic` 的 G/S 档口径只管 `--selftest` 密封性，管不到「产品测试会不会写真用户库」这一格，无尺在看。
 - 关闭条件：mcpcf 有可注入的时钟或数据目录（任一即可），**或** BUG-583 方向④「mcpcf 库路径 ≠ 主库路径」判据落地把风险变成断言。
@@ -15805,6 +15805,24 @@ src/engine/omega_strong_test.mbt 本次改动：
 - **仍 OPEN 的理由**：关闭条件是「时钟**或**数据目录任一」——本轮只满足时钟这一条；
   ② `ops_data_dir()` 不可改道 + `mcpcf_embed.mbt` 库名硬编码仍在，任何 mcpcf 测试仍须先 `set_engine`，
   且这一格没有尺在看。另：2038 档现在**可锁**但**尚未锁**——引擎层 Int32 到期算术属 BUG-583（时钟 Int64 化专项）。
+- reported_by: lead
+
+### FIXED(2026-11-12T02:53:00Z / BUG-588 · 轮 186+188：关闭条件「时钟**或**数据目录任一」两侧均已满足并有锁)
+- **② 现读推翻 summary 的「任何 mcpcf 测试必须先 set_engine」**：`mcpcf.ops_init` 本来就收 `data_dir`
+  （`tool_ops_init` 读 `arg_str_opt(args, "data_dir")` → 在该目录下开 `mcpconftest-ops.db`），
+  可测性在**工具层**已存在，缺的只是一把锁。summary 那句是按 `ops_data_dir()` 的默认路径写的，
+  属「自述滞后于现状」同族（判据：现在时否定活接线 = 滞后）。
+- **本轮补的锁**：`src/server/mcpcf_embed_bug583_wbtest.mbt` 的
+  `bug588_02_ops_init_data_dir_redirects_db` —— 注入 `data_dir="temp/g188-mcpcf-data"` 后
+  `db` 回执必须含该目录且仍以 `mcpconftest-ops.db` 结尾；缺省调用回执仍指向 mcpconftest 目录。
+  **变异对照**：把 `let data_dir_opt = arg_str_opt(args, "data_dir")` 改成 `None` ⇒ 只有这一格红
+  （红在「db 回执不在注入目录下」那条断言），跑后逐字节还原。
+- **残余（保留在本条，不另立免测单）**：`ensure_engine()` 对**未走 ops_init** 的路径仍 fail-open 到
+  `MCPCONFTEST_DATA_DIR`/`LOCALAPPDATA`，库名字面量 `mcpconftest-ops.db` 仍硬编码。
+  这两处是「默认落点」而非「不可注入」——工具面已可改道且已有锁，故不构成关闭条件的反面；
+  若将来要消灭默认落点风险，那是新单（默认目录 fail-closed），不是本单未修。
+- **证据（现跑）**：`moon test --target js src/server` **598/598**；全量 **2067/2067, rc=0**
+  （快照 `temp/g188_full.txt`，源码面锚点 `temp/g188_full.txt.src`）；时钟侧证据见上一条追记。
 - reported_by: lead
 
 ## BUG-589 [2026-11-09T14:32:00Z] [medium] OPEN
@@ -15858,6 +15876,25 @@ src/engine/omega_strong_test.mbt 本次改动：
   **接线面未动** ⇒ ②③ 的实质（CI 到底跑不跑这把尺）仍 OPEN，等 owner 决定接线还是在电池面维持。
 - ④（镜像「只增不删」无尺）、⑤（六件承诺无活体尺）仍 OPEN：需要真远端/新电池格，本轮未代修。
 - 边界重申：改判据口径=改契约，属人的决定；本轮只补尺 + 改文档事实，未放宽任何棘轮、未删任何承诺。
+- reported_by: lead
+
+### 追记（2026-11-12 / 轮 189：⑤ 已落地为电池格，②③④ 仍 OPEN）
+- **⑤ 落地**：`scripts/blackbox/e2e_acceptance_recheck.py` 的 `--selftest` 裸跑改成**内存级**
+  （零 spawn server / 零 sqlite / 零产物读取）⇒ 从 `run_guards.py` 的 `REGISTRY`（在册但不跑）
+  移进 `SPECIAL_CASES` 一格 `case(..., "--selftest")`。新增 ST5（A1 判据三类合成违例必红）/
+  ST6（干净输入不误红）/ ST7（六格承诺清单完整性：承诺表缩水或某格 record 被搬走 ⇒ rc=2 拒绝出数）。
+  A1 判据抽成纯函数 `judge_a1(grew, mism, ns_total)`，**活体格与 ST5/ST6 共用同一份实现**；
+  六格活体复验改由 `--selftest --live` 手动跑（`--json` 与点名 `FIST_ACCEPT_JS` 隐含 `--live`）。
+- **车道结局（如实记）**：轮 187 派出的车道 N 在写盘后**因账户额度耗尽失败**（无车道回传报告）⇒
+  本轮由统帅按金条八**实跑终审**，不采信任何自述：内存级 `--selftest` **6 格 = 6 PASS / 0 FAIL, rc=0**；
+  变异 A（`judge_a1` 主库增量检测改 `bad = []`）⇒ **ST5 FAIL, rc=3**；
+  变异 B（`promised_gate` 缺格清单改 `missing = []`）⇒ **ST7 FAIL, rc=2**；两次跑后逐字节还原；
+  `--live-typo` ⇒ rc=2 点名已知旗标。快照 `temp/g189_accept_selftest.txt` / `temp/g189_mut_*.txt`。
+- **同批登记面**：`scripts/README.md` 的 `BATTERY-REGISTRATION` `battery` 115→116（其余键不动），
+  该脚本条目改写为内存级/活体两档口径；`check_battery_count_doc` 由 rc=1（X3 登记落后）转 rc=0。
+- **仍 OPEN 的理由**：②③（`check_usage_tool_count` 是否接进 CI）属 owner 裁决，本轮未代翻；
+  ④（镜像「只增不删」无尺）需真远端，未做。⑤ 的**活体六格**仍不在自动电池（需 js 产物 + node，数分钟），
+  这是刻意的分档不是漏接——电池跑内存级、活体面手动/黑盒跑。
 - reported_by: lead
 
 ## BUG-590 [2026-11-10T11:41:24Z] [medium] OPEN

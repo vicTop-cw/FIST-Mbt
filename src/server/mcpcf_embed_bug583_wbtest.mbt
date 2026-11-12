@@ -329,3 +329,34 @@ test "bug583_04_mcpcf_clock_injection_makes_2038_arm_reachable_here" {
   )
   reset_engine()
 }
+
+///|
+/// 【格 5｜BUG-588 ② 现读复核】数据目录在**工具层**已可注入：`mcpcf.ops_init(data_dir=…)`
+/// 重置引擎并把 SQLite 落到 `data_dir\mcpconftest-ops.db`，回执 db 字段逐字回报该路径。
+/// 残余（本格不掩盖）：其它工具走的 `ensure_engine()` 仍会按 `ops_data_dir()`（env/LOCALAPPDATA）
+/// fail-open 自建库 ⇒ 「忘记先 init」的调用方仍可能写进真实用户目录。
+test "bug588_02_ops_init_data_dir_redirects_db" {
+  reset_engine()
+  let dir = "temp/g188-mcpcf-data"
+  let r = b583_mcpcf_json(
+    tool_ops_init(Json::object({ "data_dir": Json::string(dir) })),
+  )
+  assert_eq(b583_bool_field(r, "ok"), true)
+  let db = b583_str_field(r, "db")
+  assert_true(
+    db.contains(dir),
+    msg="ops_init(data_dir=…) 的 db 回执不在注入目录下 ⇒ 数据目录注入未生效（BUG-588 ② 前提复活）",
+  )
+  assert_true(
+    db.contains("mcpconftest-ops.db"),
+    msg="库名应仍是 mcpconftest-ops.db",
+  )
+  // 不传 data_dir ⇒ 回默认目录（只回显默认值，不新增第二条注入路径）
+  reset_engine()
+  let d2 = b583_mcpcf_json(tool_ops_init(Json::object({})))
+  assert_true(
+    b583_str_field(d2, "db").contains("mcpconftest"),
+    msg="默认路径回执丢了 mcpconftest 目录名",
+  )
+  reset_engine()
+}
