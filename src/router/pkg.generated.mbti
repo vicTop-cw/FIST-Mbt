@@ -321,7 +321,7 @@ pub fn StarGatePolicyResult::not_equal(Self, Self) -> Bool
 pub fn StarGatePolicyResult::to_json(Self) -> @json.Json
 pub fn StarGatePolicyResult::to_repr(Self) -> @debug.Repr
 
-#derive(Eq, Show, @debug.Debug)
+#derive(Eq, @debug.Debug)
 pub enum StarVerdict {
   Unreadable
   BadFormat
@@ -332,9 +332,7 @@ pub enum StarVerdict {
 }
 pub fn StarVerdict::equal(Self, Self) -> Bool
 pub fn StarVerdict::not_equal(Self, Self) -> Bool
-pub fn StarVerdict::output(Self, &Logger) -> Unit
 pub fn StarVerdict::to_repr(Self) -> @debug.Repr
-pub fn StarVerdict::to_string(Self) -> String
 
 // Type aliases
 
