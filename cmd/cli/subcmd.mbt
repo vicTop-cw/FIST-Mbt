@@ -4,6 +4,7 @@
 /// 别名只在这里展开一次：`main` 的分发臂与退出码都读同一份判定，
 /// 「未知子命令却回 0」这类分裂就没有第二个落点
 /// （`fist --version || exit 1` 会把失败读成成功）。
+#derive(Eq, Debug)
 enum Subcmd {
   Serve
   Version
@@ -13,7 +14,7 @@ enum Subcmd {
   Help
   NoArgs
   Unknown(String)
-} derive(Eq, Debug)
+}
 
 ///|
 fn parse_subcmd(sub : String) -> Subcmd {

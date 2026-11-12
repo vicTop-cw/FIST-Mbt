@@ -17,10 +17,11 @@
 /// 绝不为了省字段写出 `null`（不少服务端把显式 null 当「非法值」打回）。
 
 ///|
+#derive(Eq, Debug)
 pub struct OfmChatMessage {
   role : String // "system" | "user" | "assistant"
   content : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OfmChatMessage with Eq::{not_equal, equal}
@@ -29,12 +30,13 @@ pub extend OfmChatMessage with Eq::{not_equal, equal}
 pub extend OfmChatMessage with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
+#derive(Eq, Debug)
 pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double? // None = 不传该字段
   max_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OfmChatRequest with Eq::{not_equal, equal}

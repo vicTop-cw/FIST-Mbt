@@ -3,6 +3,7 @@ package "vicTop-cw/fist-mbt/src/core"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -26,7 +27,7 @@ pub fn ensure_can_review_spec(String) -> Result[Unit, String]
 
 pub fn principles() -> Array[Principle]
 
-pub fn principles_json() -> Json
+pub fn principles_json() -> @json.Json
 
 pub fn role_of(String) -> Result[Role, String]
 
@@ -37,28 +38,31 @@ pub fn test_ed25519_sign_hex(Bytes, String) -> String
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub enum Action {
   CreateSpec
   ReviewSpec
-} derive(Eq, @debug.Debug)
+}
 pub fn Action::equal(Self, Self) -> Bool
 pub fn Action::not_equal(Self, Self) -> Bool
 pub fn Action::to_repr(Self) -> @debug.Repr
 pub fn Action::to_string(Self) -> String
 
+#derive(Eq, @debug.Debug)
 pub struct Principle {
   index : Int32
   title : String
   body : String
-} derive(Eq, @debug.Debug)
+}
 pub fn Principle::equal(Self, Self) -> Bool
 pub fn Principle::get_body(Self) -> String
 pub fn Principle::get_index(Self) -> Int32
 pub fn Principle::get_title(Self) -> String
 pub fn Principle::not_equal(Self, Self) -> Bool
-pub fn Principle::to_json(Self) -> Json
+pub fn Principle::to_json(Self) -> @json.Json
 pub fn Principle::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub enum Role {
   HumanSteward
   Leader
@@ -69,7 +73,7 @@ pub enum Role {
   Recorder
   Observer
   SpecAuthor
-} derive(Eq, @debug.Debug)
+}
 pub fn Role::description(Self) -> String
 pub fn Role::equal(Self, Self) -> Bool
 pub fn Role::from_string(String) -> Self?
@@ -77,6 +81,7 @@ pub fn Role::not_equal(Self, Self) -> Bool
 pub fn Role::to_repr(Self) -> @debug.Repr
 pub fn Role::to_string(Self) -> String
 
+#derive(Eq, @debug.Debug)
 pub struct Task {
   id : String
   parent_id : String?
@@ -98,7 +103,7 @@ pub struct Task {
   depends_on : Array[String]
   omega_required : Bool
   created_by : String
-} derive(Eq, @debug.Debug)
+}
 pub fn Task::archive(Self) -> Result[Self, String]
 pub fn Task::archive_force(Self, force~ : Bool) -> Result[Self, String]
 pub fn Task::claim(Self, assignee~ : String) -> Result[Self, String]
@@ -129,7 +134,7 @@ pub fn Task::retry(Self) -> Result[Self, String]
 pub fn Task::split(Self) -> Result[Self, String]
 pub fn Task::status_to_string(Self) -> String
 pub fn Task::submit(Self) -> Result[Self, String]
-pub fn Task::to_json(Self, desc_limit? : Int32) -> Json
+pub fn Task::to_json(Self, desc_limit? : Int32) -> @json.Json
 pub fn Task::to_repr(Self) -> @debug.Repr
 pub fn Task::with_deliverable(Self, String, String) -> Self
 pub fn Task::with_depends_on(Self, String, String) -> Self
@@ -138,6 +143,7 @@ pub fn Task::with_omega_required(Self, Bool, String) -> Self
 pub fn Task::with_priority(Self, String, String) -> Self
 pub fn Task::with_updated_at(Self, String) -> Self
 
+#derive(Eq, @debug.Debug)
 pub enum TaskStatus {
   Pending
   Claimed
@@ -148,7 +154,7 @@ pub enum TaskStatus {
   Archived
   Rejected
   Paused
-} derive(Eq, @debug.Debug)
+}
 pub fn TaskStatus::can_execute(Self) -> Bool
 pub fn TaskStatus::can_split(Self) -> Bool
 pub fn TaskStatus::equal(Self, Self) -> Bool

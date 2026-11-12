@@ -3,6 +3,7 @@ package "vicTop-cw/fist-mbt/src/engine"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
   "vicTop-cw/fist-mbt/src/core",
   "vicTop-cw/fist-mbt/src/evolve",
   "vicTop-cw/fist-mbt/src/executor",
@@ -44,9 +45,9 @@ pub fn boundary_probe_hint() -> String
 
 pub fn boundary_probe_slice() -> String
 
-pub fn budget_check(Double, Double) -> Json
+pub fn budget_check(Double, Double) -> @json.Json
 
-pub fn budget_check_json(Json) -> Json
+pub fn budget_check_json(@json.Json) -> @json.Json
 
 pub fn ch_desc(String, String, String) -> String
 
@@ -114,13 +115,13 @@ pub fn omega_result_id(String, Int32) -> String
 
 pub fn omega_spec_id(String, Int32) -> String
 
-pub fn phi_accrual(Array[Int32], Int32, threshold? : Int32) -> Json
+pub fn phi_accrual(Array[Int32], Int32, threshold? : Int32) -> @json.Json
 
 pub fn phi_coerce_seconds(Double) -> Int32?
 
 pub fn phi_domain_error(Array[Int32], Int32) -> String
 
-pub fn plan_route(String, n_files? : Int32) -> Json
+pub fn plan_route(String, n_files? : Int32) -> @json.Json
 
 pub fn preserve_plan_markers(String, String) -> String
 
@@ -132,15 +133,15 @@ pub fn role_rank(String) -> Int32
 
 pub fn root_task_id() -> String
 
-pub fn route(String, String) -> Json
+pub fn route(String, String) -> @json.Json
 
 pub fn s3_consume_nonce(String, String) -> Bool
 
 pub let s3_pending_nonces : Map[String, Array[String]]
 
-pub fn schedule_json(Json) -> Json
+pub fn schedule_json(@json.Json) -> @json.Json
 
-pub fn schedule_task(String, n_files? : Int32) -> Json
+pub fn schedule_task(String, n_files? : Int32) -> @json.Json
 
 pub let scope_permissions : Array[PermissionRule]
 
@@ -153,30 +154,33 @@ pub fn verify_challenge_sig(String, String, String) -> Bool
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub enum AuthMode {
   Off
   Soft
   Strict
-} derive(Eq, @debug.Debug)
+}
 pub fn AuthMode::equal(Self, Self) -> Bool
 pub fn AuthMode::not_equal(Self, Self) -> Bool
 pub fn AuthMode::to_repr(Self) -> @debug.Repr
 pub fn AuthMode::to_string(Self) -> String
 
+#derive(@debug.Debug)
 pub struct DepsReport {
   state : DepsState
   missing_deps : Array[String]
   pending_deps : Array[String]
-} derive(@debug.Debug)
+}
 pub fn DepsReport::is_satisfied(Self) -> Bool
 pub fn DepsReport::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub enum DepsState {
   DepsSatisfied
   DepsPending
   DepsMissing
   DepsNoTask
-} derive(Eq, @debug.Debug)
+}
 pub fn DepsState::equal(Self, Self) -> Bool
 pub fn DepsState::not_equal(Self, Self) -> Bool
 pub fn DepsState::to_repr(Self) -> @debug.Repr
@@ -204,8 +208,8 @@ pub fn FistEngine::assistant_list(Self) -> Array[@store.AssistantReg]
 pub fn FistEngine::assistant_set_status(Self, String, String) -> Bool
 pub fn FistEngine::assistant_upsert(Self, @store.AssistantReg) -> Unit
 pub fn FistEngine::audit_execute_gate(Self, String, String) -> Result[Unit, String]
-pub fn FistEngine::budget_split_by_dag(Self, Int32, root? : String, ns? : String) -> Json
-pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int32, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[Json, String]
+pub fn FistEngine::budget_split_by_dag(Self, Int32, root? : String, ns? : String) -> @json.Json
+pub fn FistEngine::challenge(Self, task_id~ : String, by~ : String, factor? : Int32, strat? : String, now~ : String, critic? : @evolve.Archive?) -> Result[@json.Json, String]
 pub fn FistEngine::challenge_cleanup(Self, String) -> Int32
 pub fn FistEngine::challenge_cleanup_on_issue(Self, String) -> Int32
 pub fn FistEngine::challenge_pending_count(Self, String, ns? : String) -> Int32
@@ -213,36 +217,36 @@ pub fn FistEngine::challenge_persisted(Self) -> Bool
 pub fn FistEngine::challenge_table_stats(Self) -> (Int32, Int32, Int32)
 pub fn FistEngine::children_index(Self) -> Map[String, Array[String]]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
-pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> Json
-pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int32, probe_limit? : Int32) -> Json
-pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int32) -> Json
+pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> @json.Json
+pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int32, probe_limit? : Int32) -> @json.Json
+pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int32) -> @json.Json
 pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@core.Task, String]
 pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String, level? : Int32) -> Result[String, String]
-pub fn FistEngine::cost_stats(Self) -> Json
+pub fn FistEngine::cost_stats(Self) -> @json.Json
 pub fn FistEngine::critical_path(Self) -> Array[String]
 pub fn FistEngine::dag_ascii(Self, ns~ : String) -> String
-pub fn FistEngine::dag_cost_route(Self) -> Json
+pub fn FistEngine::dag_cost_route(Self) -> @json.Json
 pub fn FistEngine::dag_depend(Self, task_id~ : String, dep_id~ : String, now~ : String) -> Result[@core.Task, String]
-pub fn FistEngine::dag_mc(Self, ns? : String, root_task_id? : String, deadline? : Int32, samples? : Int32, seed? : Int32) -> Json
-pub fn FistEngine::dag_schedule(Self) -> Json
-pub fn FistEngine::dag_slack_analysis(Self) -> Json
+pub fn FistEngine::dag_mc(Self, ns? : String, root_task_id? : String, deadline? : Int32, samples? : Int32, seed? : Int32) -> @json.Json
+pub fn FistEngine::dag_schedule(Self) -> @json.Json
+pub fn FistEngine::dag_slack_analysis(Self) -> @json.Json
 pub fn FistEngine::delete_task(Self, String) -> Result[Unit, String]
 pub fn FistEngine::depend_edge_ok(Self, String, String) -> Result[Unit, String]
 pub fn FistEngine::deps_report(Self, String) -> DepsReport
 pub fn FistEngine::deps_satisfied(Self, String) -> Bool
-pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> Json
+pub fn FistEngine::dispatch_next(Self, String, String, String, String) -> @json.Json
 pub fn FistEngine::docs_verify_gate(Self, String) -> Result[Unit, String]
-pub fn FistEngine::eval_feedback(Self, String, task_id? : String) -> Json
+pub fn FistEngine::eval_feedback(Self, String, task_id? : String) -> @json.Json
 pub fn FistEngine::execute(Self, task_id~ : String, deliverable~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::execute_with_meta(Self, task_id~ : String, deliverable~ : String, now~ : String, executor? : String, model? : String, tokens_in? : Int32, tokens_out? : Int32, cost? : Double, duration_ms? : Int32, rate_limited? : Bool, failure_reason? : String) -> Result[@core.Task, String]
 pub fn FistEngine::executor_clear(Self) -> Bool
 pub fn FistEngine::executor_list(Self) -> Array[(String, String, String)]
 pub fn FistEngine::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
 pub fn FistEngine::executor_trust(Self) -> Map[String, Double]
-pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[Json, String]
+pub fn FistEngine::gate_check_record(Self, String, String, String, String) -> Result[@json.Json, String]
 pub fn FistEngine::gate_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::get_task(Self, String) -> @core.Task?
-pub fn FistEngine::goal_drift_check(Self, String, subtask_id? : String, ns? : String) -> Json
+pub fn FistEngine::goal_drift_check(Self, String, subtask_id? : String, ns? : String) -> @json.Json
 pub fn FistEngine::heartbeat_backend(Self) -> String
 pub fn FistEngine::list_all(Self) -> Array[@core.Task]
 pub fn FistEngine::list_by_status(Self, @core.TaskStatus) -> Array[@core.Task]
@@ -263,20 +267,20 @@ pub fn FistEngine::omega_count_type(Self, String, String) -> Int32
 pub fn FistEngine::omega_execute_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::omega_latest(Self, String, String) -> @store.SpecRecord?
 pub fn FistEngine::omega_records(Self, String) -> Array[@store.SpecRecord]
-pub fn FistEngine::omega_result_verify(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int32) -> Result[Json, String]
-pub fn FistEngine::omega_spec_create(Self, task_id~ : String, author~ : String, content~ : String, now~ : String, max_rounds? : Int32) -> Result[Json, String]
-pub fn FistEngine::omega_spec_review(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int32) -> Result[Json, String]
-pub fn FistEngine::omega_status(Self, String) -> Result[Json, String]
+pub fn FistEngine::omega_result_verify(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int32) -> Result[@json.Json, String]
+pub fn FistEngine::omega_spec_create(Self, task_id~ : String, author~ : String, content~ : String, now~ : String, max_rounds? : Int32) -> Result[@json.Json, String]
+pub fn FistEngine::omega_spec_review(Self, task_id~ : String, reviewer~ : String, verdict~ : String, reason? : String, now~ : String, max_rounds? : Int32) -> Result[@json.Json, String]
+pub fn FistEngine::omega_status(Self, String) -> Result[@json.Json, String]
 pub fn FistEngine::omega_verify_gate(Self, String) -> Result[Unit, String]
 pub fn FistEngine::open_sqlite(String) -> Self?
 pub fn FistEngine::parallelism(Self) -> Int32
 pub fn FistEngine::pause_task(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
-pub fn FistEngine::pick_next(Self, String, String, String, String, skill? : String) -> Json
+pub fn FistEngine::pick_next(Self, String, String, String, String, skill? : String) -> @json.Json
 pub fn FistEngine::plan(Self, task_id~ : String, split_n? : Int32, by~ : String, now~ : String) -> Result[Array[String], String]
-pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int32, by~ : String, spec? : Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool, boundary_probe? : Bool) -> Result[Json, String]
-pub fn FistEngine::plan_exec_order(Self, String) -> Json
-pub fn FistEngine::plan_revise(Self, String, feedback? : Array[Json], ns? : String) -> Json
-pub fn FistEngine::progress_gate(Self, String, Int32, Int32) -> Json
+pub fn FistEngine::plan_deep(Self, task_id~ : String, split_n? : Int32, by~ : String, spec? : @json.Json?, now~ : String, omega_strong_verify? : Bool, gradient? : Bool, calibrate? : Array[Double]?, gradient_dag? : Bool, reinject_context? : Bool, boundary_probe? : Bool) -> Result[@json.Json, String]
+pub fn FistEngine::plan_exec_order(Self, String) -> @json.Json
+pub fn FistEngine::plan_revise(Self, String, feedback? : Array[@json.Json], ns? : String) -> @json.Json
+pub fn FistEngine::progress_gate(Self, String, Int32, Int32) -> @json.Json
 pub fn FistEngine::publish(Self, project_dir~ : String, description~ : String, created_by~ : String, now~ : String, ns? : String, level? : Int32) -> Result[String, String]
 pub fn FistEngine::publish_next_round(Self, ns~ : String, description~ : String, created_by~ : String, prev_task_id~ : String, now~ : String, level? : Int32) -> Result[String, String]
 pub fn FistEngine::publish_parallel(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String, level? : Int32) -> Result[String, String]
@@ -294,30 +298,30 @@ pub fn FistEngine::rsv_try_set(Self, scope~ : String, agent~ : String, ttl_until
 pub fn FistEngine::s3_consume_nonce(Self, String, String, ns? : String) -> Bool
 pub fn FistEngine::s3_issue_challenge(Self, String, Int32, ns? : String, issued_at? : String, cleanup_cutoff? : String) -> String
 pub fn FistEngine::s3_issue_challenge_auto(Self, String, ns? : String, issued_at? : String, cleanup_cutoff? : String) -> String
-pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[Json, String]
-pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[Json, String]
-pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[Json, String]
+pub fn FistEngine::saga_register(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, now~ : String) -> Result[@json.Json, String]
+pub fn FistEngine::saga_repair(Self, ns? : String, String, failed_step~ : String, mark? : Bool) -> Result[@json.Json, String]
+pub fn FistEngine::saga_rollback(Self, ns? : String, String, mark? : Bool) -> Result[@json.Json, String]
 pub fn FistEngine::store_delete_heartbeat(Self, task_id~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_list_heartbeat_intervals(Self, String) -> Array[Int32]
 pub fn FistEngine::store_list_heartbeats(Self) -> Array[(String, String, String, String)]
 pub fn FistEngine::store_list_saga_actions(Self, String, String) -> Array[(Int32, String, String, String, String)]
 pub fn FistEngine::store_mark_saga_actions_done(Self, ns? : String, root_task_id~ : String, ids~ : Array[Int32]) -> Result[Unit, String]
 pub fn FistEngine::store_read_heartbeat_last_seen(Self, String) -> String
-pub fn FistEngine::store_recent_call_logs(Self, limit? : Int32) -> Array[Json]
+pub fn FistEngine::store_recent_call_logs(Self, limit? : Int32) -> Array[@json.Json]
 pub fn FistEngine::store_write_call_log(Self, ts~ : String, tool~ : String, caller~ : String, ns~ : String, params_json~ : String, result_json~ : String, ok~ : Bool, runtime_ms~ : Int32, seq~ : Int32) -> Result[Unit, String]
 pub fn FistEngine::store_write_heartbeat(Self, agent_id~ : String, task_id~ : String, last_seen~ : String, status~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_write_heartbeat_interval(Self, task_id~ : String, interval_sec~ : Int32, ts~ : String) -> Result[Unit, String]
 pub fn FistEngine::store_write_saga_action(Self, ns? : String, root_task_id~ : String, step~ : String, task_id? : String, compensation~ : String, created_at~ : String) -> Result[Unit, String]
 pub fn FistEngine::submit(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
 pub fn FistEngine::supervisor_kill_apply_pause(Self, task_id~ : String, now~ : String) -> Result[@core.Task, String]
-pub fn FistEngine::supervisor_kill_plan(Self, task_id~ : String, by~ : String, reason~ : String, force? : Bool, apply_pause? : Bool, now? : String) -> Json
-pub fn FistEngine::supervisor_reminder_tick(Self, now~ : String, stale_hours? : Int32, pending_hours? : Int32) -> Json
-pub fn FistEngine::supervisor_status(Self, ns_filter? : String, detail? : Bool) -> Json
-pub fn FistEngine::supervisor_task_tree(Self, String, detail? : Bool) -> Result[Json, String]
-pub fn FistEngine::supervisor_task_upsert(Self, project_dir~ : String, by~ : String, Array[Json], now~ : String, ns? : String) -> Json
+pub fn FistEngine::supervisor_kill_plan(Self, task_id~ : String, by~ : String, reason~ : String, force? : Bool, apply_pause? : Bool, now? : String) -> @json.Json
+pub fn FistEngine::supervisor_reminder_tick(Self, now~ : String, stale_hours? : Int32, pending_hours? : Int32) -> @json.Json
+pub fn FistEngine::supervisor_status(Self, ns_filter? : String, detail? : Bool) -> @json.Json
+pub fn FistEngine::supervisor_task_tree(Self, String, detail? : Bool) -> Result[@json.Json, String]
+pub fn FistEngine::supervisor_task_upsert(Self, project_dir~ : String, by~ : String, Array[@json.Json], now~ : String, ns? : String) -> @json.Json
 pub fn FistEngine::topo_sort(Self, Array[String]) -> Array[String]
-pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String, force? : Bool) -> Json
-pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> Json
+pub fn FistEngine::transition_contract(Self, String, String, assignee? : String, completed_by? : String, force? : Bool) -> @json.Json
+pub fn FistEngine::triage(Self, String, String, String, skill? : String) -> @json.Json
 pub fn FistEngine::verify(Self, task_id~ : String, verifier~ : String, now~ : String, docs_check? : Bool) -> Result[@core.Task, String]
 
 type PermissionRule

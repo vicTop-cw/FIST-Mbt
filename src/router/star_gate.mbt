@@ -17,6 +17,7 @@
 ///|
 /// Star 门判定结果。顺序即 star_gate_verify 的判定顺序：
 ///   Unreadable → BadFormat → BadSignature → Stale → NoSuchUser → Valid
+#derive(Eq, Debug, Show)
 pub enum StarVerdict {
   /// 清单 JSON **语法**无法解析（不是 JSON 语法错误、是字段结构错误 → 走 BadFormat）
   Unreadable
@@ -30,7 +31,7 @@ pub enum StarVerdict {
   NoSuchUser
   /// 全部通过
   Valid
-} derive(Eq, Debug, Show)
+}
 
 ///|
 pub extend StarVerdict with Eq::{not_equal, equal}
@@ -366,6 +367,7 @@ fn star_gate_verify_impl(
 /// 为什么「未配置」放行而不是 fail-closed：这是单用户本地工具，默认没设公钥时若 fail-closed
 /// 会直接把免费池锁死（等价于「装完就不能用」），是不可接受的默认降级。正确做法是把选择权交给
 /// 部署者——**想用 Star 门才配置公钥**；未配置只打明显告警（note 会进 model_route 的 warnings）。
+#derive(Eq, Debug)
 pub struct StarGatePolicyResult {
   /// 是否启用 Star 门（是否配置了钉死公钥）
   gate_enabled : Bool
@@ -375,7 +377,7 @@ pub struct StarGatePolicyResult {
   note : String
   /// 验签 verdict（门未启用或未提供 attestation 时缺省）
   verdict : StarVerdict?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend StarGatePolicyResult with Eq::{not_equal, equal}

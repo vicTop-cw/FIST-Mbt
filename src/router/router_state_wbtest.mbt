@@ -82,7 +82,7 @@ test "rs_2_config 覆盖池定义但保留同名模型用量，改定义不等�
   assert_eq(r1.config.free_models.length(), 1)
   assert_eq(r1.config.free_models[0].limit, 3)
   assert_eq(r1.config.free_models[0].used, 2)
-  assert_true(w1.to_string().contains("覆盖池定义"))
+  assert_true(Repr(w1).to_string().contains("覆盖池定义"))
   let cfg3 = cfg2([ent("f2", 3)], [ent("p1", 10)])
   let (r2, _) = router_restore(r0.to_state(), config=cfg3)
   assert_eq(r2.config.free_models[0].name, "f2")

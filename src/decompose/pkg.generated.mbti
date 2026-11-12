@@ -1,8 +1,12 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "vicTop-cw/fist-mbt/src/decompose"
 
+import {
+  "moonbitlang/core/json",
+}
+
 // Values
-pub fn decompose_slices(Json, Int32, parent_desc~ : String) -> Array[String]
+pub fn decompose_slices(@json.Json, Int32, parent_desc~ : String) -> Array[String]
 
 pub fn default_slices(Int32, parent_desc~ : String) -> Array[String]
 
@@ -22,7 +26,7 @@ pub fn refine_milestone(Milestone, Int32) -> Array[String]
 
 pub fn simpler_variant_hint(String) -> String
 
-pub fn spec_hash_of(Json?) -> String
+pub fn spec_hash_of(@json.Json?) -> String
 
 pub fn validate_milestone_plan(MilestonePlan) -> (Bool, String)
 

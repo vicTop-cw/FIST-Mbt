@@ -1649,6 +1649,7 @@ pub fn FistEngine::deps_satisfied(self : FistEngine, task_id : String) -> Bool {
 ///
 /// **加法式**：`deps_satisfied` 的签名与语义一字不动（`false` 仍然覆盖 Pending / Missing / NoTask 三档），
 /// 本类型只是给需要分辨的调用方多一个出口。第四态 `DepsNoTask` 的裁定见 `deps_report`。
+#derive(Eq, Debug)
 pub enum DepsState {
   /// 依赖全部已完成（或本任务无依赖）—— 可执行
   DepsSatisfied
@@ -1658,7 +1659,7 @@ pub enum DepsState {
   DepsMissing
   /// 任务自身不存在 —— 没有依赖面可谈（**不等于** satisfied，也不等于 missing）
   DepsNoTask
-} derive(Eq, Debug)
+}
 
 ///|
 /// **显式 extend（BUG-478 清理 warn）**：见 `auth_mode.mbt` 同名说明。
@@ -1672,6 +1673,7 @@ pub extend DepsState with @moonbitlang/core/debug.Debug::{to_repr}
 ///
 /// 两个点名列表**同时**填充，不做"只报一种"的取舍（裁定见 `deps_report`），
 /// 因此调用方拿到 `DepsMissing` 时仍能看到"除了配置错之外还差谁"。
+#derive(Debug)
 pub struct DepsReport {
   /// 结论态
   state : DepsState
@@ -1679,7 +1681,7 @@ pub struct DepsReport {
   missing_deps : Array[String]
   /// 存在但未完成的依赖 id（按 `depends_on` 原序、去重）
   pending_deps : Array[String]
-} derive(Debug)
+}
 
 ///|
 /// **显式 extend（BUG-478 清理 warn）**：见 `auth_mode.mbt` 同名说明。

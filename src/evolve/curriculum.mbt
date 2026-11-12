@@ -11,12 +11,13 @@
 
 ///|
 /// 课程阶段：从 L1（入门）到 L4（精通），由易到难
+#derive(Eq, Debug)
 pub enum CurriculumLevel {
   L1 // 入门：基础正确性
   L2 // 进阶：覆盖度
   L3 // 熟练：结构完整性
   L4 // 精通：高正确率 + 稳健性
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CurriculumLevel with Eq::{not_equal, equal}
@@ -115,13 +116,14 @@ pub fn curriculum_progress(current_score : Double) -> Double {
 
 ///|
 /// 变异算子类型
+#derive(Eq, Debug)
 pub enum MutationKind {
   Rewrite // 重写（保留意图，换实现）
   Simplify // 简化（移除冗余）
   Generalize // 泛化（参数化硬编码值）
   Specialize // 特化（针对特定场景优化）
   Combine // 组合（融合两个父代的特征）
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend MutationKind with Eq::{not_equal, equal}

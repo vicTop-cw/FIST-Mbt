@@ -548,7 +548,9 @@ test "caf_cfg_1_新字段默认值与JSON往返" {
     abort("带偏好往返不应警告，got \{warns2.length()}")
   }
   if back2.caf_default_preference != ["free-a", "free-b"] {
-    abort("往返后偏好应保留，实际 \{back2.caf_default_preference}")
+    abort(
+      "往返后偏好应保留，实际 \{Repr(back2.caf_default_preference)}",
+    )
   }
   if back2.caf_min_evidences != 3 {
     abort("往返后 min_evidences 应为 3")
@@ -622,7 +624,7 @@ test "caf_cfg_3_坏类型偏好降级默认" {
   let (back, warns) = RouterConfig::from_json(bad)
   if !back.caf_default_preference.is_empty() {
     abort(
-      "坏类型偏好应降级为空，实际 \{back.caf_default_preference}",
+      "坏类型偏好应降级为空，实际 \{Repr(back.caf_default_preference)}",
     )
   }
   if warns.length() == 0 {

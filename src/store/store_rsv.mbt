@@ -222,6 +222,7 @@ pub fn lock_acquire_action(
 
 ///|
 /// 锁获取裁决结果（与 `RsvOutcome` 同一纪律：结论来自**写后回读**，不由请求反推）。
+#derive(Debug)
 pub struct LockAcquireOutcome {
   granted : Bool
   /// reserved | renewed | taken_over | conflict
@@ -234,7 +235,7 @@ pub struct LockAcquireOutcome {
   ttl_until : String
   /// 本次是否留下了一条违例记录（conflict 记 lock_denied）
   violation_logged : Bool
-} derive(Debug)
+}
 
 ///|
 pub extend LockAcquireOutcome with @moonbitlang/core/debug.Debug::{to_repr}

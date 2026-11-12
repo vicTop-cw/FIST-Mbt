@@ -3,6 +3,7 @@ package "vicTop-cw/fist-mbt/src/router"
 
 import {
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -14,15 +15,15 @@ pub fn build_ofm_chat_request_json(OfmChatRequest) -> Result[String, String]
 
 pub fn build_ofm_chat_request_json_simple(String, String) -> Result[String, String]
 
-pub fn caf_dry_run_to_json(CafDryRun) -> Json
+pub fn caf_dry_run_to_json(CafDryRun) -> @json.Json
 
 pub fn caf_edit_distance(String, String) -> Int32
 
 pub fn caf_feature_hash(String) -> Int32
 
-pub fn caf_memory_dump(CafMemory) -> Json
+pub fn caf_memory_dump(CafMemory) -> @json.Json
 
-pub fn caf_memory_load(Json) -> (CafMemory, Array[String])
+pub fn caf_memory_load(@json.Json) -> (CafMemory, Array[String])
 
 pub fn caf_memory_status_text(CafMemory) -> String
 
@@ -68,7 +69,7 @@ pub fn quota_window_reset_if_expired(ModelQuota, String, Int32) -> Bool
 
 pub fn resolve_ofm_endpoint(String, String) -> String
 
-pub fn router_restore(Json, config? : Json) -> (ModelRouter, Array[String])
+pub fn router_restore(@json.Json, config? : @json.Json) -> (ModelRouter, Array[String])
 
 pub fn secs_to_iso(Int32) -> String
 
@@ -97,48 +98,53 @@ pub fn window_expired(String, String, Int32) -> Bool
 // Errors
 
 // Types and methods
+#derive(@debug.Debug)
 pub struct CafDryRun {
   base : RouteDecision
   picked : RouteDecision
   reordered : Bool
   basis : Array[CafModelStats]
   top_k : Int32
-} derive(@debug.Debug)
+}
 pub fn CafDryRun::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub struct CafMemory {
   records : Array[CafRecord?]
   max_size : Int32
   mut head : Int32
   mut count : Int32
-} derive(@debug.Debug)
+}
 pub fn CafMemory::all(Self) -> Array[CafRecord]
 pub fn CafMemory::find(Self, feature_hash~ : Int32) -> Array[CafRecord]
 pub fn CafMemory::knn_search(Self, String, Int32) -> Array[CafRecord]
 pub fn CafMemory::knn_stats(Self, String, Int32) -> Array[CafModelStats]
 pub fn CafMemory::new(max_size? : Int32) -> Self
 pub fn CafMemory::push(Self, CafRecord) -> Unit
-pub fn CafMemory::to_json(Self) -> Json
+pub fn CafMemory::to_json(Self) -> @json.Json
 pub fn CafMemory::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub struct CafModelStats {
   model : String
   total : Int32
   success : Int32
   avg_cost : Double
-} derive(@debug.Debug)
+}
 pub fn CafModelStats::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub struct CafRecord {
   feature_hash : Int32
   model : String
   ok : Bool
   cost : Double
   ts : String
-} derive(@debug.Debug)
+}
 pub fn CafRecord::new(feature_hash~ : Int32, model~ : String, ok~ : Bool, cost~ : Double, ts~ : String) -> Self
 pub fn CafRecord::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct ModelQuota {
   name : String
   tier : ModelTier
@@ -150,7 +156,7 @@ pub struct ModelQuota {
   price_per_1k : Double
   rank : Int32
   mut cooldown_until : String
-} derive(Eq, @debug.Debug)
+}
 pub fn ModelQuota::cost_performance(Self) -> Double
 pub fn ModelQuota::equal(Self, Self) -> Bool
 pub fn ModelQuota::in_cooldown(Self, String) -> Bool
@@ -159,10 +165,11 @@ pub fn ModelQuota::mark_failure(Self, String) -> Unit
 pub fn ModelQuota::new(name~ : String, tier~ : ModelTier, limit? : Int32, used? : Int32, window_start? : String, lane? : String, price_per_call? : Double, price_per_1k? : Double, rank? : Int32, cooldown_until? : String) -> Self
 pub fn ModelQuota::not_equal(Self, Self) -> Bool
 pub fn ModelQuota::remaining(Self) -> Int32
-pub fn ModelQuota::to_json(Self) -> Json
+pub fn ModelQuota::to_json(Self) -> @json.Json
 pub fn ModelQuota::to_repr(Self) -> @debug.Repr
 pub fn ModelQuota::usage_pct(Self) -> Double
 
+#derive(Eq, @debug.Debug)
 pub struct ModelRouter {
   config : RouterConfig
   mut free_idx : Int32
@@ -172,7 +179,7 @@ pub struct ModelRouter {
   mut last_switch_at : String
   mut last_reason : String
   mut last_pick : String
-} derive(Eq, @debug.Debug)
+}
 pub fn ModelRouter::active_pool(Self) -> Array[ModelQuota]
 pub fn ModelRouter::apply_caf(Self, RouteDecision, now~ : String, caf_memory~ : CafMemory, context~ : String, k~ : Int32, unhealthy_ids? : Array[String], caf_default_preference? : Array[String], caf_min_evidences? : Int32) -> (RouteDecision, Bool)
 pub fn ModelRouter::current_model(Self) -> ModelQuota?
@@ -189,38 +196,42 @@ pub fn ModelRouter::pick_caf_dry_run(Self, now~ : String, caf_memory~ : CafMemor
 pub fn ModelRouter::record_call(Self, model~ : String, now~ : String) -> RouteDecision
 pub fn ModelRouter::reset_windows(Self) -> Unit
 pub fn ModelRouter::to_repr(Self) -> @debug.Repr
-pub fn ModelRouter::to_state(Self) -> Json
-pub fn ModelRouter::usage_report(Self) -> Json
+pub fn ModelRouter::to_state(Self) -> @json.Json
+pub fn ModelRouter::usage_report(Self) -> @json.Json
 pub fn ModelRouter::window_reset_check(Self, now~ : String) -> Int32
 
+#derive(Eq, @debug.Debug)
 pub enum ModelTier {
   Free
   Paid
-} derive(Eq, @debug.Debug)
+}
 pub fn ModelTier::equal(Self, Self) -> Bool
 pub fn ModelTier::from_string(String) -> Self?
 pub fn ModelTier::not_equal(Self, Self) -> Bool
 pub fn ModelTier::to_repr(Self) -> @debug.Repr
 pub fn ModelTier::to_string(Self) -> String
 
+#derive(Eq, @debug.Debug)
 pub struct OfmChatMessage {
   role : String
   content : String
-} derive(Eq, @debug.Debug)
+}
 pub fn OfmChatMessage::equal(Self, Self) -> Bool
 pub fn OfmChatMessage::not_equal(Self, Self) -> Bool
 pub fn OfmChatMessage::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double?
   max_tokens : Int32?
-} derive(Eq, @debug.Debug)
+}
 pub fn OfmChatRequest::equal(Self, Self) -> Bool
 pub fn OfmChatRequest::not_equal(Self, Self) -> Bool
 pub fn OfmChatRequest::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct OfmChatResponse {
   http_status : Int32
   is_error : Bool
@@ -228,11 +239,12 @@ pub struct OfmChatResponse {
   error_type : String
   content : String
   raw : String
-} derive(Eq, @debug.Debug)
+}
 pub fn OfmChatResponse::equal(Self, Self) -> Bool
 pub fn OfmChatResponse::not_equal(Self, Self) -> Bool
 pub fn OfmChatResponse::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub enum OfmFailure {
   InvalidCredential
   RateLimit
@@ -240,20 +252,22 @@ pub enum OfmFailure {
   NetworkError
   BadRequest
   Unknown
-} derive(Eq, @debug.Debug)
+}
 pub fn OfmFailure::equal(Self, Self) -> Bool
 pub fn OfmFailure::label(Self) -> String
 pub fn OfmFailure::not_equal(Self, Self) -> Bool
 pub fn OfmFailure::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct OfmModel {
   id : String
   owned_by : String
-} derive(Eq, @debug.Debug)
+}
 pub fn OfmModel::equal(Self, Self) -> Bool
 pub fn OfmModel::not_equal(Self, Self) -> Bool
 pub fn OfmModel::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct RouteDecision {
   model_name : String
   tier : ModelTier
@@ -263,12 +277,13 @@ pub struct RouteDecision {
   available : Bool
   fallback_chain : Array[String]
   laya_reason : String
-} derive(Eq, @debug.Debug)
+}
 pub fn RouteDecision::equal(Self, Self) -> Bool
 pub fn RouteDecision::not_equal(Self, Self) -> Bool
-pub fn RouteDecision::to_json(Self) -> Json
+pub fn RouteDecision::to_json(Self) -> @json.Json
 pub fn RouteDecision::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub struct RouterConfig {
   window_seconds : Int32
   threshold_pct : Double
@@ -279,12 +294,12 @@ pub struct RouterConfig {
   use_caf_memory : Bool
   caf_default_preference : Array[String]
   caf_min_evidences : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn RouterConfig::default() -> Self
 pub fn RouterConfig::equal(Self, Self) -> Bool
-pub fn RouterConfig::from_json(Json) -> (Self, Array[String])
+pub fn RouterConfig::from_json(@json.Json) -> (Self, Array[String])
 pub fn RouterConfig::not_equal(Self, Self) -> Bool
-pub fn RouterConfig::to_json(Self) -> Json
+pub fn RouterConfig::to_json(Self) -> @json.Json
 pub fn RouterConfig::to_repr(Self) -> @debug.Repr
 
 pub struct StarGateOutcome {
@@ -294,17 +309,19 @@ pub struct StarGateOutcome {
   now_epoch : Int64
 }
 
+#derive(Eq, @debug.Debug)
 pub struct StarGatePolicyResult {
   gate_enabled : Bool
   free_pool_unlocked : Bool
   note : String
   verdict : StarVerdict?
-} derive(Eq, @debug.Debug)
+}
 pub fn StarGatePolicyResult::equal(Self, Self) -> Bool
 pub fn StarGatePolicyResult::not_equal(Self, Self) -> Bool
-pub fn StarGatePolicyResult::to_json(Self) -> Json
+pub fn StarGatePolicyResult::to_json(Self) -> @json.Json
 pub fn StarGatePolicyResult::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, Show, @debug.Debug)
 pub enum StarVerdict {
   Unreadable
   BadFormat
@@ -312,7 +329,7 @@ pub enum StarVerdict {
   Stale
   NoSuchUser
   Valid
-} derive(Eq, Show, @debug.Debug)
+}
 pub fn StarVerdict::equal(Self, Self) -> Bool
 pub fn StarVerdict::not_equal(Self, Self) -> Bool
 pub fn StarVerdict::output(Self, &Logger) -> Unit

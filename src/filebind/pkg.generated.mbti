@@ -1,6 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "vicTop-cw/fist-mbt/src/filebind"
 
+import {
+  "moonbitlang/core/json",
+}
+
 // Values
 pub fn fb_apply_bind(Array[FileBind], String, String, Array[BindPlanRow], String, String, String, String, String, Int32, Int32) -> Array[FileBind]
 
@@ -14,7 +18,7 @@ pub fn fb_decide_release(FileBind?, String, Bool) -> ReleaseVerdict
 
 pub fn fb_default_ttl() -> Int32
 
-pub fn fb_entry_json(FileBind) -> Json
+pub fn fb_entry_json(FileBind) -> @json.Json
 
 pub fn fb_expired(FileBind, Int32) -> Bool
 
@@ -30,7 +34,7 @@ pub fn fb_match(FileBind, String, String, Array[String], String, String) -> Bool
 
 pub fn fb_norm(String) -> String
 
-pub fn fb_of_json(Json) -> FileBind?
+pub fn fb_of_json(@json.Json) -> FileBind?
 
 pub fn fb_path_ok(String) -> Bool
 
@@ -42,9 +46,9 @@ pub fn fb_release_name(ReleaseVerdict) -> String
 
 pub fn fb_remaining(FileBind, Int32) -> Int32
 
-pub fn fb_row_json(BindPlanRow, Int32) -> Json
+pub fn fb_row_json(BindPlanRow, Int32) -> @json.Json
 
-pub fn fb_status_json(FileBind, Int32) -> Json
+pub fn fb_status_json(FileBind, Int32) -> @json.Json
 
 pub fn fb_verdict_name(BindVerdict) -> String
 

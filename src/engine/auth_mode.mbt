@@ -34,6 +34,7 @@
 /// 认证模式（三档）。
 ///
 /// `derive(Eq, Debug)`：让测试能 `assert_eq(auth_mode(), Off)` 并打印差值。
+#derive(Eq, Debug)
 pub enum AuthMode {
   /// 只关「对无钥匙者也降权」这层；有钥匙不传仍降权（= 修前行为）
   Off
@@ -41,7 +42,7 @@ pub enum AuthMode {
   Soft
   /// 一律拒绝（未启用，前置条件见 BUG-470 决策单）
   Strict
-} derive(Eq, Debug)
+}
 
 ///|
 /// **显式 extend（BUG-478 清理 warn）**：编译器 `implicit_impl_as_method` 要求把

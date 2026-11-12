@@ -11,6 +11,7 @@
 
 ///|
 /// 一条 C-A-F 反馈记录
+#derive(Debug)
 pub struct CafRecord {
   /// 特征哈希：由 task_lang/difficulty/action_type 组合成的标识符
   feature_hash : Int32
@@ -22,7 +23,7 @@ pub struct CafRecord {
   cost : Double
   /// 时间戳 ISO
   ts : String
-} derive(Debug)
+}
 
 ///|
 pub extend CafRecord with @moonbitlang/core/debug.Debug::{to_repr}
@@ -40,12 +41,13 @@ pub fn CafRecord::new(
 
 ///|
 /// C-A-F 反馈记忆表：FIFO 环形缓冲区，上限 max_size 条
+#derive(Debug)
 pub struct CafMemory {
   records : Array[CafRecord?]
   max_size : Int32
   mut head : Int32
   mut count : Int32
-} derive(Debug)
+}
 
 ///|
 pub extend CafMemory with @moonbitlang/core/debug.Debug::{to_repr}
@@ -107,12 +109,13 @@ pub fn CafMemory::find(
 
 ///|
 /// 模型维度的成功率与成本统计（决策融合消费面）
+#derive(Debug)
 pub struct CafModelStats {
   model : String
   total : Int32
   success : Int32
   avg_cost : Double
-} derive(Debug)
+}
 
 ///|
 pub extend CafModelStats with @moonbitlang/core/debug.Debug::{to_repr}

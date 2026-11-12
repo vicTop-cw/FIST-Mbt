@@ -15,13 +15,14 @@
 
 ///|
 /// 审计单条记录
+#derive(Eq, Debug)
 pub struct AuditEntry {
   ts : String
   action : String
   actor : String
   task_id : String
   detail : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend AuditEntry with Eq::{not_equal, equal}
@@ -104,11 +105,12 @@ pub fn AuditLog::to_json(self : AuditLog) -> Json {
 
 ///|
 /// —— 角色与权限矩阵 ——
+#derive(Eq, Debug)
 pub enum Role {
   HumanSteward
   Leader
   Agent
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Role with Eq::{not_equal, equal}

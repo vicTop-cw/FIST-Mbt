@@ -38,7 +38,7 @@ test "BUG-232：executor_register 不再硬编码 persisted:true（源码文本�
 ///|
 /// 空白归一：连续空白折成单个空格，使源码文本锁对 moon fmt 折行免疫。
 fn normalize_ws(s : String) -> String {
-  let buf = StringBuilder::new()
+  let buf = StringBuilder()
   let mut prev_ws = false
   for ch in s {
     let is_ws = ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r'

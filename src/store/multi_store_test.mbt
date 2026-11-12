@@ -6,7 +6,7 @@ fn base_dir() -> String {
   // 现在每次调用都取一个唯一目录（bug462_unique_db 同源 token）。
   let d = @store.bug462_unique_db("ms_base")
   // 去掉 .db 后缀当目录名
-  d.substring(start=0, end=d.length() - 3)
+  d[0:d.length() - 3].to_string()
 }
 
 ///|

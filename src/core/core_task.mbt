@@ -3,6 +3,7 @@
 
 ///|
 /// 任务七态状态机
+#derive(Eq, Debug)
 pub enum TaskStatus {
   /// 待领取
   Pending
@@ -22,7 +23,7 @@ pub enum TaskStatus {
   Rejected
   /// 已暂停（外部中断/等待依赖）
   Paused
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend TaskStatus with Eq::{not_equal, equal}
@@ -169,6 +170,7 @@ pub fn TaskStatus::order(self : TaskStatus) -> Int32 {
 
 ///|
 /// FIST-Mbt 任务实体
+#derive(Eq, Debug)
 pub struct Task {
   /// 形如 T0 / T0.1 / T0.1.2 的层级 id
   id : String
@@ -210,7 +212,7 @@ pub struct Task {
   /// 不用 `"unknown"` / `"legacy"` 这类**看起来像身份**的占位符 ——
   /// 那会让审计查询把「占位符」当成「一个叫 unknown 的 agent」。
   created_by : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Task with Eq::{not_equal, equal}

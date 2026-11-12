@@ -4,6 +4,7 @@ package "vicTop-cw/fist-mbt/src/ops"
 import {
   "moonbitlang/core/debug",
   "moonbitlang/core/hashset",
+  "moonbitlang/core/json",
   "moonbitlang/core/ref",
   "vicTop-cw/RX-MBT/rhop",
   "vicTop-cw/fist-mbt/src/core",
@@ -13,7 +14,7 @@ import {
 // Values
 pub fn all_hats() -> Array[Hat]
 
-pub fn all_modes() -> Array[Json]
+pub fn all_modes() -> Array[@json.Json]
 
 pub fn can_archive(Role) -> Bool
 
@@ -47,7 +48,7 @@ pub fn commissar_root(String) -> String
 
 pub fn commissar_send(String, CommissarSignal, Int64) -> Unit
 
-pub fn commissar_tick(@engine.FistEngine, now~ : String, project_dir~ : String, stale_hours? : Int32, pending_hours? : Int32) -> Json
+pub fn commissar_tick(@engine.FistEngine, now~ : String, project_dir~ : String, stale_hours? : Int32, pending_hours? : Int32) -> @json.Json
 
 pub fn commissar_watch(@engine.FistEngine, project_dir~ : String, now~ : String, stale_hours? : Int32, pending_hours? : Int32) -> Unit
 
@@ -63,7 +64,7 @@ pub fn enforce(action~ : String, role~ : Role) -> Result[Unit, String]
 
 pub fn estimate_complexity(String, Int32) -> Int32
 
-pub fn explore_plan(String, Int32, Array[String], Array[Array[String]], Bool) -> Json
+pub fn explore_plan(String, Int32, Array[String], Array[Array[String]], Bool) -> @json.Json
 
 pub fn file_scope_conflicts(Array[Array[String]]) -> Array[String]
 
@@ -107,9 +108,9 @@ pub fn loop_status_str(LoopStatus) -> String
 
 pub fn loop_tick(PipelineLoop, String, current_test_count? : Int32, current_open_bug_count? : Int32, project_health_grade? : String, blocked_tasks? : Int32) -> LoopTickResult
 
-pub fn loop_to_json(PipelineLoop) -> Json
+pub fn loop_to_json(PipelineLoop) -> @json.Json
 
-pub fn mode_constraints(String) -> Json
+pub fn mode_constraints(String) -> @json.Json
 
 pub fn mode_short(PipelineMode) -> String
 
@@ -123,7 +124,7 @@ pub fn parse_mode(String) -> Result[PipelineMode, String]
 
 pub fn pipeline_has_rubric(String) -> Bool
 
-pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int32, phase? : String, prompt_name? : String, mode? : String) -> Result[Json, String]
+pub fn pipeline_tick(@engine.FistEngine, String, String, ns? : String, timeout_sec? : Int32, phase? : String, prompt_name? : String, mode? : String) -> Result[@json.Json, String]
 
 pub fn preset_loop(String) -> Result[(Array[String], String), String]
 
@@ -135,21 +136,21 @@ pub fn sd_agent_contract(String) -> String
 
 pub fn select_mode_by_complexity(Int32) -> PipelineMode
 
-pub fn selfdrive_export_tasks(@engine.FistEngine, String, String, now? : String) -> Result[Json, String]
+pub fn selfdrive_export_tasks(@engine.FistEngine, String, String, now? : String) -> Result[@json.Json, String]
 
-pub fn selfdrive_memory_append(String, ns~ : String, kind~ : String, content~ : String, now~ : String) -> Result[Json, String]
+pub fn selfdrive_memory_append(String, ns~ : String, kind~ : String, content~ : String, now~ : String) -> Result[@json.Json, String]
 
-pub fn selfdrive_memory_get(String, ns~ : String, kind~ : String) -> Result[Json, String]
+pub fn selfdrive_memory_get(String, ns~ : String, kind~ : String) -> Result[@json.Json, String]
 
-pub fn selfdrive_memory_init(String, ns~ : String) -> Result[Json, String]
+pub fn selfdrive_memory_init(String, ns~ : String) -> Result[@json.Json, String]
 
 pub fn selfdrive_parse_next_tasks(String, max_tasks~ : Int32) -> Array[String]
 
-pub fn selfdrive_publish_next(@engine.FistEngine, String, ns~ : String, now~ : String, max_tasks~ : Int32, mode? : String) -> Result[Json, String]
+pub fn selfdrive_publish_next(@engine.FistEngine, String, ns~ : String, now~ : String, max_tasks~ : Int32, mode? : String) -> Result[@json.Json, String]
 
-pub fn selfdrive_review_ready(String, ns~ : String) -> Result[Json, String]
+pub fn selfdrive_review_ready(String, ns~ : String) -> Result[@json.Json, String]
 
-pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int32) -> Result[Json, String]
+pub fn selfdrive_review_tick(String, ns~ : String, review_every~ : Int32) -> Result[@json.Json, String]
 
 pub fn template_probe_path(String) -> String
 
@@ -159,18 +160,19 @@ pub fn valid_verdict(HatVerdict) -> Result[Unit, String]
 
 pub fn validate_loop_steps(Array[String]) -> String?
 
-pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int32, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int32, omega_spec? : Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int32, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int32, mode? : String) -> Result[Json, String]
+pub fn watchdog_tick(@engine.FistEngine, String, timeout_sec? : Int32, ns? : String, next_description? : String, next_created_by? : String, meta_prompt_path? : String, cold_start? : Bool, project_dir? : String, omega_strong_verify? : Bool, omega_split_n? : Int32, omega_spec? : @json.Json?, selfdrive_project_dir? : String, selfdrive_review_every? : Int32, autodispatch? : Bool, autodispatch_want? : String, phi_gate? : Bool, phi_threshold? : Int32, mode? : String) -> Result[@json.Json, String]
 
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub struct AuditEntry {
   ts : String
   action : String
   actor : String
   task_id : String
   detail : String
-} derive(Eq, @debug.Debug)
+}
 pub fn AuditEntry::equal(Self, Self) -> Bool
 pub fn AuditEntry::not_equal(Self, Self) -> Bool
 pub fn AuditEntry::to_repr(Self) -> @debug.Repr
@@ -183,7 +185,7 @@ pub fn AuditLog::by_task(Self, String) -> Array[AuditEntry]
 pub fn AuditLog::entries(Self) -> Array[AuditEntry]
 pub fn AuditLog::new() -> Self
 pub fn AuditLog::record(Self, action~ : String, actor~ : String, task_id~ : String, detail? : String, now~ : String) -> Unit
-pub fn AuditLog::to_json(Self) -> Json
+pub fn AuditLog::to_json(Self) -> @json.Json
 
 pub struct CommissarEntry {
   id : String
@@ -194,7 +196,7 @@ pub struct CommissarEntry {
   ns : String
   at : Int64
 }
-pub fn CommissarEntry::to_json(Self) -> Json
+pub fn CommissarEntry::to_json(Self) -> @json.Json
 
 pub struct CommissarGcReport {
   total : Int32
@@ -226,7 +228,7 @@ pub struct CommissarReadReport {
   bad_files : Array[String]
   dropped_by_limit : Int32
 }
-pub fn CommissarReadReport::to_json(Self) -> Json
+pub fn CommissarReadReport::to_json(Self) -> @json.Json
 
 pub struct CommissarSignal {
   kind : String
@@ -234,9 +236,9 @@ pub struct CommissarSignal {
   text : String
   ns : String
 }
-pub fn CommissarSignal::from_json(Json) -> Self?
+pub fn CommissarSignal::from_json(@json.Json) -> Self?
 pub fn CommissarSignal::new(kind~ : String, target~ : String, text~ : String, ns? : String) -> Self
-pub fn CommissarSignal::to_json(Self) -> Json
+pub fn CommissarSignal::to_json(Self) -> @json.Json
 
 pub struct DebateSummary {
   total : Int32
@@ -296,7 +298,7 @@ pub struct LoopTickResult {
   next_round : Int32
   should_stop : Bool
   stop_reason : String
-  history_json : Json
+  history_json : @json.Json
   loop_after : PipelineLoop
 }
 
@@ -327,11 +329,12 @@ pub enum PipelineMode {
   Explore
 }
 
+#derive(Eq, @debug.Debug)
 pub enum Role {
   HumanSteward
   Leader
   Agent
-} derive(Eq, @debug.Debug)
+}
 pub fn Role::equal(Self, Self) -> Bool
 pub fn Role::from_string(String) -> Self?
 pub fn Role::not_equal(Self, Self) -> Bool
