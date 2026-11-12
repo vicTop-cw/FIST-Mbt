@@ -100,7 +100,7 @@ test "star_gate_verify 全通过 → Valid" {
   let list : Array[String] = ["octocat", "alice"]
   let j = sg_sign_attest(list, 1000000000L, 21600L)
   let o = star_gate_verify(j, "alice", 1000000001L)
-  inspect(o.verdict, content="Valid")
+  debug_inspect(o.verdict, content="Valid")
   inspect(o.list_count, content="2")
   inspect(o.now_epoch, content="1000000001")
 }
@@ -110,7 +110,7 @@ test "star_gate_verify 边界 now==issued_at+ttl 仍 Valid" {
   let list : Array[String] = ["octocat"]
   let j = sg_sign_attest(list, 1000L, 100L)
   let o = star_gate_verify(j, "octocat", 1100L)
-  inspect(o.verdict, content="Valid")
+  debug_inspect(o.verdict, content="Valid")
 }
 
 ///|
@@ -121,7 +121,7 @@ test "star_gate_verify 签名被篡改 → BadSignature" {
   // 篡改：改 ttl_seconds 而不重签 → canonical 变，验签必败
   let tampered = sg_attest_json(list, 1000L, 101L, sg_known_pk_hex, "00")
   let o = star_gate_verify(tampered, "octocat", 1000L)
-  inspect(o.verdict, content="BadSignature")
+  debug_inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
 }
 
@@ -130,7 +130,7 @@ test "star_gate_verify login 不在名单 → NoSuchUser" {
   let list : Array[String] = ["octocat"]
   let j = sg_sign_attest(list, 1000L, 10000L)
   let o = star_gate_verify(j, "mallory", 1001L)
-  inspect(o.verdict, content="NoSuchUser")
+  debug_inspect(o.verdict, content="NoSuchUser")
 }
 
 ///|
@@ -138,34 +138,34 @@ test "star_gate_verify 已过期 → Stale" {
   let list : Array[String] = ["octocat"]
   let j = sg_sign_attest(list, 1000L, 100L)
   let o = star_gate_verify(j, "octocat", 1101L)
-  inspect(o.verdict, content="Stale")
+  debug_inspect(o.verdict, content="Stale")
 }
 
 ///|
 test "star_gate_verify 非法 JSON → Unreadable" {
   let o = star_gate_verify("not json{", "octocat", 0L)
-  inspect(o.verdict, content="Unreadable")
+  debug_inspect(o.verdict, content="Unreadable")
 }
 
 ///|
 test "star_gate_verify format 非本门 → BadFormat" {
   let bad = "{\"format\":\"other/v1\",\"algorithm\":\"ed25519\",\"list\":[\"octocat\"],\"issued_at\":1,\"ttl_seconds\":1,\"public_key_hex\":\"00\",\"signature_hex\":\"00\"}"
   let o = star_gate_verify(bad, "octocat", 1L)
-  inspect(o.verdict, content="BadFormat")
+  debug_inspect(o.verdict, content="BadFormat")
 }
 
 ///|
 test "star_gate_verify algorithm 非 ed25519 → BadFormat" {
   let bad = "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"rsa\",\"list\":[\"octocat\"],\"issued_at\":1,\"ttl_seconds\":1,\"public_key_hex\":\"00\",\"signature_hex\":\"00\"}"
   let o = star_gate_verify(bad, "octocat", 1L)
-  inspect(o.verdict, content="BadFormat")
+  debug_inspect(o.verdict, content="BadFormat")
 }
 
 ///|
 test "star_gate_verify 缺 list 字段 → BadFormat" {
   let bad = "{\"format\":\"fist-star-gate-attestation/v1\",\"algorithm\":\"ed25519\",\"issued_at\":1,\"ttl_seconds\":1,\"public_key_hex\":\"00\",\"signature_hex\":\"00\"}"
   let o = star_gate_verify(bad, "octocat", 1L)
-  inspect(o.verdict, content="BadFormat")
+  debug_inspect(o.verdict, content="BadFormat")
 }
 
 ///|
@@ -174,7 +174,7 @@ test "star_gate_verify public_key_hex 非 hex → BadSignature" {
   let bad = sg_attest_json(list, 1000L, 100L, "zznothex", sg_known_pk_hex)
   let o = star_gate_verify(bad, "octocat", 1000L)
   // 公钥坏 → 判 BadSignature（reason 说明是 hex 问题），不是 BadFormat
-  inspect(o.verdict, content="BadSignature")
+  debug_inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
 }
 
@@ -189,8 +189,8 @@ test "star_gate_verify_pinned 公钥一致 == star_gate_verify（零回归等价
   let j = sg_sign_attest(list, 1000L, 10000L)
   let a = star_gate_verify(j, "octocat", 1001L)
   let b = star_gate_verify_pinned(j, "octocat", 1001L, sg_known_pk_hex)
-  inspect(a.verdict, content="Valid")
-  inspect(b.verdict, content="Valid")
+  debug_inspect(a.verdict, content="Valid")
+  debug_inspect(b.verdict, content="Valid")
   inspect(b.list_count, content="1")
 }
 
@@ -201,7 +201,7 @@ test "star_gate_verify_pinned 公钥不符 → BadSignature（reason 点明钉�
   let j = sg_sign_attest(list, 1000L, 10000L)
   let other_pk = "0".repeat(64)
   let o = star_gate_verify_pinned(j, "octocat", 1001L, other_pk)
-  inspect(o.verdict, content="BadSignature")
+  debug_inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
   if o.reason.contains("钉死") {
 
@@ -217,7 +217,7 @@ test "star_gate_verify_pinned 空期望公钥 → BadSignature（fail-closed，�
   let list : Array[String] = ["octocat"]
   let j = sg_sign_attest(list, 1000L, 10000L)
   let o = star_gate_verify_pinned(j, "octocat", 1001L, "")
-  inspect(o.verdict, content="BadSignature")
+  debug_inspect(o.verdict, content="BadSignature")
   inspect(o.list_count, content="1")
   if o.reason.contains("fail-closed") {
 
@@ -233,7 +233,7 @@ test "star_gate_verify_pinned 公钥一致 + login 不在名单 → NoSuchUser�
   let list : Array[String] = ["octocat"]
   let j = sg_sign_attest(list, 1000L, 10000L)
   let o = star_gate_verify_pinned(j, "mallory", 1001L, sg_known_pk_hex)
-  inspect(o.verdict, content="NoSuchUser")
+  debug_inspect(o.verdict, content="NoSuchUser")
 }
 
 ///|
@@ -356,5 +356,5 @@ test "star_gate_verify 恶意 1e300 issued_at+ttl 不 panic（BUG-196 溢出回�
     "\"}"
   let o = star_gate_verify(j, "octocat", 1000L)
   // 修复后：改用 Double 比较，1e300+1e300 远大于 1000 → 未过期；login 在名单内 → Valid
-  inspect(o.verdict, content="Valid")
+  debug_inspect(o.verdict, content="Valid")
 }

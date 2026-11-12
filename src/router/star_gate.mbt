@@ -17,7 +17,7 @@
 ///|
 /// Star 门判定结果。顺序即 star_gate_verify 的判定顺序：
 ///   Unreadable → BadFormat → BadSignature → Stale → NoSuchUser → Valid
-#derive(Eq, Debug, Show)
+#derive(Eq, Debug)
 pub enum StarVerdict {
   /// 清单 JSON **语法**无法解析（不是 JSON 语法错误、是字段结构错误 → 走 BadFormat）
   Unreadable
@@ -38,9 +38,6 @@ pub extend StarVerdict with Eq::{not_equal, equal}
 
 ///|
 pub extend StarVerdict with @moonbitlang/core/debug.Debug::{to_repr}
-
-///|
-pub extend StarVerdict with Show::{to_string, output}
 
 ///|
 /// 验签结果。字段保持私有可见性（白盒测试可构造；黑盒只读 verdict/reason）。
@@ -388,7 +385,7 @@ pub extend StarGatePolicyResult with @moonbitlang/core/debug.Debug::{to_repr}
 ///|
 pub fn StarGatePolicyResult::to_json(self : StarGatePolicyResult) -> Json {
   let v = match self.verdict {
-    Some(x) => Json::string(x.to_string())
+    Some(x) => Json::string(Repr(x).to_string())
     None => Json::null()
   }
   Json::object({

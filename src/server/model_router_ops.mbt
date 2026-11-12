@@ -786,20 +786,21 @@ fn model_router_status_impl(
 }
 
 ///|
-/// Star 门验签 verdict → 小写下划线串（契约要求 String）。用 `to_string()` 做映射，
-/// 避免 server 包跨包 match 枚举变体；未知值原样回传（不静默吞）。
+/// Star 门验签 verdict → 小写下划线串（契约要求 String）。用 Debug repr
+/// （`Repr(x).to_string()`，无字段枚举的 repr 与旧 Show::to_string 同形，均为变体名）
+/// 做映射，避免 server 包跨包 match 枚举变体；未知值原样回传（不静默吞）。
 fn mr_verdict_str(v : @router.StarVerdict?) -> String {
   match v {
     None => ""
     Some(x) =>
-      match x.to_string() {
+      match Repr(x).to_string() {
         "Valid" => "valid"
         "Stale" => "stale"
         "BadSignature" => "bad_signature"
         "BadFormat" => "bad_format"
         "Unreadable" => "unreadable"
         "NoSuchUser" => "no_such_user"
-        _ => x.to_string()
+        _ => Repr(x).to_string()
       }
   }
 }
