@@ -30,6 +30,7 @@ fn lock_of(scope : String, agent : String) -> @store.FileLock {
 /// 这是 BUG-424 的正面格：接门前 `locks_try_acquire` 直接透传 store，
 /// 任何名字都能拿到 `src/engine/` 的锁 ⇒ 本格必红。
 test "lock_perm_wb1_executor_denied_on_engine" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let o = e.locks_try_acquire(lock_of("src/engine/x.mbt", "exec-1"))
   assert_false(o.granted)
@@ -45,6 +46,7 @@ test "lock_perm_wb1_executor_denied_on_engine" {
 ///
 /// 内存后端 `agents` 表恒空 ⇒ 只剩推断这一层 ⇒ 覆盖「名字即身份」这条攻击面。
 test "lock_perm_wb2_leader_name_denied_on_engine" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let o = e.locks_try_acquire(lock_of("src/engine/x.mbt", "leader"))
   assert_false(o.granted)
@@ -98,6 +100,7 @@ test "lock_perm_wb3_executor_allowed_on_scripts" {
 /// 与 BUG-413 的三态语义一致：`Unregistered` 是 advisory（不参与授权裁决），
 /// 不是拒绝。本格防「把未登记也当成拒绝」的修过头。
 test "lock_perm_wb4_unregistered_is_advisory" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let o = e.locks_try_acquire(lock_of("reports/x.md", "exec-1"))
   assert_true(o.granted)

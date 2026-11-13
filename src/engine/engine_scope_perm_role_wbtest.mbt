@@ -140,6 +140,7 @@ test "scope_role_wb3_end_to_end_naming_bypass_denied" {
 ///|
 /// 锁 4（**端到端 · 合法路径**）：`human_steward` 仍能预订军官/统帅保护面。
 test "scope_role_wb4_end_to_end_legit_human_steward_works" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   for
     scope in ["src/engine/engine.mbt", "src/store/store_sqlite.mbt", "moon.mod"] {
@@ -179,6 +180,7 @@ test "scope_role_wb4_end_to_end_legit_human_steward_works" {
 /// 它会**静默失效**、永远退回推断 —— 纯函数锁全绿，而 A 案一点没生效。
 /// 这一格直接钉「登记过的 Leader 真的能过门」+「同名族里没登记的过不去」。
 test "scope_role_wb5_declared_role_wins_end_to_end" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let db = "temp/bug418_declared_role_wb.db"
   let e = match FistEngine::open_sqlite(db) {
     None => abort("open_sqlite 失败：" + db)
@@ -387,6 +389,7 @@ test "scope_role_wb6_mutation_control_and_body_scan" {
 ///
 /// 内存后端下 `agents` 表恒空 ⇒ 只剩推断这一层，正好复现「名字即身份」的攻击面。
 test "scope_role_wb7_exact_leader_denied_end_to_end" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   // 四组「整名单词 → 军官保护面」，覆盖 4 条不同的 Leader 规则（engine/router/core/display）
   let guarded = [
@@ -451,6 +454,7 @@ test "scope_role_wb7_exact_leader_denied_end_to_end" {
 ///   ⑤ 正例 + 加固：非 server 类型登记 Leader 仍可继承（没修过头）；
 ///      而登记成 `HumanSteward` 的记录**不可继承**（HS 面永不从自报名字来）
 test "scope_role_wb8_server_self_identity_not_inheritable" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let db = "temp/bug422_server_identity_wb.db"
   let e = match FistEngine::open_sqlite(db) {
     None => abort("open_sqlite 失败：" + db)

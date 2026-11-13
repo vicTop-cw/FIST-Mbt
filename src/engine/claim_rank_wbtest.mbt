@@ -170,6 +170,7 @@ test "rank_gate G3: level_to_rank 映射与越界" {
 /// BUG-432 后：`leader_a` 走推断 ⇒ Executor ⇒ rank 5（修前按名字前缀是 6）。
 /// 文案同时点名 `role` / `role_source`，运维才分得清「没权限」与「任务建错了」。
 test "rank_gate G4: 执行者认领团长级任务被拒且文案含 RANK_GATE" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let tid = cr_publish(e, "团长级任务（level=4）", 4)
   let msg = cr_err_of(
@@ -186,6 +187,7 @@ test "rank_gate G4: 执行者认领团长级任务被拒且文案含 RANK_GATE" 
 ///|
 /// G4-b：司令例外通吃——同一任务换人类指挥官必须放行（防"门装反成一刀切"）。
 test "rank_gate G4: 人类指挥官放行（司令例外）" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let tid = cr_publish(e, "团长级任务（level=4）", 4)
   match
@@ -313,6 +315,7 @@ test "rank_gate G5: 名字不得提权（含 atomcode 前缀不再拿团长档�
 ///   · 登记了 ⇒ Leader 军衔（role_source=declared）
 ///   · 没登记 ⇒ 前缀再像也只是 Executor（role_source=inferred）
 test "rank_gate G5: 已登记 Leader 拿军官军衔，前缀同名未登记仍默认档" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let db = "temp/bug432_rank_leader_wb.db"
   let e = match FistEngine::open_sqlite(db) {
     None => abort("open_sqlite 失败：" + db)
@@ -363,6 +366,7 @@ test "rank_gate G5: 已登记 Leader 拿军官军衔，前缀同名未登记仍�
 /// 也**拿不到军官军衔** —— `claimed` 侧的 RANK_GATE 与 rsv/lock 门共用同一个取数面，
 /// 所以 BUG-422 的「server 自身份不提权」在这里同样生效。
 test "rank_gate G5: server 自身份不因 Leader 登记拿到军官军衔" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let db = "temp/bug432_rank_self_wb.db"
   let e = match FistEngine::open_sqlite(db) {
     None => abort("open_sqlite 失败：" + db)

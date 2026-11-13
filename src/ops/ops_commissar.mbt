@@ -404,6 +404,13 @@ pub struct CommissarReadReport {
   bad_files : Array[String]
   /// 因 limit 被截掉的条数（= 被截掉的更早信号数）
   dropped_by_limit : Int32
+  /// 游标推进值（commissar-poll 提案判据④）：= 返回条目里**最大**的 seq；
+  /// 无返回条目时 = 传入的 since_seq（游标不动 ⇒ 不丢也不跳）。
+  /// 调用方下次把它当 `since_seq` 传入续读；闭区间下最后一条会重复出现，按 id 去重。
+  next_seq : Int64
+  /// 本次是否因 limit 截掉了更早信号（= dropped_by_limit > 0）
+  /// —— 为真说明目录里还有比返回窗更旧的信号没读到。
+  has_more : Bool
 }
 
 ///|
@@ -439,6 +446,9 @@ pub fn CommissarReadReport::to_json(self : CommissarReadReport) -> Json {
       "payload": commissar_jint(self.bad_payload),
       "files": Json::array(self.bad_files.map(fn(s) { Json::string(s) })),
     }),
+    // 判据④（commissar-poll 提案）：游标推进值 + 截断旗，调用方不用再自己抠 max(seq)
+    "next_seq": Json::number(self.next_seq.to_double()),
+    "has_more": Json::boolean(self.has_more),
   })
 }
 
@@ -650,6 +660,14 @@ pub fn commissar_read(
     bad_payload,
     bad_files,
     dropped_by_limit: start,
+    // 判据④（commissar-poll 提案）：next_seq = 返回条目最大 seq（out 升序 ⇒ 尾元素）；
+    // 空返回 = 游标原地不动（拿传入 since_seq 回填，不丢也不跳）
+    next_seq: if out.length() > 0 {
+      out[out.length() - 1].at
+    } else {
+      since_seq
+    },
+    has_more: start > 0,
   }
 }
 

@@ -114,6 +114,7 @@ test "bug476_s3_soft_degrades_but_is_not_denied" {
 ///|
 /// 【S4】`off` + 无挑战 ⇒ 门层**不拒**（零回归，首次默认值）。
 test "bug476_s4_off_is_not_denied" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   assert_eq(auth_mode_parse("off"), Off)
   // off 下无挑战产生的是 "declared"/"inferred" 之类，绝不是 challenge_missing
   match strict_challenge_denial("declared", "reserve_scope") {
@@ -124,8 +125,8 @@ test "bug476_s4_off_is_not_denied" {
     Some(_) => abort("off 下不该拒（inferred）")
     None => ()
   }
-  // 空串 / 未设 ⇒ off
-  assert_eq(auth_mode_parse(""), Off)
+  // 空串 / 未设 ⇒ 默认档（flip 后 = soft；2026-10-28 首次上线时是 off）
+  assert_eq(auth_mode_parse(""), Soft)
 }
 
 ///|

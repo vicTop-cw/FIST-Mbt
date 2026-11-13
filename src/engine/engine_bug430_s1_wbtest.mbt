@@ -45,6 +45,7 @@ test "bug430_s1_rsv_set_receipt_declares_agent_source" {
 /// `RsvOutcome` 是 store 侧结构体、本层不能加字段 ⇒ 走 action 标签。
 /// 变异（把 `+agent_self_reported` 后缀删掉）⇒ 本格红。
 test "bug430_s1_rsv_try_set_action_declares_agent_source" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let eng = FistEngine::new(store=@store.StoreBackend::memory())
   let r = eng.rsv_try_set(
     scope="scripts/y.py",

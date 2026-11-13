@@ -234,6 +234,7 @@ test "s3_p2_05_unissued_nonce_rejected" {
 /// 断言 `judged_role_gated(eng, agent, None)` **等于** `judged_role(eng, agent)`
 /// —— 这正是「None 分支不做任何改变」的设计契约。
 test "s3_p2_06_no_challenge_means_zero_change" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new(store=@store.StoreBackend::memory())
   let gated = judged_role_gated(e, "some-agent", None)
   let plain = judged_role(e, "some-agent")

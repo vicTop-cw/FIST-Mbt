@@ -103,6 +103,7 @@ test "bug430cf_c2_keyed_without_challenge_is_downgraded" {
 /// 判据是「与 `judged_role` 的结果**逐字相同**」，不是「看起来对」。
 /// 既要 role 相同，也要 role_source 相同（`declared` / `inferred` 原样保留）。
 test "bug430cf_c3_unkeyed_without_challenge_is_unchanged" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let agent = "cf-nokey"
   let eng = cf_eng(agent, false)
   let (role, src) = judged_role_gated(eng, agent, None)

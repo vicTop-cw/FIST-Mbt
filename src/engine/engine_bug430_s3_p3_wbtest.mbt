@@ -107,6 +107,7 @@ test "s3_p3_03_sig_is_actually_consumed" {
 ///
 /// 本格补一条**回归契约**：`challenge_sig` 不传时行为与第二段完全一致。
 test "s3_p3_04_default_sig_param_keeps_phase2_behavior" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new(store=@store.StoreBackend::memory())
   // 不传 challenge_sig（走默认 None）⇒ 与第二段行为一致
   let a = judged_role_gated(e, "ghost", Some("n1"))

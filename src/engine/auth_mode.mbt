@@ -24,10 +24,13 @@
 //   而重启成本只有几秒（`serve-launcher.cjs` 冷启 2-4 秒）。
 //   **用简单换正确** —— 这也是决策单里写明的选择。
 //
-// ## 为什么默认 `off`
+// ## 默认值变迁（flip 已执行）
 //
 //   决策单：首次上线默认 `off`，观察一周后 flip 到 `soft`。
-//   `off` 的行为必须与修前**逐字相同**，否则「上线开关」这件事本身就有回归风险。
+//   · 2026-10-28 首次上线：默认 `off`（`off` 的行为与修前**逐字相同**，
+//     否则「上线开关」这件事本身就有回归风险）；
+//   · **2026-11-13 flip：默认 `soft`**（owner 指令执行；无公钥者一律按 Executor 算）。
+//     回滚 = 启动器 `DEFAULT_AUTH_MODE` 改回 `'off'` 或显式传 `FIST_AUTH_MODE=off`。
 // ============================================================================
 
 ///|
@@ -73,20 +76,23 @@ pub fn AuthMode::to_string(self : AuthMode) -> String {
 ///   · `"off"`    ⇒ `Off`
 ///   · `"soft"`   ⇒ `Soft`
 ///   · `"strict"` ⇒ `Strict`
-///   · 空串 / 未设 ⇒ `Off`（默认值）
-///   · **其它任何值** ⇒ `Off` + **warning**（见 `auth_mode_warning`）
+///   · 空串 / 未设 / **其它任何值** ⇒ `Soft`（**当前默认**，2026-11-13 flip）
 ///
-/// ⚠️ **非法值回退 `Off` 而不是 `Strict`**：写错一个字母不该让现网停摆。
+/// ## 默认值变迁（BUG-470 决策单第二阶段，owner 指令执行）
+///
+///   · 2026-10-28 首次上线：默认 `off`（与修前逐字零回归，先观察一周）
+///   · 2026-11-13 **flip**：默认 `soft`（无公钥者也按 Executor 算——策略 B 生效）
+///
+/// ⚠️ **非法值回退默认 `Soft` 而不是 `Strict`**：写错一个字母不该让现网停摆。
 ///   fail-closed 在这里是**错的方向** —— 因为本开关的「严」档会让 56 个调用方失败，
-///   而「回退默认」只是维持现状。**配置写错 ≠ 环境不安全。**
+///   而「回退默认」只是维持默认现状。**配置写错 ≠ 环境不安全。**
 pub fn auth_mode_parse(raw : String) -> AuthMode {
   match normalize_mode_str(raw) {
-    "" => Off
     "off" => Off
     "soft" => Soft
     "strict" => Strict
-    // 非法值 ⇒ 回退默认（不 panic、不取最严）
-    _ => Off
+    // 空（未设）/ 非法 ⇒ 回退**默认值**（不 panic、不取最严）
+    _ => Soft
   }
 }
 
@@ -102,8 +108,8 @@ pub fn auth_mode_warning(raw : String) -> String {
   } else {
     "FIST_AUTH_MODE=\"" +
     raw +
-    "\" 不是合法值（期望 off / soft / strict）⇒ **已回退 off（维持现状）**。" +
-    "配置写错不会让现网停摆，但请修正，否则你以为开了 B 其实没开。"
+    "\" 不是合法值（期望 off / soft / strict）⇒ **已回退 soft（当前默认）**。" +
+    "配置写错不会让现网停摆，但请修正——回退的是默认档，不是你以为设的那档。"
   }
 }
 
@@ -133,12 +139,12 @@ pub fn auth_mode() -> AuthMode {
       Some(v) => v
       None => ""
     }
-    // 缓存**规范化后的合法值**（非法值也缓存为 "off"，避免每次调用都重复判定）
+    // 缓存**规范化后的合法值**（未设/非法也缓存为 "soft"=当前默认，避免每次调用都重复判定）
     let n = normalize_mode_str(raw)
     auth_mode_slot[0] = if n == "off" || n == "soft" || n == "strict" {
       n
     } else {
-      "off"
+      "soft"
     }
   }
   auth_mode_parse(auth_mode_slot[0])
@@ -150,6 +156,21 @@ pub fn auth_mode() -> AuthMode {
 /// ⚠️ 生产代码**不要调** —— 它会让「读一次就定」的保证失效。
 pub fn auth_mode_reset_cache_for_test() -> Unit {
   auth_mode_slot[0] = ""
+}
+
+///|
+/// 测试专用：**直接钉住缓存值**（不碰进程 env —— 避免 env 污染同进程后续格，判例-31）。
+///
+/// 用途：flip（2026-11-13）后默认= `soft`；要驱动 `off` / `strict` 语义的测试格
+/// 在**开头**调 `auth_mode_pin_cache_for_test("off")` 钉住，即可复现 flip 前的默认行为。
+///
+/// ⚠️ 两条纪律：
+///   · 只传合法值（"off" / "soft" / "strict"），传别的等于非法值回退语义；
+///   · 任何**依赖未设默认**的测试格，开头必须先 `auth_mode_reset_cache_for_test()`，
+///     因为前一格可能把缓存钉在了别的档上。
+/// ⚠️ 生产代码**不要调** —— 它绕过「读一次 env」的单一真源保证。
+pub fn auth_mode_pin_cache_for_test(raw : String) -> Unit {
+  auth_mode_slot[0] = normalize_mode_str(raw)
 }
 
 ///|
@@ -171,7 +192,7 @@ pub fn auth_mode_reset_cache_for_test() -> Unit {
 /// 锁：`engine_bug476_strict_wbtest.mbt` S1~S6（S6 是接线**计数**格，删掉任一处必红）。
 ///
 /// ⚠️ 这一条**仍然要在启动时喊一声**，因为生效范围有界，而两个方向的误解都真实存在：
-///   · `off` 是出厂默认，`strict` / `soft` 都不默认启用（决策单：先观察一周再 flip）；
+///   · `soft` 是当前默认（2026-11-13 flip）；`off` / `strict` 都需显式设置；
 ///   · strict 只覆盖上面那 4 处 —— `execute` / `verify` / `submit` / `archive` 走的是
 ///     无挑战门的路径（那是 BUG-430c），**设了 strict 不等于全链路都要认证**。
 ///   本文案的职责就是说清「哪几道门真拒、哪几道不拒」：既不许再说「一条都不拒」，

@@ -91,6 +91,7 @@ test "bug451_lock2_executor_still_cannot_claim_level2_nonleaf" {
 ///|
 /// 锁 3（**防修过头**）：HumanSteward(rank 0) 例外通吃 —— 叶子与非叶子都能领。
 test "bug451_lock3_human_steward_can_claim_anything" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let leaf = @core.Task::new(
     id="T-hs-leaf",

@@ -7,7 +7,15 @@ decision: approved
 
 # `commissar_poll` 设计草案（BUG-480 的替代方案）
 
-> **状态：仅设计，未实现。** 前提：`commissar_watch` 已因 BUG-480 撤回（不注册成 MCP 工具）。
+> **状态：已实现 —— 以 `commissar_read` 之名接线 MCP 工具面**（`server.mbt` 注册；
+> 短轮询、无句柄、调用方游标、坏文件点名，见 §八/文末 R95 定案记录）。
+> 命名差异：设计名 `commissar_poll`，实现名 `commissar_read` —— 改名会破坏既有调用方
+> 与四态投影，**保持实现名不改**。
+> ⚠️ 本头部原写「仅设计，未实现」系**自述滞后**：R95（2026-10-30）已证三问在代码里落地，
+> 2026-11-13 订正本行；同日补齐判据④返回面——`commissar_read` 返回新增 `next_seq`
+> （游标推进值=返回条目最大 seq，空返回=游标不动）与 `has_more`（因 limit 截掉更早信号），
+> 白盒锁 `dl_poll_cursor_next_seq_and_has_more`（ops_commissar_wbtest.mbt）。
+> 前提不变：`commissar_watch` 已因 BUG-480 撤回（不注册成 MCP 工具）。
 
 ---
 

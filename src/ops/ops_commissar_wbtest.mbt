@@ -494,3 +494,50 @@ test "dl_c10_gc_keeps_newest_not_oldest" {
   let kept_name = rhop_after[0]
   assert_true(kept_name.contains("1700000003000"))
 }
+
+///|
+/// 锁 L-poll（commissar-poll 提案判据④落地锁）：`next_seq` 前进 + `has_more` 可辨。
+///
+/// 设计：docs/plans/2026-10-29-commissar-poll-proposal.md §四判据④
+/// 「poll 返回 next_seq，用它再 poll ⇒ 不重复（闭区间下最后一条重复出现，调用方按 id 去重）」。
+/// 三条不同时刻信号 ⇒ limit=2 截最旧 ⇒ has_more=true、next_seq=最新 seq；
+/// 用 next_seq 续读（闭区间）⇒ 只回最后一条；游标之后读 ⇒ 空返回且 next_seq=游标不动。
+test "dl_poll_cursor_next_seq_and_has_more" {
+  let proj = dl_tmp_project("poll")
+  commissar_ensure_dirs(proj)
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="reminder", target="dl-poll-agent", text="m1"),
+    1_700_000_000_010L,
+  )
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="reminder", target="dl-poll-agent", text="m2"),
+    1_700_000_000_020L,
+  )
+  commissar_send(
+    proj,
+    CommissarSignal::new(kind="reminder", target="dl-poll-agent", text="m3"),
+    1_700_000_000_030L,
+  )
+  // ① limit=2 ⇒ 返回最新 2 条；截掉 1 条更早的 ⇒ has_more=true；next_seq=最新 seq
+  let r1 = commissar_read(proj, limit=2)
+  assert_eq(r1.returned, 2)
+  assert_eq(r1.dropped_by_limit, 1)
+  assert_eq(r1.has_more, true)
+  assert_eq(r1.next_seq, 1_700_000_000_030L)
+  assert_eq(r1.entries[0].text, "m2")
+  assert_eq(r1.entries[1].text, "m3")
+  // ② 用 next_seq 续读（闭区间）⇒ 只回最后一条（宁重复不丢，调用方按 id 去重）
+  let r2 = commissar_read(proj, since_seq=r1.next_seq)
+  assert_eq(r2.returned, 1)
+  assert_eq(r2.entries[0].id, r1.entries[1].id)
+  assert_eq(r2.next_seq, 1_700_000_000_030L)
+  assert_eq(r2.has_more, false)
+  // ③ 游标越过一切 ⇒ 空返回且 next_seq = 传入游标（原地不动）
+  let r3 = commissar_read(proj, since_seq=9_999_999_999_999L)
+  assert_eq(r3.returned, 0)
+  assert_eq(r3.next_seq, 9_999_999_999_999L)
+  assert_eq(r3.has_more, false)
+  dl_cleanup(proj)
+}
