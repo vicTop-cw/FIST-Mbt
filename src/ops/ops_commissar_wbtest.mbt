@@ -541,3 +541,60 @@ test "dl_poll_cursor_next_seq_and_has_more" {
   assert_eq(r3.has_more, false)
   dl_cleanup(proj)
 }
+
+///|
+/// 锁 dl_gc_to_json（BUG-493 接线锁 ①）：`CommissarGcReport::to_json` 的回执投影形状。
+///
+/// 为什么必须有：server.mbt 的 `commissar_gc` handler 把整个 Report 交给 `to_json()` 再
+/// 摘进回执 —— 分栏语义（doomed=判定该删 / deleted=真删成功 / failed=删失败，**不静默吞**）
+/// 全靠这三个数组逐字透传。字段名 `err` 对外必须叫 `error`（与 CommissarReadReport 对外
+/// 键名一致）：把投影键写回 `err` 就造出第三种话，本格当场红。
+test "dl_gc_report_to_json_shape" {
+  let rep : CommissarGcReport = {
+    total: 5,
+    kept: 2,
+    doomed: ["sig-1.rhop", "sig-2.rhop", "sig-3.rhop"],
+    deleted: [],
+    failed: ["sig-3.rhop"],
+    dry_run: true,
+    err: "",
+  }
+  let j = rep.to_json()
+  let txt = j.stringify()
+  // ① 对外键名是 `error` 不是 `err`（投影不得造第三种话）
+  assert_true(txt.contains("\"error\":"))
+  assert_true(!txt.contains("\"err\":"))
+  // ② dry_run 位原样透传（true ⇒ deleted 恒空的承诺可被调用方验证）
+  assert_true(txt.contains("\"dry_run\":true"))
+  // ③ 三个数组逐字透传：doomed 是预览全貌、failed 点名删失败的
+  assert_true(txt.contains("\"total\":5"))
+  assert_true(txt.contains("\"kept\":2"))
+  assert_true(txt.contains("sig-1.rhop"))
+  assert_true(txt.contains("sig-3.rhop"))
+}
+
+///|
+/// 锁 dl_gc_registered（BUG-493 接线锁 ② · 判例-29/30）：`commissar_gc` 必须真的在
+/// server.mbt 的工具注册表里 —— 机制格（函数存在 + 有锁）≠ 实现路径格（**接线**存在）。
+/// BUG-493 的原始教训正是这个形状：函数实现正确、两格白盒全绿，但注册面 grep = 0，
+/// 调用方永远调不到 ⇒ 代码在真源里「正确地沉睡」。
+///
+/// 判例-30 自指防护：needle 用**真实换行 + 4 空格缩进**的注册形态
+/// （`instrumented_tool(` 的第二实参行）；本测试文件里出现的 `"commissar_gc"` 都在
+/// 字符串字面量里带反斜杠转义，构造不出 `␊    "commissar_gc",␊` 这个字节序列。
+test "dl_gc_registered_in_server_mbt" {
+  let src = @fs.read_file_to_string("src/server/server.mbt") catch {
+    _ => abort("src/server/server.mbt 不可读——接线锁无法自证")
+  }
+  // ① 注册面：`instrumented_tool(s1, "commissar_gc", ...)` 的第二实参行（真实换行形状）
+  let needle = "\n    \"commissar_gc\",\n"
+  assert_true(
+    src.contains(needle),
+    msg="commissar_gc 不在 server.mbt 注册表里——BUG-493 的「实现沉睡」形状复发了",
+  )
+  // ② 处理面：handler 必须真调 @ops.commissar_gc（防止只注册壳不接实现）
+  assert_true(
+    src.contains("@ops.commissar_gc("),
+    msg="commissar_gc 注册了但 handler 没调真源实现",
+  )
+}

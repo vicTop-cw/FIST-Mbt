@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 182 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 183 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -11228,6 +11228,54 @@ pub async fn run_server() -> Unit {
         "note",
         Json::string(
           "同步读取（不订阅）：调用返回即结束。要持续收消息请反复调用本工具；勿用订阅（BUG-480：会让进程永不退出）。",
+        ),
+      )
+      match report.to_json() {
+        Object(m) => m.each(fn(k, v) { out.set(k, v) })
+        _ => ()
+      }
+      Ok(@mcp.ToolResult::text(Json::object(out).stringify()))
+    },
+  )
+
+  // BUG-493 前提变化（owner 2026-11-13「本地池子相关落地」指令）：`commissar_gc` 接线，
+  // 工具数 182→183。原否决理由「生产 0 使用者 ⇒ 收益为负」随本地消息池落地失效。
+  // 为什么是**独立运维工具**而不是并进 `commissar_read`：读操作删文件是最坏的副作用类型
+  // （两个客户端并发读会互相删掉对方还没读的）⇒ 清理必须由调用方显式选择保留条数。
+  s1 = instrumented_tool(
+    s1,
+    "commissar_gc",
+    "**政委消息·运维侧清理**：保留 `<project_dir>/.commissar/events/` 下**最近 keep 条** `.rhop`，其余删除。⚠️ 与 `commissar_read` 的分工铁律：**读操作绝不删文件**（两个客户端并发读会互相删掉对方还没读的）⇒ 清理是独立工具，必须由调用方显式选择保留条数。**为什么按条数不按小时**：本仓 `@fs` 接口没有 stat/mtime（见 src/ops/ops_commissar.mbt 文档）⇒ 按小时清理不可行；按条数不依赖时钟（时钟回拨/时区不影响）、可预测、且与 seq 的位置语义天然对齐。**排序键 = 文件名字典序**（`sig-<at_ms>-<counter>.rhop` 的 at_ms 是 13 位 epoch 毫秒，同位数左对齐 ⇒ 字典序 == 时间序，同毫秒由 counter 兜底成全序）。`dry_run=true` 只报不删（`deleted` 恒空，`doomed` 即预览全貌）。`.rhop.tmp`（原子写中间态）不属于可清对象、也不占 keep 配额。目录不存在 ⇒ **不是错误**（还没发过消息的仓就是这种态），返回删 0 保 0。返回 {ok, total, kept, doomed[], deleted[], failed[], dry_run, error, note}；`failed` 非空 = 判定该删但删失败，**不静默吞**（否则下一个人会以为清干净了）。",
+    schema(
+      {
+        "project_dir": string_prop(
+          "项目目录（必填）；清理 <project_dir>/.commissar/events/*.rhop",
+        ),
+        "keep": int_prop(
+          "保留最近多少条（可选，默认 1000；<0 回落 0）。保留的是**最新** keep 条，更早的先删",
+        ),
+        "dry_run": bool_prop(
+          "只报不删（可选，默认 false）：deleted 恒空，doomed 即预览全貌",
+        ),
+      },
+      ["project_dir"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      if project_dir == "" {
+        return Err(@mcp_types.ToolError("commissar_gc: project_dir 必填"))
+      }
+      let keep = get_int(args, "keep", default=1000)
+      let dry_run = get_bool(args, "dry_run", default=false)
+      let report = @ops.commissar_gc(project_dir, keep~, dry_run~)
+      let out : Map[String, Json] = Map([])
+      // ok 只表示「这次清理本身可信」（目录级无故障）；failed 是**已点名**的事实，
+      // 不把整个回执判成失败 —— 与 commissar_read 对坏文件的口径一致。
+      out.set("ok", Json::boolean(report.err == ""))
+      out.set(
+        "note",
+        Json::string(
+          "运维侧清理：commissar_read 永远只读不删；要清理必须显式调用本工具并选择保留条数。dry_run=true 时 deleted 恒空、doomed 即预览全貌。",
         ),
       )
       match report.to_json() {

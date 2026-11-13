@@ -696,20 +696,16 @@ pub fn commissar_read(
 /// 参数：`keep` 必须 ≥ 0；`dry_run=true` 只报不删。
 /// 返回：删除的文件名列表 + 保留数 + 是否真删（`dry_run` 时 `deleted` 为空）。
 ///
-/// ## ⚠️ 状态标注（R95 · BUG-493）：**已实现，但未接入 MCP 工具面**
+/// ## 状态标注（R95 · BUG-493 → **前提变化，已接线**）
 ///
-/// 本函数**不在 `server.mbt` 的工具注册表里**（实测 `grep -c "commissar_gc" src/server/server.mbt` = **0**）。
-/// 已注册的政委工具只有 `commissar_send` / `commissar_read` 两个 ⇒ **调用方调不到 `commissar_gc`**。
+/// **曾否决接线**（BUG-493，R95）：生产从未使用政委消息池（项目根没有 `.commissar/`）⇒
+/// 「目录堆积」问题不存在 ⇒ 接线要付 10 处投影 + 约 56 个插件文件重生成的代价而使用者为 0，
+/// 收益为负 ⇒ 当时只保留代码 + 2 格白盒锁（`dl_c9` / `dl_c10`），不进工具面。
 ///
-/// **而生产从未使用过政委消息池**（实测：项目根**没有** `.commissar/`；
-/// 仓内全部实例都在 `temp/dl-c10-*` 等**测试夹具**下、各 1 个 `.rhop`）⇒
-/// **本函数要解决的「目录堆积」问题在生产不存在。**
-///
-/// **所以没有把它接线**：工具数 182→183 要付 **10 处投影 + 约 56 个插件文件重生成**，
-/// 而使用者为 0 ⇒ 收益为负。
-/// **⇒ 保留代码（它正确且有 2 格白盒锁 `dl_c9` / `dl_c10`）+ 在此标注状态，而不是删除或硬接线。**
-///
-/// **若将来真要跨机消息池**（4pools 提案 M2 依赖侧修好后），把它接进工具面即可 —— 本函数无需改动。
+/// **owner 2026-11-13 指令「本地池子相关落地」⇒ 前提变化**：本地消息池成为正用面，
+/// 「0 使用者」的否决理由失效 ⇒ `commissar_gc` 已注册进 server.mbt 工具面
+/// （工具数 182→183，投影同批重生成）。函数本体零改动 —— 当初「将来要接时无需改动」
+/// 的判断成立，实际接线上只补了 `CommissarGcReport::to_json`（回执投影，不在本函数职责内）。
 pub fn commissar_gc(
   project_dir : String,
   keep~ : Int32 = 1000,
@@ -786,4 +782,21 @@ pub struct CommissarGcReport {
   dry_run : Bool
   /// 非空表示目录级故障（读目录失败）
   err : String
+}
+
+///|
+/// `CommissarGcReport::to_json` —— MCP 工具面（server.mbt `commissar_gc`）的回执投影。
+/// 与 `CommissarReadReport::to_json` 同款口径：Int32 走 `commissar_jint`、
+/// 文件名数组逐项 string、布尔与字符串原样。字段名与结构体一一对应，
+/// **`err` 对外叫 `error`**（与 `CommissarReadReport` 的对外键名一致，别造第三种话）。
+pub fn CommissarGcReport::to_json(self : CommissarGcReport) -> Json {
+  Json::object({
+    "total": commissar_jint(self.total),
+    "kept": commissar_jint(self.kept),
+    "doomed": Json::array(self.doomed.map(fn(s) { Json::string(s) })),
+    "deleted": Json::array(self.deleted.map(fn(s) { Json::string(s) })),
+    "failed": Json::array(self.failed.map(fn(s) { Json::string(s) })),
+    "dry_run": Json::boolean(self.dry_run),
+    "error": Json::string(self.err),
+  })
 }
