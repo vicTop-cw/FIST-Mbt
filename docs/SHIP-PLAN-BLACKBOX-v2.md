@@ -2,7 +2,7 @@
 
 > **现状指针（2026-09-29 复核）**：本文件是 v0.3.0-beta 期的**计划面**记录，其中的安装线已过期——裸 `irm … | iex` 在带 BOM 的脚本上当场解析失败（BUG-113），`main` 分支的 raw 取不到、可达线是 GitHub **master**（BUG-107）。用户照抄的那一行**一律以 `README.md` 的安装段为准**，那条线由 `scripts/blackbox/e2e_irm_line.py` 从 README 反解后真跑，README 退回旧形时判据直接拒绝执行。
 
-日期：2026-09-28 ｜ 版本：v1.0 ｜ 状态：实施中
+日期：2026-09-28 ｜ 版本：v1.0 ｜ 状态：实施中（2026-11-13 对表复核：G1/G2/G3安装器侧/G8 已闭合，Phase 3 功能面已闭合；**仍开放 G4（存疑设计待 owner 裁决）/ G6（serve --foreground/--bg）/ G7（CI GitCode 发布）+ `templates/pipeline_mode_loop.md` 缺席**；逐格判定与 15 连 e2e 真跑读数见 `reports/2026-11-13-ship-plan-blackbox-audit-report.md`）
 前序计划：已被误删（SHIP-PLAN-0930.md，未 commit 过），本文件为重述
 
 ---
