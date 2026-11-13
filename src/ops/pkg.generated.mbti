@@ -207,6 +207,7 @@ pub struct CommissarGcReport {
   dry_run : Bool
   err : String
 }
+pub fn CommissarGcReport::to_json(Self) -> @json.Json
 
 pub struct CommissarReadReport {
   events_dir : String
