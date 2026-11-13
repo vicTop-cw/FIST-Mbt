@@ -120,7 +120,7 @@ print("      challenge_sig =", sig[:16], "...（128 字符 hex）")
 | 「公钥可以随时改」 | ❌ 已登记的公钥**不可静默覆盖**。要换必须走**轮换**：带 `rotate_sig`（用**旧私钥**签服务端签发的 `rotate_challenge`）+ `rotate_challenge` |
 | 「ns 之间公钥互通」 | ❌ **按 ns 隔离**。在哪个 ns 登记就在哪个 ns 用 |
 | 「设了 `strict` 就**全链路**都要认证」 | ⚠️ **生效范围有界（BUG-476）**：硬拒的是 `reserve_scope`（`rsv_set` / `rsv_try_set`）、`lock_acquire`（`locks_try_acquire`）、`claim` 这 **4 处门** —— 无 challenge 一律**拒绝**，不是降权。`execute` / `verify` / `submit` / `archive` 仍走无挑战门的路径（BUG-430c）⇒ **在门外** |
-| 「不传 challenge 也没事」 | ⚠️ 取决于 `FIST_AUTH_MODE`：`off`（默认）下无钥匙者自报放行；`soft` 下降权到 `Executor`；`strict` 下上面那 4 处**直接拒** |
+| 「不传 challenge 也没事」 | ⚠️ 取决于 `FIST_AUTH_MODE`：`soft`（**当前默认**，2026-11-13 flip）下无钥匙者**降权到 `Executor`**；`off` 下无钥匙者自报放行；`strict` 下上面那 4 处**直接拒** |
 
 > **本行改过口径（自述滞后现状，`AI-DEVELOPMENT-STANDARD.md` §4.1）**：这一格原先写的是
 > ❌「**本版尚未真正拒绝**……各门还没据此硬拒 ⇒ 效果接近 `soft`」——那是 BUG-470 落地时的

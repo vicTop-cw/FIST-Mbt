@@ -63,6 +63,7 @@ fn chl_complete(e : FistEngine, id : String) -> Unit {
 /// 为什么源任务要选非 6：若源任务本身就是 6，「默认 6」与「继承源」两种实现的读数**完全相同**
 /// ⇒ 变异对照不可能变红，锁就是假绿。**这一格的前置自证（源 level==3）是锁的一部分。**
 test "challenge 新根固定 level=6：源任务 level=3（旅长）不被继承，且溯源仍是新根" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   let e = FistEngine::new()
   let src_id = chl_publish(e, "实现一个基础计算器", 3)
   chl_complete(e, src_id)
@@ -110,6 +111,7 @@ test "challenge 新根固定 level=6：源任务 level=3（旅长）不被继承
 /// 单点（只测 3）能被人用「恰好 3 被钳到 6」之类巧合解释；四个不同档位一起读，
 /// 才把「恒默认连长」与「继承源」彻底分开 —— 也顺手锁住 `clamp_level` 没有在别处夹带源值。
 test "challenge 新根恒 level=6：与源任务军衔 0/3/5/7 全部无关（表驱动）" {
+  auth_mode_pin_cache_for_test("off") // flip(2026-11-13)后默认=soft；本格测 off 语义，显式钉住
   for lv in [0, 3, 5, 7] {
     let e = FistEngine::new()
     let src_id = chl_publish(e, "进阶源任务 level=\{lv}", lv)

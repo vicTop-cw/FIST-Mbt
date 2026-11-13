@@ -33,6 +33,8 @@ pub fn auth_mode() -> AuthMode
 
 pub fn auth_mode_parse(String) -> AuthMode
 
+pub fn auth_mode_pin_cache_for_test(String) -> Unit
+
 pub fn auth_mode_reset_cache_for_test() -> Unit
 
 pub fn auth_mode_startup_warning() -> String

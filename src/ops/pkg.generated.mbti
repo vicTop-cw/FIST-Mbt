@@ -227,6 +227,8 @@ pub struct CommissarReadReport {
   bad_payload : Int32
   bad_files : Array[String]
   dropped_by_limit : Int32
+  next_seq : Int64
+  has_more : Bool
 }
 pub fn CommissarReadReport::to_json(Self) -> @json.Json
 
