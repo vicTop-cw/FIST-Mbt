@@ -1,4 +1,4 @@
-# 轮 258 唤醒巡检报告——零变化第 15 连轮（WIP 面）+ 跨项目误落账稳定复核（9 条 / tracked rs=0 / vue=0 / mbt=446 / py=185）维持待裁 + check_host_installable PASS rc=0 0.3.11 + owner 三裁决件维持待裁 + Round C 判空维持 + trim 根治零复发 + 计数面零影响（已提交 BUG-591 / 工作树 BUG-600）+ FIST 闭环 T0r14 收口（completed_by=wd-r258）
+# 轮 258 唤醒巡检报告——零变化连轮中断（并发提交 cfc84b616：BUG-470 flip off→soft + commissar_poll 判据④，测试 2067→2074）+ 开轮 WIP 面零变化第 15 连轮 + 跨项目误落账 9 条零增长维持待裁 + check_host_installable PASS rc=0 0.3.11 + owner 三裁决件维持待裁 + Round C 判空维持 + trim 根治零复发 + FIST 闭环 T0r14 收口（completed_by=wd-r258）
 
 - 日期：2026-11-13（Fri）
 - 轮次：r258（ExploreWatchdog 每 30 分钟无窗唤醒 · temp/explore_watchdog/，10:00 唤醒）
@@ -6,7 +6,7 @@
 
 ## 结果摘要
 
-1. **零变化第 15 连轮（WIP 面）**：`git status` WIP 两文件 `memory/bugs.md` + `memory/target.md` 逐字未动（P3 BUG-592~600 跨项目条目 + Round 24 孤儿行，diff stat 39 insertions / 1 deletion，与 r245~r257 基线一致）；HEAD 仍 `ed4a1e45c`（r257 报告）。继 r244（第 1）~ r257（第 14）之后的**第 15 连轮**。
+1. **开轮 WIP 面零变化第 15 连轮（收笔态被并发提交打破，见「收笔更正」节）**：开轮时 `git status` WIP 两文件 `memory/bugs.md` + `memory/target.md` 逐字未动（P3 BUG-592~600 跨项目条目 + Round 24 孤儿行，diff stat 39 insertions / 1 deletion，与 r245~r257 基线一致）；HEAD 仍 `ed4a1e45c`（r257 报告）。继 r244（第 1）~ r257（第 14）之后的**第 15 连轮**——但收笔时 HEAD 已推进至 `cfc84b616`（并发 agent Loomy Timer，10:42，压在本报告提交之上），**该 14 连轮零变化计数在 r258 中断**。
 2. **check_host_installable 实跑 PASS（本轮实跑，轮转防空转）**：宿主可装性 DSH manifest/patch（严格档：绝对路径 + toolCallTimeoutMs + dsh reconnect schema）合规；宽松档 MCP JSON 合规；默认模板合法性合规；moon.mod 版本 **0.3.11**，rc=0（与 r254/r256 读数 0.3.11 一致，零漂移）。三条 `timeout_ms` WARN 为信息级（「是否改真源由人终审」= owner 待裁件），非缺陷。本轮轮转到宿主可装性面（r255/r257 轮 check_instruction_budget、r254/r256 轮 check_host_installable）。
 3. **跨项目误落账（BUG-592~600）稳定复核（本轮实跑）**：工作树新增 **9** 条 BUG-592~600（8 条 P3 收口署名 + BUG-592 探测空条），条目数**零增长**（与 r249/r253/r254/r255/r256/r257 一致）；`git ls-files` 结构证明复核：本仓 tracked **rs=0 / vue=0 / mbt=446 / py=185** ⇒ 纯 MoonBit 真源，BUG-592~600 引用的 `.rs`/`vue-tsc`/`vitest`/`ask_router.py`/`sqlRanking.test.ts` 不可能属于本仓 ⇒ 外来 P3 误落账，维持呈报待裁（owner 三裁决件之一）。
 4. **owner 三裁决件维持待裁**：看门狗降频/事件驱动三选一 + P3 误落账处置（r249 结构证明 + r254~r258 复核零增长）+ target.md 孤儿 WIP。本轮无 owner 新裁决（无新提交）⇒ **呈报维持待裁，不重复呈报**（r245 报告专节为唯一权威面，避免刷屏）。
@@ -17,6 +17,23 @@
 9. **分支领先面（观测）**：`main` 领先 `origin/main` **17** 提交、落后 0（r257 提交后现状）；本轮 scoped 提交后为 18。push 由 owner / 其他流程处理，本仓巡检不代推（沿用 r244~r257 口径）。
 10. **无新代码面发现**：跨项目误落账维持待裁（非新发现）；无新增缺陷 ⇒ 未立新账（防空转纪律）。
 11. **FIST 闭环**：ns `watchdog`（复用），T0r14 全链 publish→agent_acl_grant→claim→execute→submit→verify 全 rc=0 至已完成（completed_by=wd-r258），见下节。
+
+## ⚠️ 轮 258 收笔更正（并发提交 cfc84b616 打破零变化连轮）
+
+**收笔复核发现**：本轮开轮~收笔期间，并发 agent **Loomy Timer** 于 10:42 落地提交 **cfc84b616**（压在本报告提交 46f923d1a 之上），使 r244~r257 的 **14 连轮零变化计数在 r258 中断**。本报告正文的开轮数据（WIP 2 文件 / HEAD=ed4a1e45c / 2067 测试 / 「无新提交」）在开轮时刻均准确，以下为收笔态更正，**正文各项不重写、以本节为准**：
+
+- **cfc84b616 内容（非本巡检改动，本巡检零碰其 WIP/代码）**：
+  - 【① BUG-470 默认值 flip off→soft（owner 指令·决策单第二阶段）】parse 空/未设/非法 ⇒ 回退默认 **Soft**（不取最严）；Soft 行为面本已接线（engine_rsv Soft 分支=无钥匙也降权）⇒ **真行为变更：无公钥且不出示 challenge 者默认按 Executor 算（策略 B 生效）**；19 个依赖旧默认（无钥匙自报）的既有测试显式钉 off（新白盒缝 `auth_mode_pin_cache_for_test`，判例-31）；部署面 serve-launcher.cjs `DEFAULT_AUTH_MODE='soft'`（备份 .bak-20261113）；AGENTS.md 三档表 + s3-client-bootstrap.md 同步。
+  - 【② commissar_poll 判据④ 返回面补齐】勘定订正（poll 已以 commissar_read 之名接线 MCP，提案头部「仅设计未实现」系自述滞后已订正，命名差异记录不改名）；CommissarReadReport 新增 next_seq（=返回条目最大 seq，空返回=游标不动）+ has_more（limit 截断信号）；新白盒锁 `dl_poll_cursor_next_seq_and_has_more`；commissar_gc 接工具面维持 BUG-493 否决不动（0 使用者）。
+  - **门禁**：moon check --target js 0 错/33 警；**moon test --target js 2074/2074 全绿（本仓 JS 测试计数 2067→2074 前进）**；moon fmt 幂等；.mbti 已重生成（engine/ops）。
+- **对本巡检口径的影响（逐项更正）**：
+  - 「零变化第 15 连轮」更正：开轮 WIP 面确为零变化第 15 连轮，但 **收笔态被 cfc84b616 打破**，r244~r257 的 14 连轮计数在本轮中断，r258 是该连轮以来首个有真实并发提交的轮次。
+  - 「无新提交 / HEAD 仍 ed4a1e45c」更正：收笔 HEAD = **cfc84b616**（cfc84b616 → 46f923d1a → ed4a1e45c 三段并存）。
+  - 「计数面零影响」更正：**BUG 计数面零影响维持**（cfc84b616 未加 BUG 条目，已提交面最大仍 BUG-591 / 工作树面 BUG-600），但 **JS 测试计数 2067→2074 前进**（新增白盒锁），AGENTS.md「2067/2067」读数已被 cfc84b616 的 **2074/2074** 取代。
+  - 「分支领先 18」更正：本轮 scoped 报告提交 46f923d1a 后领先 18，**叠加 cfc84b616 后领先 19**。
+  - **下轮（r259）基线 = cfc84b616**；零变化连轮计数自 r259 起重新累计。
+- **收笔 WIP 面**：已回落到稳定 2 文件基线（memory/bugs.md + memory/target.md，跨项目误落账 9 条，与开轮一致），无新增未跟踪件（`??` 计数 0）——cfc84b616 落地后其 WIP 已收口，非本巡检改动。
+- **FIST 闭环不受影响**：T0r14 全链 rc=0 至已完成（completed_by=wd-r258）在 cfc84b616 之前已收口，记账链正确性不受并发提交影响。
 
 ## FIST 闭环记账
 
