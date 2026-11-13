@@ -153,3 +153,20 @@ decision: deferred
 
 **⇒ 剩下的只有跨机侧（§3.2/§3.4）需要 owner 给「跨机是否近期目标」的信号；
 给了才做，否则本提案不再阻塞。这就是 `已推迟` 的含义。**
+
+---
+
+## M1 本地侧落地记录（2026-11-13）
+
+> 本文只**追加**，不改上文任何定案内容（含「定案记录（2026-10-30 · R96 核查）」一字未动）。
+
+**M1 的本地侧（§六）已落地；跨机侧维持 R96 的 `已推迟`，本记录不改它。**
+
+| 项 | 状态 |
+|---|---|
+| `.fist-mbt/pool/` 目录 | 原为空目录（0 子目录 0 文件）→ 现已建 `pool/tasks/`（同机任务池正式区） |
+| 流转规则 README | `.fist-mbt/pool/README.md`（本目录新建，写明双区流转规则） |
+| 口径 | 按 R96 定案记录：**候选区（`.git/fist/`，随主仓提交）+ 正式区（`.fist-mbt/`，机器独有 gitignored）**；不建「四态中文目录（预案/定案/执行中/归档）」——R96 已裁决迁移收益为负，不建 |
+| 同机消息池 | **不在 `.fist-mbt/pool/` 下建 `messages/`**：实现已落在 `project_dir/.commissar/`，且已接 MCP 工具面（L1 落地时 `commissar_send` / `commissar_read` 已接、`commissar_gc` 尚未接线；同日 L2 已接线成三件套齐，commit `8b1a0fd11`）——README 里写明这个指向，避免「两处都说自己是消息池」 |
+| 跨机任务池 / 跨机消息池（`fist-mbt/pool/tasks/`、`fist-mbt/pool/messages/`） | **已推迟，等 owner 给「跨机是否近期目标」信号**（引上文定案记录原文；阻塞点是 rx-mbt `rhop_native.mbt` 仍为占位 stub） |
+| gitignored 佐证 | `git check-ignore -v .fist-mbt/pool/` → `.gitignore:233:/.Fist-Mbt/`（靠 Windows 大小写不敏感命中；跨到大小写敏感文件系统需补小写条目，README §5 已记风险）——同日收口已补小写条目 `/.fist-mbt/`，风险闭合 |
