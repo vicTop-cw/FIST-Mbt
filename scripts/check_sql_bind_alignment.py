@@ -22,7 +22,7 @@ rc 契约：`0` 全部对齐 / `1` 有不对齐（打印逐处读数）/ `2` 判
 
 用法：
     python scripts/check_sql_bind_alignment.py
-    python scripts/check_sql_bind_alignment.py --selftest   # 6 格（含变异对照）
+    python scripts/check_sql_bind_alignment.py --selftest   # 7 格（含变异对照）
     python scripts/check_sql_bind_alignment.py --list       # 只列读数不判
 """
 from __future__ import annotations
