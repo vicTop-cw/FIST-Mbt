@@ -162,9 +162,9 @@ WHITELIST: dict[str, tuple[str, str]] = {
         bid: ("foreign", "vools 项目缺陷（summary/detail 指向 vools/ 代码路径），缺陷位置在 vools 仓")
         for bid in ("298", "308", "309", "313", "314", "315", "317", "318", "319", "320")
     },
-    # ── vq 批（2026-11-02 勘误裁定：E:/IDEProjects/AI/vq 的缺陷误落本树，已逐字搬移、append-only 保留）──
+    # ── vq 批（2026-11-02 勘误裁定：vq 项目缺陷误落本树，已逐字搬移、append-only 保留）──
     **{
-        bid: ("foreign", "vq 项目缺陷（2026-11-02 勘误裁定批成员），缺陷位置在 E:/IDEProjects/AI/vq")
+        bid: ("foreign", "vq 项目缺陷（2026-11-02 勘误裁定批成员），缺陷位置在 vq 仓（外部项目）")
         for bid in ("544", "545", "546", "547", "548", "550", "551", "552",
                     "553", "554", "555", "556", "558", "563", "564")
     },
@@ -316,13 +316,13 @@ REPORTER_ATTRIBUTION = """## BUG-9003 [2026-11-07T00:00:04Z] [high] FIXED
 # 外来路径只出现在 evidence 行（取数面之外 ⇒ 不报）
 EVIDENCE_CITATION = """## BUG-9004 [2026-11-07T00:00:05Z] [low] OPEN
 - summary: 心跳跨进程探针在 ns 物理隔离之后整段是变量盲的
-- evidence: 对照仓的 crates/vq-core 读数与 E:/IDEProjects/AI/vools 的清单见附件
+- evidence: 对照仓的 crates/vq-core 读数与 E:/proj/AI/vools 的清单见附件
 """
 
 # 命名空间/cwd 上下文（BUG-374 实测形状）：vools 作为**运行环境**出现，非缺陷位置
 NS_CONTEXT = """## BUG-9005 [2026-11-07T00:00:06Z] [high] OPEN
 - summary: [run_check] 任务解析走根库而非已 open 的命名空间库：旧 schema 根库致服务端崩溃
-- detail: cwd=E:\\IDEProjects\\AI\\vools 启动 serve，namespace=vools-rhop 的任务 T0 已 publish/claim 成功（落在 vools-rhop.db）。
+- detail: cwd=E:\\proj\\AI\\vools 启动 serve，namespace=vools-rhop 的任务 T0 已 publish/claim 成功（落在 vools-rhop.db）。
 """
 
 
