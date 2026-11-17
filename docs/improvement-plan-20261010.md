@@ -52,7 +52,13 @@
 ### 2.2 拳头 Logo
 - 仓库无任何位图/矢量素材 → 需要新增 `assets/fist-logo.svg`（拳头，单色/线性风格，适合 favicon 与 README 徽章）。
 - **生成方式**：SVG 是**静态资产**，不是 gen_plugins 的投影面；但它会被四宿主插件目录与 README 引用 → 在 `scripts/gen_plugins.py` 里**追加一步 assets 拷贝**（把 `assets/` 下文件按字节复制到 `plugins/<host>/assets/`），保持 cl7 逐字节 diff 的语义。
-- 建议同时做 `docs/assets/README.md`（谁用、怎么换、尺寸规格），满足「文档即实现」。
+- 建议同时做 `assets/README.md`（谁用、怎么换、尺寸规格），满足「文档即实现」。
+  > **2026-11-14 轮 191 校正（BUG-589 A 档：措辞失真，不是未落地）**：本条原文误写为 docs/assets/README.md（多写一层 docs/ 目录，该目录从未存在）。
+  > 真身是**根级** `assets/README.md`，84bddb299（2026-10-22）已建且在跟踪面，内容逐项覆盖本节要求：
+  > 谁用（fist-logo.svg 供 16px favicon / README 徽章与四宿主插件）、怎么换（改根级真源后由 `scripts/gen_plugins.py` 按字节重投影，
+  > 手改 plugins/<host>/assets/ 下的副本会在 cl7 红）、尺寸规格（viewBox 64×64、fill=currentColor 单色、无外部引用）。
+  > 同节 :53/:54 两条都写根级 assets/，只有本条多一层 ⇒ 改文档真名即可，无需新建任何文件。
+  > 旧名在此以**纯文本**保留（刻意不加反引号）：check_plan_landing.py 只扫反引号包裹的仓内路径，加反引号会让它继续把旧名当落点报 missing。
 
 ### 2.3 四态对齐
 | cl | 判据 | 本功能动作 |

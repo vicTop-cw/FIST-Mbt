@@ -431,6 +431,15 @@ SPECIAL_CASES = [
     case("check_pkg_imports.py"),
     case("check_entry_paths.py"),
     case("check_demo_isolation.py"),
+    # —— R192（BUG-583 方向④）：mcpcf 沙箱库路径 ≠ 主库路径，从注释约定变成可核断言 ——
+    # 与上一格语义相邻（都管「两条库路径不许混」）：那格管演示脚本的 FIST_DB_PATH 改道，
+    # 这格管 mcpcf 嵌入式引擎的库（%LOCALAPPDATA%\mcpconftest\data）与主库
+    # （.fist-mbt/data/<ns>.db）两条路径家族不相交。真源现读三份（mcpcf_embed /
+    # multi_store / store_sqlite）解析基线，A1-A4 静态段族断言 + C1 碰撞格
+    # （FIST_DB_PATH 未设置 ⇒ 明示空过，不静默）；rc 0/1/2/4 四档，任一份真源
+    # 读不到/解析不出 ⇒ 自拒 2。--selftest 27 格全合成夹具（含变异对照），
+    # 由 check_selftest_inventory_doc 对表面跑它；裸跑只读、快，故进自动无参面。
+    case("check_mcpcf_db_isolation.py"),
     case("check_desc_enum_sync.py"),
     case("check_template_ctrl.py"),
     case("check_model_auth_no_key.py"),
