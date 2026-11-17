@@ -4,6 +4,11 @@
 /// （旧口径「需 SQLite 后端，因 Mem 后端 cb 为 no-op」已滞后：BUG-439 之后内存后端实读实写，
 ///  `engine_circuit_bug583_wbtest.mbt` 有六格走内存后端通过即为反证。该选择要不要换成内存后端
 ///  需另跑对照，不在本轮边界内——但**理由**已经不是 no-op 了，留着旧句会诱导后来者多开沙箱库。）
+/// 2026-11-15 校正复核（R192 车道 P2，真源现读）：`src/store/store.mbt` 的 Mem 后端带
+/// `circuit_breakers` Map（BUG-439 补），`StoreBackend::cb_get` 的 Mem 分支实读、
+/// `cb_save` 的 Mem 分支实写（与 SQLite upsert 逐字段一致）；白盒锁另见
+/// `src/store/store_bug439_cb_wbtest.mbt`。「no-op」旧句仅作为上文被引用的批驳对象存在，
+/// 不是现行事实；本文件用例仍按 SQLite 组织是历史选择，不再是后端能力限制。
 
 ///|
 /// 构建干净的 SQLite 引擎（先清库保证用例幂等）。
