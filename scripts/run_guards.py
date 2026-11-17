@@ -580,7 +580,7 @@ SPECIAL_CASES = [
     case("check_scripts_index.py"),
     # —— R136：索引文件的「同名登记块只许一条」尺。R48 立尺后只有电池的自动无参格在跑它
     #    （长度门槛把短副本全滤掉），7 份快照叠出 38 个重名 / 232 块冗余时它仍报「无重复长条目」；
-    #    --selftest 与 CI 面都没有它。现按块判（含续行、无门槛），裸跑只读，--selftest 21 格真断言。 ——
+    #    --selftest 与 CI 面都没有它。现按块判（含续行、无门槛），裸跑只读，--selftest 33 格真断言（D2 断头孤行 BUG-539 补 12 格后，与 scripts/README.md 条目及 SELFTEST OK 行对齐）。 ——
     case("check_doc_dup.py"),
     case("check_doc_dup.py", "--selftest"),
     # —— 编码面：R58 期望值回归 0——BUG-355/332 一族已在主仓修完（现读真源：--selftest 绿、
