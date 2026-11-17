@@ -75,6 +75,11 @@ SHAPES = {
 # `derive(...)` 的两种落点：闭合行 `} derive(Eq, Debug)` 与一行式 `pub type T = Int derive(Eq)`。
 TYPE_HDR = re.compile(r"^\s*(?:pub(?:\(all\))? )?(?:struct|enum|trait|type|abstract)\s+(\w+)\b")
 DERIVE_TAIL = re.compile(r"^\s*\}.*\bderive\(")
+# #derive 前缀式（工具链 0.1.20261104 迁移，commit 0a7682b67，2026-11-12）：
+# `derive` 从后缀式（`} derive(...)` / 一行式 `pub type T = Int derive(...)`）迁到
+# **独立一行、紧贴在类型声明之前**的 `#derive(...)`。只认后缀式的旧尺对这类类型名
+# 全部收不进 fn 集 ⇒ .mbti 里 `pub fn T::to_repr/equal/not_equal` 集体误红（实发 11 个类型）。
+DERIVE_PREFIX = re.compile(r"^\s*#\s*derive\s*\(")
 
 
 def emit_fatal(msg):
@@ -126,21 +131,26 @@ def collect_defs(text):
     （实测 12 个类型）。收进来之后仍然判得住真正的缺实现：类型没带 derive ⇒ 照红。
     """
     out = {}
+    lines = text.splitlines()
     for shape, (_, pat) in SHAPES.items():
         names = set()
-        for l in text.splitlines():
+        for l in lines:
             m = pat.match(l)
             if m:
                 names.add(m.group(1))
         out[shape] = names
     pending = None
-    for l in text.splitlines():
+    for i, l in enumerate(lines):
         h = TYPE_HDR.match(l)
         if h:
-            pending = h.group(1)
-            if "derive(" in l:      # 一行式：`pub type T = Int derive(Eq)`
-                out["fn"].add(pending)
-                pending = None
+            name = h.group(1)
+            # 三种 derive 落点都算「该类型带 derive」：
+            #   ① 一行式（同行后缀）`pub type T = Int derive(Eq)`
+            #   ② 闭合行后缀 `} derive(Eq, Debug)`（DERIVE_TAIL，后续行判）
+            #   ③ #derive 前缀式（紧贴在类型声明之前的独立一行，0.1.20261104 迁移）
+            if "derive(" in l or (i > 0 and DERIVE_PREFIX.match(lines[i - 1])):
+                out["fn"].add(name)
+            pending = name
             continue
         if pending and DERIVE_TAIL.match(l):
             out["fn"].add(pending)
@@ -289,7 +299,20 @@ def selftest():
     p_nd, _ = safe_judge("no-derive-carrier-still-red",
                          {'src/a': {'fn': {'Bar'}}}, {'src/a': dsrc_plain})
     cell("no-derive-carrier-still-red", any("Bar" in x for x in p_nd), True)
-    print("  ok  derive-carrier 三格（带 derive 不误红 / 不带 derive 照红 / 类型名收进 fn 集）")
+    # 6b) #derive 前缀式（工具链 0.1.20261104 迁移，commit 0a7682b67）回归格：
+    #      2026-11-12 起 `derive` 从后缀式迁到**紧贴在类型声明之前的独立一行** `#derive(...)`。
+    #      旧尺只认后缀式 ⇒ 带 #derive 的类型名收不进 fn 集 ⇒ .mbti 里 `pub fn T::to_repr/equal/
+    #      not_equal` 集体误红（实发 11 个类型：router 的 Ofm*/Caf*/Star*、evolve 的
+    #      CurriculumLevel/MutationKind、ltl 的 Verdict、ops 的 AuditEntry）。补前缀式识别后：
+    #      带 #derive 的类型必须被收集（不误红）；#derive 后跟非类型行不误收；不带 derive 仍照红。
+    dsrc_prefix = collect_defs("#derive(Eq, Debug)\npub struct Baz {\n  x : Int\n}\n")
+    cell("derive-prefix-carrier-collected", "Baz" in dsrc_prefix["fn"], True)
+    p_pf, _ = safe_judge("derive-prefix-carrier-no-false-positive",
+                         {'src/a': {'fn': {'Baz'}}}, {'src/a': dsrc_prefix})
+    cell("derive-prefix-carrier-no-false-positive", len(p_pf) == 0, True)
+    dsrc_prefix_gap = collect_defs("#derive(Eq, Debug)\nlet stray : Int\npub struct Qux {\n  x : Int\n}\n")
+    cell("derive-prefix-nonadjacent-not-collected", "Qux" not in dsrc_prefix_gap["fn"], True)
+    print("  ok  derive-carrier 六格（后缀三格 + #derive 前缀式三格：前缀收进 fn 集 / 前缀不误红 / 前缀后跟非类型行不误收）")
 
     # 7) 缺声明必须计入 n（否则"判据空转"门会失效：全缺时把 n 算成 0 就自拒不报红了）。
     _, n_miss = safe_judge("missing-counted-in-n",
@@ -349,7 +372,7 @@ def selftest():
     print("SELFTEST OK（%d 格：干净不误红 / 合成违例必红 / 扩展形状(struct)可红 / 真实 4 符号必红 / "
           "私有函数不误 / 无 .mbt 包跳过 / .mbti 侧只收 pub 项 / 源侧认 pub(all) / "
           "**泛型顶层 fn 两格（声明与定义各自入集）+ 悬空泛型声明必红一格（BUG-382）** / "
-          "derive 承载三格（带 derive 不误红、不带照红）/ 缺额计入空转门 / "
+          "derive 承载六格（带 derive 不误红、不带照红、#derive 前缀式三格不误红/不误收）/ 缺额计入空转门 / "
           "**出路分流两格（工作树有=未提交 / 工作树无=真缺失）+ 向后兼容一格** / "
           "**判据空转的退出码真是 2（两格：emit_fatal 返 2 + 子进程 rc 是 2）**）"
           % len(cells))
