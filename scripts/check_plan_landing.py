@@ -44,6 +44,12 @@
      结论行显式标「超限 + 新增几条」；低于上限**只打印收紧建议、不判红也不自动改数**（同
      `check_deprecated_text_census` 的 R3 口径）。理由：A/B/C 三档裁决（BUG-367）由指挥官裁、节奏不由副机定——
      没有棘轮，裁决慢的那几周里新写的计划文档会继续往判定面里加条，而 28 这个数已经在心里被当成"已知的存量"。
+  P10 **磁盘采集按路径段排除**（R192 · 轮 192 T0r2 实测驱动）：原 disk_set 采集用**子串**排除
+     `any(x in dp for x in (".git", "_build", "node_modules", ".mooncakes", "temp"))` —— `"temp" ⊂ "templates"`
+     ⇒ 整个 `templates/` 目录被排除出磁盘面，落在其中的未跟踪新文件会被误判 missing（而非 on-disk）。
+     现改为**路径分量**匹配（`disk_dir_excluded` / `collect_disk_set`，main 与 selftest 共用同一份实现——
+     判例-29：机制格必须长在实现路径上）。同族顺带修复：`.github`（".git" ⊂ ".github"）与任何名字**含**
+     temp/build 段的目录，旧口径下都整棵被误挡。
 
 **刻意不判**（避免过度拦截）：
   - 文本里指向**尚不存在**的文件是**合法的**（计划本来就会写"新增 X"）⇒ 本工具**不是门禁**，
@@ -69,10 +75,13 @@
         **文案里自己写着「（rc=2）」**。四份的处置记 BUG-369。
 """
 import argparse
+import ast
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -101,6 +110,38 @@ ARCHIVE_DOC_PREFIX = ("docs/archive/", "reports/")
 # 25 = 2026-10-21 实测：判定面 28 − moved 3（BUG-367 的 D 类，同名件确在 docs/archive/）。
 # 这一格由 A/B/C 三档裁决（BUG-367 OPEN）决定何时能降，所以**不自动改数**：超限并红、有余量只给建议。
 VERDICT_GAP_CEILING = 25
+
+# P10（R192）磁盘采集排除段：**整段**匹配，禁子串。旧实现把 "temp" 当子串挡，
+# "temp" ⊂ "templates" ⇒ templates/ 整棵被排除出 disk_set（判定面读数当下被「文件已跟踪」掩盖，
+# 但采集面对未跟踪新文件仍会漏判 missing——见 selftest 的 disk-fixture 三格）。
+DISK_SKIP_SEGS = (".git", "_build", "node_modules", ".mooncakes", "temp")
+
+
+def disk_dir_excluded(dp, skip=DISK_SKIP_SEGS):
+    """P10 排除判据（**纯函数**，供 selftest 变异对照直接考）：路径先反斜杠归一、按 "/" 切段，
+    任何一段与 skip 里的段名**逐字相等**才排除。`temp` 段挡 `temp/`，不挡
+    `templates/`、`my_templates/`、`.github/`、`.mooncakes_cache/` 这些同前缀/含子串的兄弟段。"""
+    return any(seg in skip for seg in dp.replace("\\", "/").split("/"))
+
+
+def collect_disk_set(root):
+    """P10 磁盘面采集：walk 全树收**文件 + 目录**（目录形态的点名也要能落 on-disk），
+    命中 disk_dir_excluded 的子树跳过。main 与 selftest 走这一份实现（判例-29 实现路径格）——
+    排除只作用于 **root 以下**的路径分量：清单本意是剪掉仓库内的构建产物/临时目录，
+    仓库被检出到哪个挂载点（哪怕祖先目录恰好叫 temp/）都不该把整棵采集掏空。
+    目录也要进集合的缘由保留如下：
+    首跑实测抓到的自身缺陷：只收集文件 ⇒ `src/diff`、`cmd/cli`、`scripts/blackbox` 这类
+    **存在的目录**被误报 missing（82 条里占了不少）。"""
+    out = set()
+    for dp, dn, fn in os.walk(root):
+        rel_dir = os.path.relpath(dp, root).replace("\\", "/")
+        if rel_dir != "." and disk_dir_excluded(rel_dir):
+            continue
+        for f in fn:
+            out.add(os.path.relpath(os.path.join(dp, f), root).replace("\\", "/"))
+        for d in dn:
+            out.add(os.path.relpath(os.path.join(dp, d), root).replace("\\", "/"))
+    return out
 
 
 def tracked(root=None):
@@ -355,19 +396,6 @@ def design_exempt_reason(p, doc, daily_logs_ignored=None,
                 "**提案面**（提案 ≠ 落地承诺：计划说「将新增」是承诺，提案说「建议新增」是选项讨论）"
                 "⇒ 未被采纳的提案点名不算未落地；提案转成正式计划后该点名重新计入 ⇒ 只出数不判红")
     return None
-    """P2 防空转的三条判据（纯函数，供 `--selftest` 直接考）。任一成立即 FATAL，返回那条因由。
-    本轮把它从 main 里三处 `raise SystemExit("FATAL …")` 抽出来，实测顺手抓了一条自己的缺陷：
-    **`SystemExit(带字符串)` 的退出码是 1，不是 2**（`python -c` 与真跑双测）⇒ 本文件 docstring 承诺的
-    「2=判据无法自证」从来没有生效过，「判据空转」与「有落点未落地」在退出码面上同色，而电池期望文本里
-    那句「读出 0 或 2 都算这格漂移」的 2 是不可达的。同族面见 temp/r41_fatal_census.py 的普查（BUG-369）。"""
-    if not n_enum:
-        return "一份文档都没枚举到 —— 判据空转，拒绝出读数"
-    if not n_readable:
-        return "一份计划文档都读不到 —— 判据空转，拒绝出读数"
-    if not n_paths:
-        return "全仓计划文档里一条仓内落点路径都没抽到 —— 判据空转，拒绝出读数"
-    return None
-
 
 
 def fatal_reason(n_enum, n_readable, n_paths):
@@ -797,6 +825,79 @@ def selftest():
          emit_fatal("（selftest 夹具：这行是 FATAL 出口的自证打印，打到 stderr，不是违例）") == 2, True)
     print("  ok  fatal-exit-code-is-2（emit_fatal 恒返 2 —— 改前那条幻影在退出码面上读不出来）")
 
+    # 16) P10 磁盘采集**按段**排除（R192 · 轮 192 T0r2：`"temp" ⊂ "templates"` 子串排除缺陷）——
+    #     三层：纯判据 3 格 / 合成宇宙 fixture 3 格（采集形状、on-disk 必落、temp 反向仍 missing，
+    #     排除没被拆掉）/ main 接线源码格 1 格（判例-29「机制格≠实现路径格」+ 判例-30「针走 ast，
+    #     散文引文不喂针」——本格首跑正是被 P10 docstring 的旧代码引文喂出自喂恒红，实测逼出 ast 形）。
+    cell("disk-excl-templates-segment-kept",
+         not disk_dir_excluded("templates")
+         and not disk_dir_excluded("templates\\pipeline_mode_loop.md")
+         and not disk_dir_excluded("templates/pipeline_mode_loop.md"), True)
+    print("  ok  disk-excl-templates-segment-kept（templates 段不再被 temp 子串误挡，含反斜杠形态）")
+    cell("disk-excl-skip-segments-blocked",
+         all(disk_dir_excluded(x) for x in
+             ("temp", "a/temp/b", ".git/objects/ab", "x/_build/js", "node_modules/p",
+              "vendor/.mooncakes/p")), True)
+    print("  ok  disk-excl-skip-segments-blocked（五个段名照常生效——修复没把排除整个拆掉）")
+    cell("disk-excl-substring-siblings-kept",
+         not any(disk_dir_excluded(x) for x in
+                 ("my_templates/x", ".github/workflows", "tempfiles/x", "templates_backup/x",
+                  "_build_err.txt/x")), True)
+    print("  ok  disk-excl-substring-siblings-kept（同前缀兄弟段不误挡：my_templates/.github/tempfiles/…）")
+    _fx = tempfile.mkdtemp(prefix="g192f_disk_fixture_")
+    try:
+        os.makedirs(os.path.join(_fx, "templates"))
+        os.makedirs(os.path.join(_fx, "temp"))
+        os.makedirs(os.path.join(_fx, ".git"))
+        os.makedirs(os.path.join(_fx, "node_modules"))
+        os.makedirs(os.path.join(_fx, "src"))
+        for _rel in ("templates/pipeline_mode_loop.md", "temp/scratch.mbt", ".git/HEAD",
+                     "node_modules/p/s.mbt", "src/a.mbt"):
+            _fp = os.path.join(_fx, *_rel.split("/"))
+            os.makedirs(os.path.dirname(_fp), exist_ok=True)
+            with open(_fp, "w", encoding="utf-8") as _fh:
+                _fh.write("fixture\n")
+        fx_disk = collect_disk_set(_fx)
+        # 排除作用于**子树**：temp/.git/node_modules 的顶层目录名照常进集合（来自 root 的 dn，
+        # 修复前同一口径——点名存在的目录必须能落 on-disk），其内部内容与更深层目录不进。
+        cell("disk-fixture-collect-shape",
+             {"templates", "templates/pipeline_mode_loop.md", "src", "src/a.mbt"} <= fx_disk
+             and not ({".git/HEAD", "temp/scratch.mbt", "node_modules/p",
+                       "node_modules/p/s.mbt"} & fx_disk), True)
+        print("  ok  disk-fixture-collect-shape（合成宇宙：templates 收进来、排除段子树不进集合）")
+        # 判定面后果（任务口径「落 on-disk 而非 missing」）：未跟踪新文件点名在 templates/ 下 ⇒
+        # judge 吃**同一份** collect_disk_set 结果，必须报 on-disk；temp/ 下同名实验必须仍 missing。
+        f16, _ = judge({"docs/plan.md": ["templates/pipeline_mode_loop.md"]}, set(), fx_disk,
+                       daily_logs_ignored=False)
+        cell("disk-fixture-templates-on-disk", len(f16) == 1 and f16[0][2] == "on-disk", True)
+        print("  ok  disk-fixture-templates-on-disk（templates/ 未跟踪件 ⇒ on-disk，不再虚报 missing）")
+        f16b, _ = judge({"docs/plan.md": ["temp/scratch.mbt"]}, set(), fx_disk,
+                        daily_logs_ignored=False)
+        cell("disk-fixture-temp-still-missing", len(f16b) == 1 and f16b[0][2] == "missing", True)
+        print("  ok  disk-fixture-temp-still-missing（反向对照：temp/ 下磁盘真有件仍被排除 ⇒ 仍 missing）")
+    finally:
+        shutil.rmtree(_fx, ignore_errors=True)
+    # main 接线格（判例-30 双向踩坑后的最终形态）：用 **ast** 看真代码面——
+    # ① main 函数体里必须恰好存在 `collect_disk_set(ROOT)` 这一调用；
+    # ② 全文件不得再出现旧口径的形状 `x in dp`（Compare In，变量对变量）。
+    # 为什么不用字符串扫描：本文件 P10 docstring **引用了旧代码原文**，字符串针会被引文自喂
+    # （首跑实测：格恒 False——那正是判例-30「模式串自己就在文件里」的镜像形状：引文伪装成违例）。
+    with open(os.path.abspath(__file__), encoding="utf-8") as _fh:
+        _src16 = _fh.read()
+    _tree16 = ast.parse(_src16, filename=os.path.abspath(__file__))
+    _main16 = next(f for f in _tree16.body
+                   if isinstance(f, ast.FunctionDef) and f.name == "main")
+    _wired = any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "collect_disk_set"
+                 and len(n.args) == 1 and isinstance(n.args[0], ast.Name) and n.args[0].id == "ROOT"
+                 for n in ast.walk(_main16))
+    _old_shape = any(isinstance(n, ast.Compare) and any(isinstance(o, ast.In) for o in n.ops)
+                     and getattr(n.left, "id", "") == "x"
+                     and any(getattr(c, "id", "") == "dp" for c in n.comparators)
+                     for n in ast.walk(_tree16))
+    cell("disk-collect-wired-in-main", _wired and not _old_shape, True)
+    print("  ok  disk-collect-wired-in-main（ast 核 main 调用点 collect_disk_set(ROOT) 在、"
+          "旧子串形 x in dp 已绝迹——docstring 引文不喂针）")
+
     bad = [(nm, why) for nm, ok, why in cells if not ok]
     if bad:
         print("SELFTEST FAIL：")
@@ -808,7 +909,9 @@ def selftest():
           "missing 必报 / 跟踪目录反解 3 格 / P4 分面 3 格 / 空转计数 / P5 搬家 7 格（检出、深层子目录仍认、"
           "父目录不相干/顶层点名/抢白 on-disk/未跟踪候选 4 条反证、目录形态搬家）/ 搬家+豁免不进判定面 2 格 / "
           "P7 豁免 6 格（external/scratch 检出、名单外/非 `_` 前缀 2 条反证、不抢 on-disk 反证）/ "
-          "P6 棘轮 3 格 / 退出码两口径 5 格 / 上限常量 1 格 / P2 空转三条 4 格 / 模式互斥 2 格 / FATAL 出口码 1 格）"
+          "P6 棘轮 3 格 / 退出码两口径 5 格 / 上限常量 1 格 / P2 空转三条 4 格 / 模式互斥 2 格 / FATAL 出口码 1 格 / "
+          "P10 磁盘采集按段 7 格（纯判据 3：templates 仍收、五个排除段照挡、兄弟段不误挡；fixture 宇宙 3：合成树采集形状、"
+          "on-disk 必落、temp 反向仍 missing；main 接线源码格 1：ast 核调用点、引文不喂针——判例-30））"
           % len(cells))
     sys.exit(0)  # NO_CALL_FACE J2
 
@@ -851,16 +954,9 @@ def main():
             if s not in shape_notes:
                 shape_notes.append(s)
 
-    disk_set = set()
-    for dp, dn, fn in os.walk(ROOT):
-        if any(x in dp for x in (".git", "_build", "node_modules", ".mooncakes", "temp")):
-            continue
-        for f in fn:
-            disk_set.add(os.path.relpath(os.path.join(dp, f), ROOT).replace("\\", "/"))
-        # 目录也要进集合：计划里点名的常常是**目录**（如 `src/diff`、`cmd/cli`、`scripts/blackbox`）。
-        # 首跑实测抓到的自身缺陷：只收集文件 ⇒ 这些存在的目录被误报 missing（82 条里占了不少）。
-        for d in dn:
-            disk_set.add(os.path.relpath(os.path.join(dp, d), ROOT).replace("\\", "/"))
+    # P10（R192）：采集逻辑收进 collect_disk_set——main 与 selftest 的夹具走**同一份实现**，
+    # 排除判据坏掉时 selftest 当场红（判例-29），不再依赖「只有 main 摸得到」的行内 os.walk。
+    disk_set = collect_disk_set(ROOT)
 
     # P5 扩展·改名态（R123）只在真跑路径接线：selftest 的 judge 不传 rename_lookup ⇒
     # hermetic 静态图不添 subprocess 面（find_renamed 只从 main 可达）。

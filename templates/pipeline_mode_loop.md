@@ -83,7 +83,7 @@ loop_create({
 1. **实测当前值**（与 baseline 同口径）：
    - `project_health({ "namespace": "<ns>" })` → 取 `grade`（healthy / attention / stalled / empty）作 `project_health_grade`，取 `blocked_tasks` 数组长度作 `blocked_tasks`；
    - `bug_list({ "project_dir": "<目标项目根目录>" })` → `status=OPEN` 条数作 `current_open_bug_count`；
-   - `run_check({ ... "args": ["test"] ... })` → 汇总行 N 作 `current_test_count`。
+   - `run_check({ "task_id": "<当前任务id>", "cmd": "moon", "args": ["test"] })` → 汇总行 N 作 `current_test_count`。
 2. **推进一环**（一次唤醒至多一次）：
 
 ```
