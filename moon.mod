@@ -32,4 +32,5 @@ import {
   "moonbitlang/x@0.5.5",
   "cc06b/mooncry@0.13.1",
   "vicTop-cw/RX-MBT@0.4.5",
+  "vicTop-cw/mcp-watcher@0.2.0",
 }

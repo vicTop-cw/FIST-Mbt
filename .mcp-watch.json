@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "watch_id": "fist-self-tidy",
+  "watch_dir": ".",
+  "recursive": false,
+  "debounce_ms": 1500,
+  "rules": [
+    {
+      "id": "backlog_self_tidy",
+      "events": ["modify"],
+      "patterns": ["BACKLOG.md"],
+      "condition": null,
+      "guard": {
+        "argv": ["python", "scripts/check_backlog_yaml_integrity.py"],
+        "on_fail": "skip"
+      },
+      "actions": [
+        {
+          "kind": "command",
+          "argv": ["python", "scripts/fist.py", "call", "publish", "--project-dir", ".", "--description", "BACKLOG self-tidy trigger"],
+          "target": null,
+          "body": null,
+          "acceptance": {
+            "expect_exit": 0,
+            "stdout_contains": [],
+            "stdout_not_contains": [],
+            "stderr_not_contains": []
+          },
+          "ttl": 0,
+          "cleanup": "trash"
+        }
+      ],
+      "stop_after": false
+    }
+  ],
+  "extensions": [],
+  "allowed_programs": ["python"]
+}
