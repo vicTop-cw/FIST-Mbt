@@ -78,7 +78,7 @@ test "bug439_mem_cb_failures_accumulate_to_threshold" {
         threshold,
         30,
         0,
-        1700000000 + rounds,
+        1700000000L + rounds.to_int64(),
         "t",
       ),
     )
@@ -106,7 +106,7 @@ test "bug439_mem_and_sql_cb_get_same_shape" {
     Some(s) => StoreBackend::sqlite(s)
     None => abort("sqlite open 失败：本格没跑到被测面")
   }
-  let args : (String, Int32, Int32, Int32, Int32, Int32) = (
+  let args : (String, Int32, Int32, Int32, Int32, Int64) = (
     "open", 5, 60, 3, 30, 1700000123,
   )
   let (st, fa, wi, th, re, la) = args

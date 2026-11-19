@@ -49,7 +49,7 @@ pub struct MemoryStore {
   // 这是**假绿**形态：工具不报错、回执字段齐全、保护从未生效。
   circuit_breakers : Map[
     String,
-    (String, Int32, Int32, Int32, Int32, Int32, Int32),
+    (String, Int32, Int32, Int32, Int32, Int64, Int64),
   ]
   // BUG-441：Saga 补偿日志（R92 的 durable action log，此前内存后端**从未实现**）
   //   key   = "<ns>\u0000<root_task_id>"（与 SQLite 侧 `WHERE ns=? AND root_task_id=?` 同口径）
@@ -1099,7 +1099,7 @@ pub fn StoreBackend::cb_get(
   self : StoreBackend,
   ns : String,
   circuit : String,
-) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)? {
+) -> (String, Int32, Int32, Int32, Int32, Int64, Int64)? {
   match self {
     Mem(m) => m.circuit_breakers.get(cb_key(ns, circuit))
     Sql(s) => s.cb_get(ns, circuit)
@@ -1120,8 +1120,8 @@ pub fn StoreBackend::cb_save(
   window_secs : Int32,
   threshold : Int32,
   recovery_secs : Int32,
-  opened_at : Int32,
-  last_fail_ts : Int32,
+  opened_at : Int64,
+  last_fail_ts : Int64,
   updated_at : String,
 ) -> Result[Unit, String] {
   match self {

@@ -126,3 +126,65 @@ pub fn iso_to_secs(s : String) -> Int32 {
     sec.to_int64()
   total_secs.to_int()
 }
+
+///|
+/// `iso_to_secs` 的 Int64 变体（BUG-583 时钟 Int64 化迁移）：同样的 2024 参考基准与字段
+/// 校验，但累计秒落在 Int64 ⇒ **取消 2091 上界**（Int32 那档是为 `days*86400` 不溢出才设；
+/// Int64 下 year 最多 4 位，year=9999 时 days*86400L ≈ 2.5e11，远不溢出）。
+/// 下界仍守 2024（ops 参考点）；非法/缺位仍回 -1L（与 Int32 版同口径）。
+/// 旧 `iso_to_secs`（Int32，2091 顶）保留不动——心跳/归档等既有面不改，零回归。
+pub fn iso_to_secs_i64(s : String) -> Int64 {
+  let chars = s.to_array()
+  if chars.length() < 16 {
+    return -1L
+  }
+  if chars[4] != '-' ||
+    chars[7] != '-' ||
+    (chars[10] != 'T' && chars[10] != 't' && chars[10] != ' ') ||
+    chars[13] != ':' {
+    return -1L
+  }
+  if chars.length() >= 17 && chars[16] != ':' {
+    return -1L
+  }
+  let year = parse_digits(chars, 0, len=4)
+  let mon = parse_digits(chars, 5, len=2)
+  let day = parse_digits(chars, 8, len=2)
+  let hour = parse_digits(chars, 11, len=2)
+  let min = parse_digits(chars, 14, len=2)
+  let sec = if chars.length() >= 19 {
+    parse_digits(chars, 17, len=2)
+  } else {
+    0
+  }
+  if year < 2024 {
+    return -1L
+  }
+  if mon < 1 || mon > 12 {
+    return -1L
+  }
+  if day < 1 || day > days_in_month(year, mon) {
+    return -1L
+  }
+  if hour < 0 || hour > 23 {
+    return -1L
+  }
+  if min < 0 || min > 59 {
+    return -1L
+  }
+  if sec < 0 || sec > 59 {
+    return -1L
+  }
+  let accum : Array[Int32] = [
+    0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334,
+  ]
+  let leaps = (year - 2024 + 3) / 4
+  let leap_fix = if is_leap_year(year) && mon > 2 { 1 } else { 0 }
+  let month_days = accum[mon - 1]
+  let days = (year - 2024) * 365 + leaps + month_days + leap_fix + day
+  // Int64 累加：days（Int32，year=9999 时 ≈ 2.5e6 天）* 86400L 走 Int64 不溢出
+  days.to_int64() * 86400L +
+  hour.to_int64() * 3600L +
+  min.to_int64() * 60L +
+  sec.to_int64()
+}
