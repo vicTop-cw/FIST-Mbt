@@ -3,7 +3,9 @@
 //
 // 设计原则：
 //   - 不修改 PipelineMode enum（6 个单模式保持零改动）
-//   - 纯计算：本文件零 IO，所有持久化由 server.mbt 层调 store 完成
+//   - 纯计算：本文件零 IO。持久化编排在 src/server/server.mbt 的 loop 段
+//     （轮 192 · JSONL 追加式）；本文件只给两面——写面 `loop_to_json`、
+//     读面 `loop_from_json`（同一套字段名的逆运算，漂移即静默丢状态）
 //   - 编排层 vs 执行层分离：loop_tick 返回下一步 mode 字符串，
 //     server 层用它调 pipeline_tick(mode=...)
 //
@@ -431,4 +433,171 @@ pub fn LoopRegistry::remove(self : LoopRegistry, name : String) -> Unit {
 /// 列出所有已注册环的 name
 pub fn LoopRegistry::list_names(self : LoopRegistry) -> Array[String] {
   self.loops.keys().to_array()
+}
+
+// ---------------------------------------------------------------------------
+// JSON → PipelineLoop（轮 192 · loop 状态持久化的**读回面**）
+//
+// 为什么在这里、而落盘 IO 不在这里：本文件的设计原则是「纯计算零 IO」
+// （文件头），落盘/读盘的编排在 src/server/server.mbt 的 loop 段（loop_store_*）。
+// 序列化用现成的 `loop_to_json`，反序列化必须与它**同一套字段名**——
+// 改了任一边就是「写进去、读不回」的静默丢状态，白盒锁
+// src/ops/ops_loop_persist_wbtest.mbt 用往返逐字段相等 + 变异对照钉这一条。
+// ---------------------------------------------------------------------------
+
+///|
+/// 取字符串字段（缺失/类型不符 → None；不静默当空串——空串在这里是「没这个字段」）
+fn loop_rec_str(obj : Map[String, Json], key : String) -> String? {
+  match obj.get(key) {
+    Some(Json::String(s)) => Some(s)
+    _ => None
+  }
+}
+
+///|
+/// 取布尔字段
+fn loop_rec_bool(obj : Map[String, Json], key : String) -> Bool? {
+  match obj.get(key) {
+    Some(Json::True) => Some(true)
+    Some(Json::False) => Some(false)
+    _ => None
+  }
+}
+
+///|
+/// 取整数字段：Json number 承载是 Double，越界钳到 Int32 两端，NaN → None。
+///
+/// 为什么钳而不是直接 `to_int()`：落盘面是文本、可能被半截写或人工改过，
+/// `1e300` 直接转在 js 侧是不确定值；钳位让「读回一个能跑的环」胜过「整行作废」，
+/// 而 NaN 两边比较都不成立 ⇒ 走 None（这一支由白盒锁覆盖）。
+fn loop_rec_int(obj : Map[String, Json], key : String) -> Int32? {
+  match obj.get(key) {
+    Some(Json::Number(n, ..)) =>
+      if n >= -2147483648.0 && n <= 2147483647.0 {
+        Some(n.to_int())
+      } else if n > 2147483647.0 {
+        Some(2147483647)
+      } else if n < -2147483648.0 {
+        Some(-2147483648)
+      } else {
+        None
+      }
+    _ => None
+  }
+}
+
+///|
+/// 取 steps：数组里每个都必须是字符串（混进数字/对象 ⇒ 整行判非法，不半收）
+fn loop_rec_steps(obj : Map[String, Json]) -> Array[String]? {
+  match obj.get("steps") {
+    Some(Json::Array(arr)) => {
+      let out : Array[String] = []
+      for it in arr {
+        match it {
+          Json::String(s) => out.push(s)
+          _ => return None
+        }
+      }
+      Some(out)
+    }
+    _ => None
+  }
+}
+
+///|
+/// 逐字段取回一个 PipelineLoop（14 个字段全在 `loop_to_json` 的输出里）。
+fn loop_rec_loop(obj : Map[String, Json]) -> PipelineLoop? {
+  let name = match loop_rec_str(obj, "name") {
+    Some(s) => s
+    None => return None
+  }
+  // 空 name 的行不是环（LoopRegistry 以 name 为键，空键会让读回的环无从寻址）
+  if name.is_empty() {
+    return None
+  }
+  let steps = match loop_rec_steps(obj) {
+    Some(s) => s
+    None => return None
+  }
+  let current_idx = match loop_rec_int(obj, "current_idx") {
+    Some(v) => v
+    None => return None
+  }
+  let round = match loop_rec_int(obj, "round") {
+    Some(v) => v
+    None => return None
+  }
+  let max_rounds = match loop_rec_int(obj, "max_rounds") {
+    Some(v) => v
+    None => return None
+  }
+  let stop_on_goal = match loop_rec_bool(obj, "stop_on_goal") {
+    Some(v) => v
+    None => return None
+  }
+  let stop_on_exceeded = match loop_rec_bool(obj, "stop_on_exceeded") {
+    Some(v) => v
+    None => return None
+  }
+  let created_at = match loop_rec_str(obj, "created_at") {
+    Some(v) => v
+    None => return None
+  }
+  let updated_at = match loop_rec_str(obj, "updated_at") {
+    Some(v) => v
+    None => return None
+  }
+  let stop_reason = match loop_rec_str(obj, "stop_reason") {
+    Some(v) => v
+    None => return None
+  }
+  let goal_reached = match loop_rec_bool(obj, "goal_reached") {
+    Some(v) => v
+    None => return None
+  }
+  let exceeded = match loop_rec_bool(obj, "exceeded") {
+    Some(v) => v
+    None => return None
+  }
+  let baseline_test_count = match loop_rec_int(obj, "baseline_test_count") {
+    Some(v) => v
+    None => return None
+  }
+  let baseline_open_bug_count = match
+    loop_rec_int(obj, "baseline_open_bug_count") {
+    Some(v) => v
+    None => return None
+  }
+  Some(PipelineLoop::{
+    name,
+    steps,
+    current_idx,
+    round,
+    max_rounds,
+    stop_on_goal,
+    stop_on_exceeded,
+    created_at,
+    updated_at,
+    stop_reason,
+    goal_reached,
+    exceeded,
+    baseline_test_count,
+    baseline_open_bug_count,
+  })
+}
+
+///|
+/// JSON → PipelineLoop：`loop_to_json` 的**逆运算**（轮 192 持久化读回面）。
+///
+/// 形状不合法一律 `None`（不抛、不半收）：追加式 JSONL 允许出现半截行与
+/// 别的写入方的行，解析侧必须**跳过**那一行而不是让整次读回失败。
+///
+/// **不在这里重跑 `validate_loop_steps`**：合法创建的环不该因为 mode 白名单
+/// 将来收窄而读不回来（读不回 = 静默丢状态，比读回一个非法 mode 更坏）；
+/// 非法 mode 的兜底在调用侧（pipeline_tick 自己会拒未知 mode）。
+pub fn loop_from_json(j : Json) -> PipelineLoop? {
+  match j {
+    Json::Object(obj) => loop_rec_loop(obj)
+    _ => None
+  }
 }

@@ -135,8 +135,8 @@ test "bug583_01_mcpcf_circuit_surface_reachable_via_holder_injection" {
   // 时点必须贴着墙钟取（比 now 早 20s / 10s）：否则 mcpcf 那一次 fail 的 `now - last_ts > 60`
   // 会把窗口计数复位成 1，格 1 就测不到「两路共用同一份状态」了。
   let base = b583_wall_clock_secs()
-  ignore(e.circuit_fail(circuit~, now_secs=base - 20))
-  ignore(e.circuit_fail(circuit~, now_secs=base - 10))
+  ignore(e.circuit_fail(circuit~, now_secs=(base - 20).to_int64()))
+  ignore(e.circuit_fail(circuit~, now_secs=(base - 10).to_int64()))
   // 第 3 次走 mcpcf 工具面：若它用的是另一份引擎（自举的 SQLite 库），这里只会数到 1
   let r = tool_circuit(b583_args(circuit, "fail"))
   let j = b583_mcpcf_json(r)

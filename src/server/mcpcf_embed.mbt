@@ -132,19 +132,14 @@ fn arg_str_opt(args : Json, key : String) -> String? {
 ///|
 /// 工具参数读取：可选时钟秒（Number 或数字串；缺省/非法回落墙钟秒）。
 /// BUG-588 ①：mcpcf 调用面的时钟注入点 —— 测试可传假时钟，2038/2039 档才锁得到。
-fn arg_now_secs(args : Json, default : Int32) -> Int32 {
+fn arg_now_secs(args : Json, default : Int64) -> Int64 {
   match args {
     Object(m) =>
       match m.get("now_secs") {
-        Some(Number(d, ..)) => d.to_int()
+        Some(Number(d, ..)) => d.to_int64()
         Some(String(s)) =>
           match parse_int_literal(s) {
-            Some(v) =>
-              if v > 2147483647L || v < -2147483648L {
-                default
-              } else {
-                v.to_int()
-              }
+            Some(v) => v
             None => default
           }
         _ => default
@@ -288,10 +283,7 @@ fn tool_circuit(args : Json) -> @mcp.ToolResult {
   }
   let ns = arg_str(args, "ns", "default")
   let action = arg_str(args, "action", "status")
-  let now_secs = arg_now_secs(
-    args,
-    (@env.now().reinterpret_as_int64() / 1000L).to_int(),
-  )
+  let now_secs = arg_now_secs(args, @env.now().reinterpret_as_int64() / 1000L)
   let json = if action == "fail" {
     e.circuit_fail(ns~, circuit~, now_secs~)
   } else if action == "succeed" {
@@ -386,7 +378,7 @@ fn tool_watchdog(args : Json) -> @mcp.ToolResult {
       let ns = arg_str(args, "ns", "default")
       let now_secs = arg_now_secs(
         args,
-        (@env.now().reinterpret_as_int64() / 1000L).to_int(),
+        @env.now().reinterpret_as_int64() / 1000L,
       )
       m.set("circuit", e.circuit_status(ns~, circuit=c, now_secs~))
     }

@@ -2668,12 +2668,24 @@ pub fn SqliteStore::mark_saga_actions_done(
 }
 
 ///|
+/// 读熔断时间列（Int64）：SQLite INTEGER 原生 64 位；原生读回 `Int64`，JS 后端把
+/// 安全整数读回 number（`column()` 归 `Int`，探针实证不截断）⇒ 两种变体都收成 Int64。
+/// BUG-583：时间列 Int64 化后必须能吃下 2038 后的纪元秒（如 2177452800）。
+fn cb_col_int64(stmt : @sqlite.Statement, col : Int32) -> Int64 {
+  match stmt.column(col) {
+    @sqlite.SqlValue::Int64(v) => v
+    @sqlite.SqlValue::Int(v) => v.to_int64()
+    _ => 0L
+  }
+}
+
+///|
 /// 读取某熔断器记录（R104）：(state, failures, window_secs, threshold, recovery_secs, opened_at, last_fail_ts)。
 pub fn SqliteStore::cb_get(
   self : SqliteStore,
   ns : String,
   circuit : String,
-) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)? {
+) -> (String, Int32, Int32, Int32, Int32, Int64, Int64)? {
   match self.db {
     None => None
     Some(db) => {
@@ -2690,7 +2702,7 @@ pub fn SqliteStore::cb_get(
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, circuit)),
             ),
           )
-          let mut row : (String, Int32, Int32, Int32, Int32, Int32, Int32)? = None
+          let mut row : (String, Int32, Int32, Int32, Int32, Int64, Int64)? = None
           if stmt.step() {
             row = Some(
               (
@@ -2699,8 +2711,8 @@ pub fn SqliteStore::cb_get(
                 stmt.column_int(2),
                 stmt.column_int(3),
                 stmt.column_int(4),
-                stmt.column_int(5),
-                stmt.column_int(6),
+                cb_col_int64(stmt, 5),
+                cb_col_int64(stmt, 6),
               ),
             )
           }
@@ -2723,8 +2735,8 @@ pub fn SqliteStore::cb_save(
   window_secs : Int32,
   threshold : Int32,
   recovery_secs : Int32,
-  opened_at : Int32,
-  last_fail_ts : Int32,
+  opened_at : Int64,
+  last_fail_ts : Int64,
   updated_at : String,
 ) -> Result[Unit, String] {
   match self.db {
@@ -2750,8 +2762,8 @@ pub fn SqliteStore::cb_save(
           ignore(stmt.bind(5, @sqlite.SqlValue::Int(window_secs)))
           ignore(stmt.bind(6, @sqlite.SqlValue::Int(threshold)))
           ignore(stmt.bind(7, @sqlite.SqlValue::Int(recovery_secs)))
-          ignore(stmt.bind(8, @sqlite.SqlValue::Int(opened_at)))
-          ignore(stmt.bind(9, @sqlite.SqlValue::Int(last_fail_ts)))
+          ignore(stmt.bind(8, @sqlite.SqlValue::Int64(opened_at)))
+          ignore(stmt.bind(9, @sqlite.SqlValue::Int64(last_fail_ts)))
           ignore(
             stmt.bind(
               10,

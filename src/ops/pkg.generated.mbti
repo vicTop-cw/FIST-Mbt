@@ -96,6 +96,8 @@ pub fn is_meta_prompt_name(String) -> Bool
 
 pub fn iso_to_secs(String) -> Int32
 
+pub fn iso_to_secs_i64(String) -> Int64
+
 pub fn latest_meta_prompt_in_dir(String) -> String?
 
 pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
@@ -103,6 +105,8 @@ pub fn list_contested(@engine.FistEngine) -> Array[@core.Task]
 pub fn list_holdings(@engine.FistEngine, String) -> Array[@core.Task]
 
 pub fn loop_create(String, Array[String], String, max_rounds? : Int32, stop_on_goal? : Bool, stop_on_exceeded? : Bool, baseline_test_count? : Int32, baseline_open_bug_count? : Int32) -> PipelineLoop
+
+pub fn loop_from_json(@json.Json) -> PipelineLoop?
 
 pub fn loop_status_str(LoopStatus) -> String
 

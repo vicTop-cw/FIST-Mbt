@@ -151,7 +151,7 @@ pub struct MemoryStore {
   file_locks : Map[String, FileLock]
   lock_violations : Array[LockViolation]
   assistant_reg : Map[String, AssistantReg]
-  circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int32, Int32)]
+  circuit_breakers : Map[String, (String, Int32, Int32, Int32, Int32, Int64, Int64)]
   saga_log : Map[String, Array[(Int32, String, String, String, String)]]
   mut saga_next_id : Int32
   challenges : Map[String, (String, Bool)]
@@ -252,8 +252,8 @@ pub fn SqliteStore::assistant_get(Self, String) -> AssistantReg?
 pub fn SqliteStore::assistant_list(Self) -> Array[AssistantReg]
 pub fn SqliteStore::assistant_set_status(Self, String, String) -> Bool
 pub fn SqliteStore::assistant_upsert(Self, AssistantReg) -> Unit
-pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
-pub fn SqliteStore::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
+pub fn SqliteStore::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int64, Int64)?
+pub fn SqliteStore::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int64, Int64, String) -> Result[Unit, String]
 pub fn SqliteStore::challenge_cleanup(Self, String) -> Int32
 pub fn SqliteStore::challenge_cleanup_aggressive(Self, String) -> Int32
 pub fn SqliteStore::challenge_cleanup_conservative(Self, String) -> Int32
@@ -323,8 +323,8 @@ pub fn StoreBackend::assistant_list(Self) -> Array[AssistantReg]
 pub fn StoreBackend::assistant_set_status(Self, String, String) -> Bool
 pub fn StoreBackend::assistant_upsert(Self, AssistantReg) -> Unit
 pub fn StoreBackend::backend_name(Self) -> String
-pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int32, Int32)?
-pub fn StoreBackend::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int32, Int32, String) -> Result[Unit, String]
+pub fn StoreBackend::cb_get(Self, String, String) -> (String, Int32, Int32, Int32, Int32, Int64, Int64)?
+pub fn StoreBackend::cb_save(Self, String, String, String, Int32, Int32, Int32, Int32, Int64, Int64, String) -> Result[Unit, String]
 pub fn StoreBackend::challenge_cleanup(Self, String) -> Int32
 pub fn StoreBackend::challenge_cleanup_aggressive(Self, String) -> Int32
 pub fn StoreBackend::challenge_cleanup_conservative(Self, String) -> Int32

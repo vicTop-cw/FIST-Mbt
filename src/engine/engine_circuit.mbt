@@ -9,14 +9,14 @@ pub fn FistEngine::circuit_fail(
   self : FistEngine,
   ns~ : String = "default",
   circuit~ : String,
-  now_secs~ : Int32,
+  now_secs~ : Int64,
   window_secs~ : Int32 = 60,
   threshold~ : Int32 = 3,
   recovery_secs~ : Int32 = 30,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
   let (state, failures, w, thr, rec, opened_at, last_fail_ts) = match row {
-    None => ("closed", 0, window_secs, threshold, recovery_secs, 0, 0)
+    None => ("closed", 0, window_secs, threshold, recovery_secs, 0L, 0L)
     Some(r) => r
   }
   let (new_state, new_failures, new_opened) = if state == "open" {
@@ -27,7 +27,11 @@ pub fn FistEngine::circuit_fail(
     ("open", thr, now_secs)
   } else {
     // Closed：窗口内计数
-    let nf = if now_secs - last_fail_ts > w { 1 } else { failures + 1 }
+    let nf = if now_secs - last_fail_ts > w.to_int64() {
+      1
+    } else {
+      failures + 1
+    }
     if nf >= thr {
       ("open", nf, now_secs)
     } else {
@@ -67,19 +71,19 @@ pub fn FistEngine::circuit_succeed(
   self : FistEngine,
   ns~ : String = "default",
   circuit~ : String,
-  now_secs~ : Int32,
+  now_secs~ : Int64,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
   let (state, failures, w, thr, rec, opened_at, _last_fail_ts) = match row {
-    None => ("closed", 0, 60, 3, 30, 0, 0)
+    None => ("closed", 0, 60, 3, 30, 0L, 0L)
     Some(r) => r
   }
   let (new_state, new_failures, new_opened) = if state == "half_open" {
-    ("closed", 0, 0)
+    ("closed", 0, 0L)
   } else if state == "open" {
     ("open", failures, opened_at)
   } else {
-    ("closed", 0, 0)
+    ("closed", 0, 0L)
   }
   let persist_error = cb_persist_note(
     self.store.cb_save(
@@ -123,18 +127,18 @@ pub fn FistEngine::circuit_status(
   self : FistEngine,
   ns~ : String = "default",
   circuit~ : String,
-  now_secs~ : Int32,
+  now_secs~ : Int64,
   probe_limit~ : Int32 = 1,
 ) -> Json {
   let row = self.store.cb_get(ns, circuit)
   let (state, failures, w, thr, rec, opened_at, last_ts) = match row {
-    None => ("closed", 0, 60, 3, 30, 0, 0)
+    None => ("closed", 0, 60, 3, 30, 0L, 0L)
     Some(r) => r
   }
   // ① Open 到期 → Half-Open，并把"已放行探测数"清零（迁移写失败留痕，BUG-230）
   let (eff_state, eff_failures, migrate_note) = if state == "open" &&
     opened_at > 0 &&
-    now_secs - opened_at >= rec {
+    now_secs - opened_at >= rec.to_int64() {
     let note = cb_persist_note(
       self.store.cb_save(
         ns,
@@ -167,7 +171,7 @@ pub fn FistEngine::circuit_status(
     )
   } else {
     // ② 探测丢失（一个恢复窗内没有任何上报）⇒ 配额重置
-    let stale = rec > 0 && last_ts > 0 && now_secs - last_ts >= rec
+    let stale = rec > 0 && last_ts > 0 && now_secs - last_ts >= rec.to_int64()
     let granted = if stale { 0 } else { eff_failures }
     // probe_limit<=0 = 运维侧显式关掉节流（回到"半开全放行"的旧行为，要在返回体里看得见）
     if probe_limit <= 0 || granted < probe_limit {
@@ -246,8 +250,8 @@ fn cb_json(
   w : Int32,
   thr : Int32,
   rec : Int32,
-  opened_at : Int32,
-  _now_secs : Int32,
+  opened_at : Int64,
+  _now_secs : Int64,
   probe_limit~ : Int32 = 1,
   deny~ : Bool = false,
   persist_error~ : String = "",

@@ -34,6 +34,28 @@
 ///   bug583_06_receipt…（卡 Open 零线索）⇒ 期望回执带异常线索（域拒绝文案或 persist 侧报错）。
 ///   bug583_07_sqlite_negative…        ⇒ 方向③下 `cb_get` 元组变 Int64，本格需随签名改写。
 ///
+/// ## FIXED（方向③ Int64 化，2026-11-20 落实）
+///
+/// 方向③落地：`engine_circuit.mbt` 的 `now_secs`/`opened_at`/`last_fail_ts` 与
+/// `StoreBackend::cb_get`/`cb_save` 的时间列全部 Int64 化；`mcpcf_embed.mbt` 的
+/// `arg_now_secs` 不再 `.to_int()` 截断，2039 喂进引擎的是**正**纪元秒 `b583_unix_2039`
+/// （2177452800），两枚 `> 0` 正性哨兵随之全部可达。逐格改写如下（对照表见上）：
+///    bug583_01：保留（纯 Int32 截断算术事实，与引擎类型无关；仍是「Int32 会绕回」的依据）。
+///    bug583_02：`now_secs` 改喂 `b583_unix_2039`（正）⇒ `state == "half_open"`、
+///     `allow_call == true`、`probes_granted == 1`；`opened_at`/`last_fail_ts` 断言改正域；
+///     原「永久卡 Open」的 10 窗循环改为「恢复门可达 + succeed 回 Closed」的正向恢复证明。
+///    bug583_03：继续绿（正域对照零回归）；仅 `now_secs` 改 Int64 常量。
+///    bug583_04：`now_secs` 改喂正 `b583_unix_2039` ⇒ stale 复位生效（`allow_call == true`）；
+///     「两种时基」现在都是正纪元秒；原「永久锁死」循环改为每窗都复位放行的正向断言。
+///    bug583_05：继续绿（正域对照零回归）；仅 `now_secs` 改 Int64 常量。
+///    bug583_06：`now_secs` 改正 ⇒ 回执 `state == "half_open"`、`allow_call == true`、
+///     `opened_at` 用 Int64 字段读出为正的 2177452800、`probes_granted == 1`；
+///     原「静默假正常 Open 回执」消失（无绕回、无负时刻）。
+///    bug583_07：`cb_get` 元组时间列 Int64 ⇒ 2039 正纪元秒在 SQLite 双后端原样往返；
+///     原「负值往返」改为「正值往返」；SQLite 后端同样可达半开（无卡死）。
+/// 新增基础设施：`b583_unix_2026_i64`/`b583_unix_2039`（Int64 纪元秒常量）、
+/// `b583_int64_field`（Int64 字段读取，2038 后秒数用 Int32 读会自己绕回）。
+///
 /// ## 变异对照（判例-29/30 硬要求；真跑读数见回传与 memory/2026-11-09.md）
 ///
 /// 两发都打**代码行**（非注释；`opened_at > 0` / `last_ts > 0` 在全文各只出现 1 次，
@@ -51,13 +73,23 @@
 let b583_int32_max_secs : Int32 = 2147483647
 
 ///|
-/// 2026-01-01T00:00:00Z 的 Unix 秒（合法 Int32 正域，对照格基准）。
+/// 2026-01-01T00:00:00Z 的 Unix 秒（合法 Int32 正域，对照格基准；格 1 与截断复算比 Int32 值）。
 let b583_unix_2026 : Int32 = 1767225600
+
+///|
+/// 2026 纪元秒的 Int64 版（方向③ 修复后 now_secs 入参用；与上面 Int32 同值，不绕回）。
+let b583_unix_2026_i64 : Int64 = 1767225600L
 
 ///|
 /// 2039-01-01T00:00:00Z 的 Unix 秒经 mcpcf 那一句 `.to_int()` 截断后的值。
 /// 账本 BUG-583 探针同值：`trunc(2177452800000L / 1000L) = -2117514496`。
+/// 方向③ 后 mcpcf 不再截断，喂进引擎的是正数 `b583_unix_2039`（下面那个）。
 let b583_unix_2039_truncated : Int32 = -2117514496
+
+///|
+/// 2039-01-01T00:00:00Z 的**真** Unix 秒（Int64 化后 mcpcf 喂进引擎的值）。
+/// 与上面 `b583_unix_2039_truncated` 相对：Int64 不绕回，是正的这个数。
+let b583_unix_2039 : Int64 = 2177452800L
 
 ///|
 /// mcpcf 调用点的时基算式（测试侧副本，来源 `src/server/mcpcf_embed.mbt:267`/`:360` 逐字同形）：
@@ -89,6 +121,16 @@ fn b583_int_field(j : Json, key : String) -> Int32 {
 }
 
 ///|
+/// Int64 版（2038 后的纪元秒如 2039 秒 = 2177452800 超出 Int32 上界，
+/// 用 `to_int()` 会**自己**绕回负值，恰是本锁要防的形状）⇒ 读这类字段必须走 Int64。
+fn b583_int64_field(j : Json, key : String) -> Int64 {
+  match jget(j, key) {
+    Some(Json::Number(n, ..)) => n.to_int64()
+    _ => abort("\{key} 缺失: " + j.stringify())
+  }
+}
+
+///|
 fn b583_allow(j : Json) -> Bool {
   match jget(j, "allow_call") {
     Some(Json::True) => true
@@ -102,7 +144,7 @@ fn b583_allow(j : Json) -> Bool {
 fn b583_row(
   e : FistEngine,
   circuit : String,
-) -> (String, Int32, Int32, Int32, Int32, Int32, Int32) {
+) -> (String, Int32, Int32, Int32, Int32, Int64, Int64) {
   match e.store.cb_get("default", circuit) {
     Some(r) => r
     None => abort("熔断行不存在: " + circuit)
@@ -154,53 +196,47 @@ test "bug583_01_truncation_unix_secs_to_int32_wraps_negative_after_2038" {
 /// 修复后期望（方向②域拒绝）：回执显式报错/降级，**不得**是本格现在这个「静默 open」。
 test "bug583_02_negative_opened_at_makes_half_open_unreachable" {
   let e = FistEngine::new()
-  // threshold=1 一次失败即 Open；opened_at 落进负域
+  // 方向③：threshold=1 一次失败即 Open；opened_at 现在是**正**的 2039 纪元秒（Int64 不截断）
   ignore(
-    e.circuit_fail(
-      circuit="b583-armB",
-      now_secs=b583_unix_2039_truncated,
-      threshold=1,
-    ),
+    e.circuit_fail(circuit="b583-armB", now_secs=b583_unix_2039, threshold=1),
   )
   let (st, _, _, _, _, opened, last_ts) = b583_row(e, "b583-armB")
   assert_eq(st, "open")
   assert_true(
-    opened < 0,
-    msg="开路时刻应已被截断成负值（前提），实得 " +
-      opened.to_string(),
+    opened > 0,
+    msg="Int64 化后 2039 纪元秒为正值（2177452800），不再绕回负域",
   )
-  assert_true(last_ts < 0)
-  // 过满一个恢复窗（recovery 默认 30）：减法形本身是对的
-  let probe_at = b583_unix_2039_truncated + 30
+  assert_true(last_ts > 0)
+  // 过满一个恢复窗（recovery 默认 30）：Int64 减法
+  let probe_at = b583_unix_2039 + 30
   assert_eq(
-    probe_at - b583_unix_2039_truncated,
+    probe_at - b583_unix_2039,
     30,
-    msg="减法在同余下仍正确 ⇒ 缺陷只可能来自正性哨兵，不是算术（账本臂 B 结论）",
+    msg="Int64 减法正确 ⇒ 恢复门 `engine_circuit.mbt:136` 的 opened_at>0 可达",
   )
   let s = e.circuit_status(circuit="b583-armB", now_secs=probe_at)
-  // ← 当前（缺陷）行为：门恒假，仍 open、仍快速失败
+  // 方向③修复后：恢复门可达，Open 转 Half-Open 并放行一次探测（不再是永久卡 Open）
   assert_eq(
     b583_str_field(s, "state"),
-    "open",
-    msg="BUG-583 复现：opened_at<0 时恢复门 `engine_circuit.mbt:136` 恒假，Open 不可退出",
+    "half_open",
+    msg="BUG-583 方向③：opened_at>0 ⇒ 恢复门可达，Open 转 Half-Open",
   )
-  assert_eq(b583_allow(s), false)
-  // 再连查 10 个恢复窗：不是「晚一点就恢复」，是**永久**卡住
-  for i = 1; i <= 10; i = i + 1 {
-    let later = e.circuit_status(
-      circuit="b583-armB",
-      now_secs=b583_unix_2039_truncated + i * 30,
-    )
-    assert_eq(
-      b583_str_field(later, "state"),
-      "open",
-      msg="第 \{i} 个恢复窗仍卡 Open（永久卡死而非延迟恢复）",
-    )
-    assert_eq(b583_allow(later), false)
-  }
-  // 且行从未被修复：opened_at 一直是那个负数
+  assert_eq(b583_allow(s), true)
+  assert_eq(b583_int_field(s, "probes_granted"), 1)
+  // 再过一个恢复窗：不是「晚一点就恢复」的延迟，而是每窗都保持可探测（stale 复位）
+  let later = e.circuit_status(
+    circuit="b583-armB",
+    now_secs=b583_unix_2039 + 90,
+  )
+  assert_eq(
+    b583_str_field(later, "state"),
+    "half_open",
+    msg="第 3 个恢复窗仍半开放行（stale 复位生效，非永久卡死）",
+  )
+  assert_eq(b583_allow(later), true)
+  // 行里的 opened_at 一直是那个正的 2039 纪元秒（半开迁移不改写它）
   let (_, _, _, _, _, opened_after, _) = b583_row(e, "b583-armB")
-  assert_eq(opened_after, b583_unix_2039_truncated)
+  assert_eq(opened_after, b583_unix_2039)
 }
 
 ///|
@@ -226,13 +262,13 @@ test "bug583_03_control_positive_domain_half_open_still_reachable" {
   ignore(
     e2.circuit_fail(
       circuit="b583-ok-epoch",
-      now_secs=b583_unix_2026,
+      now_secs=b583_unix_2026_i64,
       threshold=1,
     ),
   )
   let s3 = e2.circuit_status(
     circuit="b583-ok-epoch",
-    now_secs=b583_unix_2026 + 30,
+    now_secs=b583_unix_2026_i64 + 30,
   )
   assert_eq(b583_str_field(s3, "state"), "half_open")
   assert_eq(b583_allow(s3), true)
@@ -245,23 +281,23 @@ test "bug583_03_control_positive_domain_half_open_still_reachable" {
 /// （半开态锁死在快速失败，正是 BUG-34 当年要避免的形状）。
 /// 修复后期望：最后一组断言从 `allow_call == false` 改成 `== true`（丢失复位重新生效）。
 test "bug583_04_negative_last_ts_disables_stale_probe_reset" {
-  // 前提：跨时基减法同余正确（账本臂 A「减法形安全，勿报」）—— 这里把它钉成数字，
-  // 防止后来者「顺手把减法也一起改」而没人知道那一档本来是对的。
+  // 前提：Int64 减法还原真实 elapsed（13 年秒数）—— 2039 与 2026 现在都是正纪元秒
   assert_eq(
-    b583_unix_2039_truncated - b583_unix_2026,
+    b583_unix_2039 - b583_unix_2026_i64,
     410227200,
-    msg="双回绕同余应还原真实 elapsed（13 年秒数）；变了就说明 Int32 减法语义漂移",
+    msg="Int64 减法还原真实 elapsed（13 年秒数）；变了就说明减法语义漂移",
   )
   let e = FistEngine::new()
   // 开路发生在合法正域（opened_at=2026 纪元秒，>0 ⇒ 门可达）
   ignore(
-    e.circuit_fail(circuit="b583-armA", now_secs=b583_unix_2026, threshold=1),
+    e.circuit_fail(
+      circuit="b583-armA",
+      now_secs=b583_unix_2026_i64,
+      threshold=1,
+    ),
   )
-  // 时钟跨过 2038 后的第一次查询：门开、转半开，并把 last_fail_ts 写成**负**的 now
-  let s1 = e.circuit_status(
-    circuit="b583-armA",
-    now_secs=b583_unix_2039_truncated,
-  )
+  // 时钟到 2039（Int64 正值）的第一次查询：门开、转半开，last_fail_ts 写成**正**的 now
+  let s1 = e.circuit_status(circuit="b583-armA", now_secs=b583_unix_2039)
   assert_eq(b583_str_field(s1, "state"), "half_open")
   assert_eq(b583_allow(s1), true)
   assert_eq(b583_int_field(s1, "probes_granted"), 1)
@@ -270,36 +306,33 @@ test "bug583_04_negative_last_ts_disables_stale_probe_reset" {
   )
   assert_eq(
     opened_poisoned,
-    b583_unix_2026,
+    b583_unix_2026_i64,
     msg="opened_at 仍是正域原值（半开迁移不改写它）",
   )
   assert_eq(
     last_ts_poisoned,
-    b583_unix_2039_truncated,
-    msg="同一行已同时住着两种时基：opened_at 正 / last_fail_ts 负",
+    b583_unix_2039,
+    msg="同一行住着两种时基：opened_at=2026 / last_fail_ts=2039，现在都是正纪元秒",
   )
-  // 探测丢失（拿到配额后既不 succeed 也不 fail）+ 过两个恢复窗 ⇒ BUG-34 该复位
-  let s2 = e.circuit_status(
-    circuit="b583-armA",
-    now_secs=b583_unix_2039_truncated + 60,
-  )
+  // 探测丢失（拿到配额后既不 succeed 也不 fail）+ 过一个恢复窗 ⇒ BUG-34 该复位
+  let s2 = e.circuit_status(circuit="b583-armA", now_secs=b583_unix_2039 + 60)
   assert_eq(b583_str_field(s2, "state"), "half_open")
   assert_eq(
     b583_allow(s2),
-    false,
-    msg="BUG-583 复现：last_ts<0 ⇒ `engine_circuit.mbt:170` 的 stale 恒假 ⇒ 配额永不重置",
+    true,
+    msg="BUG-583 方向③：last_ts>0 ⇒ `engine_circuit.mbt:170` 的 stale 复位生效 ⇒ 重新放行",
   )
   assert_eq(b583_int_field(s2, "probes_granted"), 1)
-  // 再等 10 个恢复窗仍然锁死（永久，不是延迟）
+  // 再等 10 个恢复窗：每窗 stale 复位都生效（探测丢失后可重新探测，非永久锁死）
   for i = 3; i <= 12; i = i + 1 {
     let s = e.circuit_status(
       circuit="b583-armA",
-      now_secs=b583_unix_2039_truncated + i * 30,
+      now_secs=b583_unix_2039 + (i * 30).to_int64(),
     )
     assert_eq(
       b583_allow(s),
-      false,
-      msg="第 \{i} 窗仍不复位（探测丢失后永久锁死）",
+      true,
+      msg="第 \{i} 窗 stale 复位生效（探测丢失后重新放行，非永久锁死）",
     )
   }
 }
@@ -312,13 +345,13 @@ test "bug583_05_control_positive_domain_stale_probe_reset_works" {
   ignore(
     e.circuit_fail(
       circuit="b583-ok-stale",
-      now_secs=b583_unix_2026,
+      now_secs=b583_unix_2026_i64,
       threshold=1,
     ),
   )
   let s1 = e.circuit_status(
     circuit="b583-ok-stale",
-    now_secs=b583_unix_2026 + 30,
+    now_secs=b583_unix_2026_i64 + 30,
   )
   assert_eq(b583_str_field(s1, "state"), "half_open")
   assert_eq(b583_allow(s1), true)
@@ -326,13 +359,13 @@ test "bug583_05_control_positive_domain_stale_probe_reset_works" {
   // 第二次查询立刻再来：配额未用尽 ⇒ 拒绝（节流本身正确）
   let s2 = e.circuit_status(
     circuit="b583-ok-stale",
-    now_secs=b583_unix_2026 + 31,
+    now_secs=b583_unix_2026_i64 + 31,
   )
   assert_eq(b583_allow(s2), false)
   // 过一整个恢复窗（≥30s）无任何上报 ⇒ stale 复位生效，重新放行一次探测
   let s3 = e.circuit_status(
     circuit="b583-ok-stale",
-    now_secs=b583_unix_2026 + 91,
+    now_secs=b583_unix_2026_i64 + 91,
   )
   assert_eq(
     b583_str_field(s3, "state"),
@@ -355,32 +388,26 @@ test "bug583_05_control_positive_domain_stale_probe_reset_works" {
 test "bug583_06_stuck_open_receipt_is_silent_about_the_wrap" {
   let e = FistEngine::new()
   ignore(
-    e.circuit_fail(
-      circuit="b583-receipt",
-      now_secs=b583_unix_2039_truncated,
-      threshold=1,
-    ),
+    e.circuit_fail(circuit="b583-receipt", now_secs=b583_unix_2039, threshold=1),
   )
-  let s = e.circuit_status(
-    circuit="b583-receipt",
-    now_secs=b583_unix_2039_truncated + 30,
-  )
-  assert_eq(b583_str_field(s, "state"), "open")
-  assert_eq(b583_allow(s), false)
-  // 负 opened_at 原样出现在回执里（既不归零也不报错）
-  assert_eq(b583_int_field(s, "opened_at"), b583_unix_2039_truncated)
+  let s = e.circuit_status(circuit="b583-receipt", now_secs=b583_unix_2039 + 30)
+  // 方向③修复后：回执不再是「静默假正常 Open」，而是可达的 Half-Open + 正 opened_at
+  assert_eq(b583_str_field(s, "state"), "half_open")
+  assert_eq(b583_allow(s), true)
+  // 正的 2039 纪元秒原样出现在回执里（Int64 字段读出，不绕回）
+  assert_eq(b583_int64_field(s, "opened_at"), b583_unix_2039)
   assert_true(
-    b583_int_field(s, "opened_at") < 0,
-    msg="回执把绕回后的负时刻直接交给调用方（BUG-583 的可见面）",
+    b583_int64_field(s, "opened_at") > 0,
+    msg="回执是正的 2039 纪元秒（Int64 化后无绕回、无负时刻）",
   )
-  // 半开配额字段在 open 态恒 0：调用方读不出「本应半开」
-  assert_eq(b583_int_field(s, "probes_granted"), 0)
+  // 半开态放行一次探测
+  assert_eq(b583_int_field(s, "probes_granted"), 1)
   assert_eq(b583_int_field(s, "recovery_secs"), 30)
-  // 零线索：没有写盘错误留痕，note 仍是标准三态文案
+  // 零写盘错误留痕，note 仍是标准三态文案
   assert_eq(jget(s, "persist_error") is None, true)
   assert_true(
     b583_str_field(s, "note").contains("熔断器三态"),
-    msg="note 面当前不含任何「时间戳越界/已绕回」提示",
+    msg="note 面是标准三态文案",
   )
 }
 
@@ -396,7 +423,7 @@ test "bug583_07_sqlite_roundtrip_keeps_negative_time_columns" {
     e.circuit_fail(
       ns="b583-ns",
       circuit="neg",
-      now_secs=b583_unix_2039_truncated,
+      now_secs=b583_unix_2039,
       threshold=1,
     ),
   )
@@ -408,16 +435,16 @@ test "bug583_07_sqlite_roundtrip_keeps_negative_time_columns" {
   assert_eq(st, "open")
   assert_eq(
     opened,
-    b583_unix_2039_truncated,
-    msg="负 opened_at 必须原样往返：库不净化 ⇒ 哨兵只能在引擎侧修",
+    b583_unix_2039,
+    msg="正的 2039 纪元秒必须原样往返（Int64 列吃下 2038 后秒数，库不净化也不截断）",
   )
-  assert_eq(last_ts, b583_unix_2039_truncated)
-  // 合法域对照（同一张表、同一列）：正纪元秒也原样往返 ⇒ 不是「整列都读不回来」
+  assert_eq(last_ts, b583_unix_2039)
+  // 合法域对照（同一张表、同一列）：2026 正纪元秒也原样往返
   ignore(
     e.circuit_fail(
       ns="b583-ns",
       circuit="pos",
-      now_secs=b583_unix_2026,
+      now_secs=b583_unix_2026_i64,
       threshold=1,
     ),
   )
@@ -427,18 +454,18 @@ test "bug583_07_sqlite_roundtrip_keeps_negative_time_columns" {
   }
   let (st2, _, _, _, _, opened2, last_ts2) = row2
   assert_eq(st2, "open")
-  assert_eq(opened2, b583_unix_2026)
+  assert_eq(opened2, b583_unix_2026_i64)
   assert_true(last_ts2 > 0)
-  // 负域行为在 SQLite 上同样不可退出半开（与内存后端格 2 同结论，跨后端一致）
+  // 2039 正值在 SQLite 上同样可达半开（与内存后端格 2 同结论，跨后端一致）
   let s = e.circuit_status(
     ns="b583-ns",
     circuit="neg",
-    now_secs=b583_unix_2039_truncated + 30,
+    now_secs=b583_unix_2039 + 30,
   )
   assert_eq(
     b583_str_field(s, "state"),
-    "open",
-    msg="SQLite 后端同样卡 Open ⇒ 缺陷不在后端选择上",
+    "half_open",
+    msg="SQLite 后端 2039 正值同样可达半开（Int64 化后无卡死）",
   )
-  assert_eq(b583_allow(s), false)
+  assert_eq(b583_allow(s), true)
 }

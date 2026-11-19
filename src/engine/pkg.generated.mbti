@@ -219,9 +219,9 @@ pub fn FistEngine::challenge_persisted(Self) -> Bool
 pub fn FistEngine::challenge_table_stats(Self) -> (Int32, Int32, Int32)
 pub fn FistEngine::children_index(Self) -> Map[String, Array[String]]
 pub fn FistEngine::children_of(Self, String) -> Array[@core.Task]
-pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int32, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> @json.Json
-pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int32, probe_limit? : Int32) -> @json.Json
-pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int32) -> @json.Json
+pub fn FistEngine::circuit_fail(Self, ns? : String, circuit~ : String, now_secs~ : Int64, window_secs? : Int32, threshold? : Int32, recovery_secs? : Int32) -> @json.Json
+pub fn FistEngine::circuit_status(Self, ns? : String, circuit~ : String, now_secs~ : Int64, probe_limit? : Int32) -> @json.Json
+pub fn FistEngine::circuit_succeed(Self, ns? : String, circuit~ : String, now_secs~ : Int64) -> @json.Json
 pub fn FistEngine::claim(Self, task_id~ : String, assignee~ : String, now~ : String, challenge_nonce? : String?, challenge_sig? : String?) -> Result[@core.Task, String]
 pub fn FistEngine::cold_publish(Self, ns~ : String, description~ : String, created_by~ : String, project_dir~ : String, now~ : String, level? : Int32) -> Result[String, String]
 pub fn FistEngine::cost_stats(Self) -> @json.Json

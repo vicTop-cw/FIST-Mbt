@@ -292,6 +292,357 @@ let exec_reg : @executor.ExecutorRegistry = @executor.ExecutorRegistry::new()
 let loop_reg : @ops.LoopRegistry = @ops.LoopRegistry::new()
 
 ///|
+/// 轮 192 · 组合环状态落盘的**惰性载入位**（false = 本进程还没尝试过从磁盘读回）。
+/// Array 而不是 Bool：模块级 `let` 不可变，这里要的是「同一份状态被工具闭包原地翻」
+/// ——与 AuditLog/LoopRegistry 的内部可变性模式同族。
+let loop_boot : Array[Bool] = [false]
+
+///|
+/// 轮 192 · 组合环 JSONL 落点目录解析（**纯函数**，白盒锁 loop_persist_wbtest.mbt）。
+///
+/// 规则（顺序即优先级）：
+///   1. `db_env` 有值且解析出来**带目录** → 该目录 + `loops.jsonl`
+///      （与 BUG-538 的 server.log 同轨：`FIST_DB_PATH` 改道 = 侧文件跟着走）；
+///   2. 否则用 `data_dir`（MultiStore 的库根目录，默认 `.fist-mbt/data`）；
+///   3. 两者都给不出目录 → 回落 `loop_store_fallback_dir`，**绝不裸写仓库根/cwd**。
+/// `db_env` 空串 = 未设置（与 `SqliteStore::db_path_from_env` 同一口径）；带值先 trim。
+fn loop_store_path_in(db_env : String?, data_dir : String) -> String {
+  let from_db = match db_env {
+    Some(v) => {
+      let t = v.trim().to_owned()
+      // trim 后为空串 ⇒ 与未设置同语义（BUG-90 的 r197/r241 尾随空格教训）
+      if t.is_empty() {
+        ""
+      } else {
+        server_log_dir_of(t)
+      }
+    }
+    None => ""
+  }
+  if from_db != "" {
+    return from_db + "loops.jsonl"
+  }
+  let dir = if data_dir.is_empty() { loop_store_fallback_dir } else { data_dir }
+  if dir.is_empty() {
+    "loops.jsonl"
+  } else {
+    dir + "/loops.jsonl"
+  }
+}
+
+///|
+/// 回落目录（与 store_open 默认档同源：本文件 store_open 里的 `new_dir`）。
+let loop_store_fallback_dir : String = ".fist-mbt/data"
+
+///|
+/// 当前生效落点（**唯一 env 读取点**，判例-29：同一条规则不许有两份 env 读取）。
+/// 每次现算，与 `server_log_path()` 同一口径：env 读取廉价、loop 工具低频。
+fn loop_store_path() -> String {
+  loop_store_path_in(
+    @env.get_env_var("FIST_DB_PATH"),
+    if @store.MultiStore::data_dir_ok(mstore.data_dir) {
+      mstore.data_dir
+    } else {
+      loop_store_fallback_dir
+    },
+  )
+}
+
+///|
+/// 逐层建父目录（`@fs.create_dir` 只建单层，BUG-390 同族；失败静默——
+/// 建不出来就由后面的写失败说话，回执里 persisted=false 会看见）。
+fn loop_store_ensure_parent(path : String) -> Unit {
+  let chars = path.to_array()
+  let n = chars.length()
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == '/' || c == '\\' {
+      if i > 0 {
+        let prefix = path[:i].to_owned()
+        // 盘符根（`E:` / `C:`）不当目录建（store 的 ensure_dir_tree 同一手）
+        if !(prefix.length() == 2 && prefix[1] == ':') {
+          mem_ensure_dir(prefix)
+        }
+      }
+    }
+    i = i + 1
+  }
+}
+
+///|
+/// 追加一行快照（一行 = 一次写入，JSONL）。
+///
+/// 为什么「读旧 + 整体写回」而不是真 append：`moonbitlang/x/fs` 没有 append 面
+/// （write_string_to_file 是覆盖写），本仓 JSONL 队列一直是同一手法
+/// （ops_commissar 的 signal 日志、github_sync 的 queue_append）。
+/// 代价写在脸上：单次 O(文件大小)，环数量小、tick 低频，可接受；
+/// **不做压缩**（历史行只增不减）——留给 §六 的已知边界，不假装已经收口。
+/// 返回 false = 没写进去（目录不可写/磁盘异常），**不抛**：落盘失败不许让工具失败。
+fn loop_store_append(lp : @ops.PipelineLoop) -> Bool {
+  let path = loop_store_path()
+  loop_store_ensure_parent(path)
+  let old = match mem_read(path) {
+    Some(s) => s
+    None => ""
+  }
+  mem_write(path, old + @ops.loop_to_json(lp).stringify() + "\n")
+}
+
+///|
+/// 从落点读回并并进内存注册表，返回**本次新读入**的环数。
+///
+/// 三条语义（每一条都有白盒格对着）：
+///   · 文件内同名：**后写覆盖先写**（追加式日志的 last-wins）；
+///   · 与内存冲突：**内存赢**（内存是本次进程刚推进的状态，比磁盘新）；
+///   · 坏行：跳过（半截行/别的写入方/旧版本行都不该让整次读回失败）。
+fn loop_registry_load() -> Int32 {
+  let text = match mem_read(loop_store_path()) {
+    Some(s) => s
+    None => ""
+  }
+  let disk : Map[String, @ops.PipelineLoop] = Map([])
+  for raw in text.split("\n") {
+    let line = raw.trim().to_owned()
+    if line.is_empty() {
+      continue
+    }
+    let parsed : Json? = Some(@json.parse(line)) catch { _ => None }
+    match parsed {
+      None => ()
+      Some(j) =>
+        match @ops.loop_from_json(j) {
+          None => ()
+          Some(lp) => disk.set(lp.name, lp)
+        }
+    }
+  }
+  let mut added = 0
+  // 用 keys 数组而不是 disk.each 的闭包改捕获变量：计数与写入分开走，
+  // 循环体留在本层（判例「闭包里改 mut」在 js/native 两侧的实现差别不值得赌）
+  for k in disk.keys().to_array() {
+    if loop_reg.loops.contains(k) {
+      continue
+    }
+    match disk.get(k) {
+      Some(lp) => {
+        loop_reg.loops.set(k, lp)
+        added = added + 1
+      }
+      None => ()
+    }
+  }
+  added
+}
+
+///|
+/// 惰性读回：本进程第一次碰 loop 工具时把磁盘上的环并进内存（只尝试一次）。
+/// 位先翻再读 ⇒ 读失败也不会每次调用都重试（重试语义留给显式的 reload）。
+fn loop_ensure_loaded() -> Unit {
+  if loop_boot[0] {
+    return
+  }
+  loop_boot[0] = true
+  ignore(loop_registry_load())
+}
+
+///|
+/// **重启模拟**：内存清零、磁盘不动、复位惰性位——真进程重启的等价面
+/// （新进程 = 空内存 + 同一落点）。生产路径不调用；白盒 §6.9 验收格用它。
+fn loop_forget_memory() -> Unit {
+  loop_reg.loops.clear()
+  loop_boot[0] = false
+}
+
+///|
+/// 落盘回执的两字段（自证「写没写、写到哪」——BUG-74/T0r744 同口径：
+/// 做了没做必须由回执说话，不让调用方猜）。
+fn loop_persist_receipt(lp : @ops.PipelineLoop, persisted : Bool) -> Json {
+  let j = @ops.loop_to_json(lp)
+  match j {
+    Json::Object(m) => {
+      m.set("store_path", Json::string(loop_store_path()))
+      m.set("persisted", Json::boolean(persisted))
+      Json::object(m)
+    }
+    _ => j
+  }
+}
+
+// ---------------------------------------------------------------------------
+// loop 三个工具外壳（轮 192：从注册块的内联闭包挪成包级 fn）
+//
+// 挪出来的唯一理由是**可测**：内联闭包只有注册路径够得着，白盒无法直接驱动
+// 「同一份实现」。注册块（本文件 loop_create/loop_tick/loop_status 三处
+// instrumented_tool）引用的就是下面三个 fn，不存在第二份实现。
+//
+// 与原闭包的语义差只有三处，全部是持久化本身：
+//   ① 入口先 `loop_ensure_loaded()`：磁盘上有的环，内存就该看得见（重启后不失联）；
+//   ② 两个写点（create / tick）之后追加落盘；
+//   ③ 回执带 `store_path` / `persisted` 两字段（loop_status 的输出形状**不变**，
+//      §6.9 验收格要的就是「读回来的 JSON 和写下去的 JSON 逐字段同一」。
+// ---------------------------------------------------------------------------
+
+///|
+fn loop_create_json(args : Json) -> Result[Json, String] {
+  loop_ensure_loaded()
+  let name = get_str(args, "name")
+  if name == "" {
+    return Err("name is required")
+  }
+  match loop_reg.get(name) {
+    Some(_) => return Err("loop already exists: " + name)
+    None => ()
+  }
+  let preset = get_str(args, "preset")
+  let steps : Array[String] = if preset != "" {
+    match @ops.preset_loop(preset) {
+      Ok((s, _)) => s
+      Err(e) => return Err(e)
+    }
+  } else {
+    let raw = get_array(args, "steps")
+    if raw.length() == 0 {
+      return Err("either steps or preset is required")
+    }
+    raw.map(fn(j) {
+      match j {
+        String(s) => s
+        _ => j.stringify()
+      }
+    })
+  }
+  match @ops.validate_loop_steps(steps) {
+    Some(e) => return Err(e)
+    None => ()
+  }
+  let now = now_default()
+  // max_rounds 默认 5（get_int 默认 3，不能直接用）——用 get_int 覆盖默认值，
+  // 复用其 Int32 域饱和守卫（BUG-194：1e300 不再被静默接受成 Int max）。
+  let max_rounds = get_int(args, "max_rounds", default=5)
+  // stop_on_goal / stop_on_exceeded 默认 true（get_bool 默认 false）
+  let stop_on_goal = match args {
+    Object(m) =>
+      match m.get("stop_on_goal") {
+        None => true
+        Some(True) => true
+        Some(False) => false
+        _ => true
+      }
+    _ => true
+  }
+  let stop_on_exceeded = match args {
+    Object(m) =>
+      match m.get("stop_on_exceeded") {
+        None => true
+        Some(True) => true
+        Some(False) => false
+        _ => true
+      }
+    _ => true
+  }
+  let baseline_test_count = get_int(args, "baseline_test_count", default=0)
+  let baseline_open_bug_count = get_int(
+    args,
+    "baseline_open_bug_count",
+    default=0,
+  )
+  let lp = @ops.loop_create(
+    name,
+    steps,
+    now,
+    max_rounds~,
+    stop_on_goal~,
+    stop_on_exceeded~,
+    baseline_test_count~,
+    baseline_open_bug_count~,
+  )
+  loop_reg.set(name, lp)
+  let persisted = loop_store_append(lp)
+  Ok(loop_persist_receipt(lp, persisted))
+}
+
+///|
+/// loop_create 的 async 外壳：与另两个 loop handler 同构——把 loop_create_json
+/// 的 Result[Json, String] 抬成 MCP ToolResult，取参/校验/引擎调用全在内层。
+async fn loop_create_handler(
+  args : Json,
+) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+  match loop_create_json(args) {
+    Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+    Err(e) => Err(@mcp_types.ToolError(e))
+  }
+}
+
+///|
+async fn loop_tick_handler(
+  args : Json,
+) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+  loop_ensure_loaded()
+  let name = get_str(args, "name")
+  match loop_reg.get(name) {
+    None => Err(@mcp_types.ToolError("loop not found: " + name))
+    Some(lp) => {
+      let now = now_default()
+      let project_health_grade = get_str(args, "project_health_grade")
+      let blocked_tasks = get_int(args, "blocked_tasks", default=0)
+      let current_test_count = get_int(args, "current_test_count", default=0)
+      let current_open_bug_count = get_int(
+        args,
+        "current_open_bug_count",
+        default=0,
+      )
+      let result = @ops.loop_tick(
+        lp,
+        now,
+        current_test_count~,
+        current_open_bug_count~,
+        project_health_grade~,
+        blocked_tasks~,
+      )
+      loop_reg.set(name, result.loop_after)
+      let persisted = loop_store_append(result.loop_after)
+      let json = Json::object(
+        Map([
+          ("next_mode", Json::string(result.next_mode)),
+          ("next_step_idx", Json::number(result.next_step_idx.to_double())),
+          ("next_round", Json::number(result.next_round.to_double())),
+          ("should_stop", Json::boolean(result.should_stop)),
+          ("stop_reason", Json::string(result.stop_reason)),
+          ("history", result.history_json),
+          ("loop_after", @ops.loop_to_json(result.loop_after)),
+          ("persisted", Json::boolean(persisted)),
+        ]),
+      )
+      Ok(@mcp.ToolResult::text(json.stringify()))
+    }
+  }
+}
+
+///|
+async fn loop_status_handler(
+  args : Json,
+) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+  loop_ensure_loaded()
+  let name = get_str(args, "name")
+  if name != "" {
+    match loop_reg.get(name) {
+      None => Err(@mcp_types.ToolError("loop not found: " + name))
+      Some(lp) => Ok(@mcp.ToolResult::text(@ops.loop_to_json(lp).stringify()))
+    }
+  } else {
+    let names = loop_reg.list_names()
+    let arr = names.map(fn(n) {
+      match loop_reg.get(n) {
+        Some(lp) => @ops.loop_to_json(lp)
+        None => Json::object(Map([]))
+      }
+    })
+    Ok(@mcp.ToolResult::text(Json::array(arr).stringify()))
+  }
+}
+
+///|
 /// 六顶帽辩论的单场会话（R118 P1-b）。verdicts 是该 session 下已登记的帽子判决。
 priv struct DebateSession {
   threshold : Double
@@ -4316,7 +4667,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "loop_create",
-    "创建组合环（Phase 6 组合环编排层）：给定环名 + steps 数组或预设名（fix-iterate/build-verify/full-iterate），创建并注册到进程内 LoopRegistry。",
+    "创建组合环（Phase 6 组合环编排层）：给定环名 + steps 数组或预设名（fix-iterate/build-verify/full-iterate），注册到进程内 LoopRegistry **并追加落盘**（JSONL，落点随 FIST_DB_PATH/store 数据目录改道，轮 192）。返回 = 环 JSON（name/steps/current_idx/round/max_rounds/stop_on_goal/stop_on_exceeded/created_at/updated_at/status/stop_reason/goal_reached/exceeded/baseline_test_count/baseline_open_bug_count）+ `store_path`(落点) + `persisted`(落盘成没成；false 不代表创建失败——内存态已生效，只是没写进文件)。同名环若已在落盘里存在，重启后也算「已存在」，会被拒。",
     schema(
       {
         "name": string_prop("组合环唯一名称(必填)"),
@@ -4344,87 +4695,12 @@ pub async fn run_server() -> Unit {
       },
       ["name"],
     ),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let name = get_str(args, "name")
-      if name == "" {
-        return Err(@mcp_types.ToolError("name is required"))
-      }
-      match loop_reg.get(name) {
-        Some(_) =>
-          return Err(@mcp_types.ToolError("loop already exists: " + name))
-        None => ()
-      }
-      let preset = get_str(args, "preset")
-      let steps : Array[String] = if preset != "" {
-        match @ops.preset_loop(preset) {
-          Ok((s, _)) => s
-          Err(e) => return Err(@mcp_types.ToolError(e))
-        }
-      } else {
-        let raw = get_array(args, "steps")
-        if raw.length() == 0 {
-          return Err(@mcp_types.ToolError("either steps or preset is required"))
-        }
-        raw.map(fn(j) {
-          match j {
-            String(s) => s
-            _ => j.stringify()
-          }
-        })
-      }
-      match @ops.validate_loop_steps(steps) {
-        Some(e) => return Err(@mcp_types.ToolError(e))
-        None => ()
-      }
-      let now = now_default()
-      // max_rounds 默认 5（get_int 默认 3，不能直接用）——用 get_int 覆盖默认值，
-      // 复用其 Int32 域饱和守卫（BUG-194：1e300 不再被静默接受成 Int max）。
-      let max_rounds = get_int(args, "max_rounds", default=5)
-      // stop_on_goal / stop_on_exceeded 默认 true（get_bool 默认 false）
-      let stop_on_goal = match args {
-        Object(m) =>
-          match m.get("stop_on_goal") {
-            None => true
-            Some(True) => true
-            Some(False) => false
-            _ => true
-          }
-        _ => true
-      }
-      let stop_on_exceeded = match args {
-        Object(m) =>
-          match m.get("stop_on_exceeded") {
-            None => true
-            Some(True) => true
-            Some(False) => false
-            _ => true
-          }
-        _ => true
-      }
-      let baseline_test_count = get_int(args, "baseline_test_count", default=0)
-      let baseline_open_bug_count = get_int(
-        args,
-        "baseline_open_bug_count",
-        default=0,
-      )
-      let lp = @ops.loop_create(
-        name,
-        steps,
-        now,
-        max_rounds~,
-        stop_on_goal~,
-        stop_on_exceeded~,
-        baseline_test_count~,
-        baseline_open_bug_count~,
-      )
-      loop_reg.set(name, lp)
-      Ok(@mcp.ToolResult::text(@ops.loop_to_json(lp).stringify()))
-    },
+    loop_create_handler,
   )
   s1 = instrumented_tool(
     s1,
     "loop_tick",
-    "推进一环（Phase 6）：从 LoopRegistry 取出当前 PipelineLoop，调 loop_tick 纯函数推进，更新 registry，返回 LoopTickResult JSON（含 next_mode / should_stop / stop_reason / loop_after）。",
+    "推进一环（Phase 6）：从 LoopRegistry 取出当前 PipelineLoop（内存里没有先按落盘读回），调 loop_tick 纯函数推进，更新 registry **并追加落盘**，返回 LoopTickResult JSON（含 next_mode / should_stop / stop_reason / loop_after / persisted）。",
     schema(
       {
         "name": string_prop("已注册环名称(必填)"),
@@ -4439,53 +4715,12 @@ pub async fn run_server() -> Unit {
       },
       ["name"],
     ),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let name = get_str(args, "name")
-      match loop_reg.get(name) {
-        None => return Err(@mcp_types.ToolError("loop not found: " + name))
-        Some(lp) => {
-          let now = now_default()
-          let project_health_grade = get_str(args, "project_health_grade")
-          let blocked_tasks = get_int(args, "blocked_tasks", default=0)
-          let current_test_count = get_int(
-            args,
-            "current_test_count",
-            default=0,
-          )
-          let current_open_bug_count = get_int(
-            args,
-            "current_open_bug_count",
-            default=0,
-          )
-          let result = @ops.loop_tick(
-            lp,
-            now,
-            current_test_count~,
-            current_open_bug_count~,
-            project_health_grade~,
-            blocked_tasks~,
-          )
-          loop_reg.set(name, result.loop_after)
-          let json = Json::object(
-            Map([
-              ("next_mode", Json::string(result.next_mode)),
-              ("next_step_idx", Json::number(result.next_step_idx.to_double())),
-              ("next_round", Json::number(result.next_round.to_double())),
-              ("should_stop", Json::boolean(result.should_stop)),
-              ("stop_reason", Json::string(result.stop_reason)),
-              ("history", result.history_json),
-              ("loop_after", @ops.loop_to_json(result.loop_after)),
-            ]),
-          )
-          Ok(@mcp.ToolResult::text(json.stringify()))
-        }
-      }
-    },
+    loop_tick_handler,
   )
   s1 = instrumented_tool(
     s1,
     "loop_status",
-    "查询组合环状态（Phase 6）。无 name 参数时列出所有已注册环的摘要；有 name 参数时返回单个环完整 JSON。",
+    "查询组合环状态（Phase 6）。无 name 参数时列出所有已注册环的摘要；有 name 参数时返回单个环完整 JSON（name/steps/current_idx/round/max_rounds/stop_on_goal/stop_on_exceeded/created_at/updated_at/status/stop_reason/goal_reached/exceeded/baseline_test_count/baseline_open_bug_count）。本进程首次调用会先从落盘（JSONL，落点见 loop_create）读回同名环，故 **server 重启后状态仍在**；读回后仍没有才报 loop not found。",
     schema(
       {
         "name": string_prop(
@@ -4494,25 +4729,7 @@ pub async fn run_server() -> Unit {
       },
       [],
     ),
-    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
-      let name = get_str(args, "name")
-      if name != "" {
-        match loop_reg.get(name) {
-          None => Err(@mcp_types.ToolError("loop not found: " + name))
-          Some(lp) =>
-            Ok(@mcp.ToolResult::text(@ops.loop_to_json(lp).stringify()))
-        }
-      } else {
-        let names = loop_reg.list_names()
-        let arr = names.map(fn(n) {
-          match loop_reg.get(n) {
-            Some(lp) => @ops.loop_to_json(lp)
-            None => Json::object(Map([]))
-          }
-        })
-        Ok(@mcp.ToolResult::text(Json::array(arr).stringify()))
-      }
-    },
+    loop_status_handler,
   )
   s1 = instrumented_tool(
     s1,
@@ -5967,7 +6184,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
       let now = now_default()
-      let secs = @ops.iso_to_secs(now)
+      let secs = @ops.iso_to_secs_i64(now)
       let w = get_int(args, "window_secs", default=60)
       let thr = get_int(args, "threshold", default=3)
       let rec = get_int(args, "recovery_secs", default=30)
@@ -6035,7 +6252,7 @@ pub async fn run_server() -> Unit {
       }
       let circuit = get_str(args, "circuit")
       let now = now_default()
-      let secs = @ops.iso_to_secs(now)
+      let secs = @ops.iso_to_secs_i64(now)
       Ok(
         @mcp.ToolResult::text(
           eng.circuit_succeed(ns~, circuit~, now_secs=secs).stringify(),
@@ -6061,7 +6278,7 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let circuit = get_str(args, "circuit")
       let now = now_default()
-      let secs = @ops.iso_to_secs(now)
+      let secs = @ops.iso_to_secs_i64(now)
       let probe_limit = get_int(args, "probe_limit", default=1)
       // 验收项「多租户物理隔离」：本工具收了 namespace 却把模块级 `engine`
       // （主库）传下去 ⇒ ns 只剩 tasks.ns 列标签，行照样落 fist-mbt.db，
@@ -8705,11 +8922,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "report_bug",
-    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（**绝对** + normalize 后的落点）与 server_cwd（server 进程自己的工作目录，同样规范化成正斜杠）——BUG-134：这一句从前是真的悬空（实现回显的是相对 server cwd 的规范化路径，账写进哪本台账从回执本身判不出来），现在两者同批回显，一比就知道有没有写错轨；server_cwd 为空串表示宿主取不到 cwd，此时 resolved_path 退回相对形态，别当绝对落点读。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）；auto_push(可选默认false)：上报后立即尝试推送到远端 issue 系统——GitHub 优先，失败自动切 GitCode fallback；remote_fallback(可选默认 '[\"github\",\"gitcode\"]')：远端 fallback 顺序 JSON 数组字符串，auto_push=true 时生效。返回 {bug_id, id, status, path, resolved_path, server_cwd, project_dir, task_namespace, task_id?, auto_push?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
+    "上报一个运行时 bug：追加到 {project_dir}/memory/bugs.md（OPEN 状态账本）。**注意：** project_dir 必须是相对路径（拒绝绝对路径/盘符/..）：**未设 FIST_CALLER_CWD 时相对 server 进程 cwd；设置时相对调用方 cwd**。返回值含 resolved_path（**绝对** + normalize 后的落点）与 server_cwd（server 进程自己的工作目录，同样规范化成正斜杠）——BUG-134：这一句从前是真的悬空（实现回显的是相对 server cwd 的规范化路径，账写进哪本台账从回执本身判不出来），现在两者同批回显，一比就知道有没有写错轨；server_cwd 为空串表示宿主取不到 cwd，此时 resolved_path 退回相对形态，别当绝对落点读。参数：project_dir(必填)、summary(必填)、detail(可选)、severity(可选 critical/high/medium/low)、ref_call_id(可选，指向 call_log 的 seq)、reported_by(可选)、publish_task(可选默认false)：为 true 时同时把'修复 bug: <summary>'发布为独立根任务，供自驱/定时流水线认领修复，形成上报→修复闭环；task_ns(可选，缺省 bugs)：修复单落到哪个命名空间——想与本批次任务树同库对账就显式传它，否则默认落在 ns `bugs`（那是另一棵树，按批次 ns 查会查不到，BUG-8）；auto_push(可选默认false)：上报后立即尝试推送到远端 issue 系统——GitHub 优先，失败自动切 GitCode fallback；remote_fallback(可选默认 '[\"github\",\"gitcode\"]')：远端 fallback 顺序 JSON 数组字符串，auto_push=true 时生效。返回 {bug_id, id, status, path, resolved_path, server_cwd, project_dir, task_namespace, task_id?, auto_push?}：**bug_id 与 id 是同一个编号的两个键**（BUG-11：写侧只发 bug_id、读侧 bug_list 只发 id，按任一侧字段名对账的另一侧会静默拿到 null）；task_namespace 回显修复单实际落在哪个 ns（未发单时是空串，不是 'bugs'）。**账本状态**（OPEN/FIXED/DUPLICATE/FALSE_POSITIVE）写在条目抬头，改它走 `bug_fix`（标修好，同一笔落 ### FIXED 小记）或 `bug_mark_status`（改判 OPEN/DUPLICATE/FALSE_POSITIVE）——BUG-9 之前这里写着「本模块不提供关闭 API」，账本因此只写不销；对外那句「X 条待修 / Y 条已修」只从抬头状态反解，不是数小记条数。",
     schema(
       {
         "project_dir": string_prop(
-          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+          "项目目录（必填，未设 FIST_CALLER_CWD 时相对 server cwd；设置时相对调用方 cwd，拒绝绝对路径/盘符/..）",
         ),
         "summary": string_prop("bug 摘要（必填）"),
         "detail": string_prop("详细描述(可选)"),
@@ -9206,11 +9423,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "bug_list",
-    "列出 {project_dir}/memory/bugs.md 里的 bug 条目。**返回是对象不是裸数组**：{bugs:[{id,bug_id,ts,severity,status,summary,detail,task_id?,linked_task_id?,linked_task_status?}], count, path, project_dir, resolved_path, server_cwd, open_with_linked_done, note}（BUG-9：linked_task_status 取自任务库实时状态，open_with_linked_done>0 就是「账本说没修、任务库说修完了」两份账互相矛盾，一次调用即可看见；抬头状态位用 bug_fix（标修好）/ bug_mark_status（改判）改，判据与闭集见 memory/bugs.md「记账规则」）（BUG-74 同族：按 `bl if isinstance(bl,list)` 取会恒得空，看起来像『账本没 bug』）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。返回值含 resolved_path（**绝对** + normalize 后的落点）与 server_cwd（server 进程自己的工作目录，同样规范化成正斜杠）——BUG-134：这一句从前是真的悬空（实现回显的是相对 server cwd 的规范化路径，账写进哪本台账从回执本身判不出来），现在两者同批回显，一比就知道有没有写错轨；server_cwd 为空串表示宿主取不到 cwd，此时 resolved_path 退回相对形态，别当绝对落点读。参数：project_dir(必填)。",
+    "列出 {project_dir}/memory/bugs.md 里的 bug 条目。**返回是对象不是裸数组**：{bugs:[{id,bug_id,ts,severity,status,summary,detail,task_id?,linked_task_id?,linked_task_status?}], count, path, project_dir, resolved_path, server_cwd, open_with_linked_done, note}（BUG-9：linked_task_status 取自任务库实时状态，open_with_linked_done>0 就是「账本说没修、任务库说修完了」两份账互相矛盾，一次调用即可看见；抬头状态位用 bug_fix（标修好）/ bug_mark_status（改判）改，判据与闭集见 memory/bugs.md「记账规则」）（BUG-74 同族：按 `bl if isinstance(bl,list)` 取会恒得空，看起来像『账本没 bug』）。用于自驱流水线扫描待修复 bug 并认领。**注意：** project_dir 必须是相对路径（拒绝绝对路径/盘符/..）：**未设 FIST_CALLER_CWD 时相对 server 进程 cwd；设置时相对调用方 cwd**。返回值含 resolved_path（**绝对** + normalize 后的落点）与 server_cwd（server 进程自己的工作目录，同样规范化成正斜杠）——BUG-134：这一句从前是真的悬空（实现回显的是相对 server cwd 的规范化路径，账写进哪本台账从回执本身判不出来），现在两者同批回显，一比就知道有没有写错轨；server_cwd 为空串表示宿主取不到 cwd，此时 resolved_path 退回相对形态，别当绝对落点读。参数：project_dir(必填)。",
     schema(
       {
         "project_dir": string_prop(
-          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+          "项目目录（必填，未设 FIST_CALLER_CWD 时相对 server cwd；设置时相对调用方 cwd，拒绝绝对路径/盘符/..）",
         ),
       },
       ["project_dir"],
@@ -9233,11 +9450,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "bug_fix",
-    "批量把缺陷抬头标成 FIXED，并**同一笔**追加一条点名整批的 `### FIXED(<盖章时间> / BUG-a, BUG-b)` 小记（BUG-9 的控制面正身：账本此前只写不销，「还剩几条没修」只能人肉数）。为什么是一笔而不是两步：memory/bugs.md 的记账规则把「标 FIXED」与「有小记点名」做成互锁（gen_plugins 生成前硬门①②），分两次调用中间就是一本生成器拒绝产出的红账本。返回 {bug_ids, heading_changed, already_fixed, note_written, note_header, path}：**heading_changed=本次真正改抬头的条数、already_fixed=本就 FIXED 只补小记的条数、note_written=false 表示同抬头小记已存在（幂等重跑，不重复写）**；evidence 必填非空——「说修好了但没人写改在哪」正是历史上假 GREEN 的来源；终态之间不互跳（DUPLICATE/FALSE_POSITIVE 要先用 bug_mark_status 回 OPEN）；编号不存在整笔拒绝，不许静默少写一条。时间戳由服务端盖章，调用面没有 ts/now 参数（BUG-33 政策）。project_dir 必须是**相对 server 进程 cwd** 的相对路径（拒绝绝对路径/盘符/..）。参数：project_dir(必填)、bug_ids(必填，编号数组，`9` 与 `BUG-9` 两种写法都收)、evidence(必填非空)。",
+    "批量把缺陷抬头标成 FIXED，并**同一笔**追加一条点名整批的 `### FIXED(<盖章时间> / BUG-a, BUG-b)` 小记（BUG-9 的控制面正身：账本此前只写不销，「还剩几条没修」只能人肉数）。为什么是一笔而不是两步：memory/bugs.md 的记账规则把「标 FIXED」与「有小记点名」做成互锁（gen_plugins 生成前硬门①②），分两次调用中间就是一本生成器拒绝产出的红账本。返回 {bug_ids, heading_changed, already_fixed, note_written, note_header, path}：**heading_changed=本次真正改抬头的条数、already_fixed=本就 FIXED 只补小记的条数、note_written=false 表示同抬头小记已存在（幂等重跑，不重复写）**；evidence 必填非空——「说修好了但没人写改在哪」正是历史上假 GREEN 的来源；终态之间不互跳（DUPLICATE/FALSE_POSITIVE 要先用 bug_mark_status 回 OPEN）；编号不存在整笔拒绝，不许静默少写一条。时间戳由服务端盖章，调用面没有 ts/now 参数（BUG-33 政策）。project_dir 必须是相对路径（拒绝绝对路径/盘符/..）：**未设 FIST_CALLER_CWD 时相对 server 进程 cwd；设置时相对调用方 cwd**。参数：project_dir(必填)、bug_ids(必填，编号数组，`9` 与 `BUG-9` 两种写法都收)、evidence(必填非空)。",
     schema(
       {
         "project_dir": string_prop(
-          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+          "项目目录（必填，未设 FIST_CALLER_CWD 时相对 server cwd；设置时相对调用方 cwd，拒绝绝对路径/盘符/..）",
         ),
         "bug_ids": array_prop(
           "要标修好的编号数组（必填，如 [\"BUG-9\",\"BUG-30\"]）",
@@ -9272,11 +9489,11 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "bug_mark_status",
-    "就地改**一条**缺陷的抬头状态（BUG-9 控制面的另一半：改判，不是销账）。返回 {bug_id, id, status, from_status, changed, duplicate_of?, path}：**changed=false 表示目标状态与主编号都没变（幂等 no-op，一个字节都不写）、from_status 是改之前的状态**。状态闭集 = OPEN/FIXED/DUPLICATE/FALSE_POSITIVE（真源 memory/bugs.md「记账规则」，与 gen_plugins 的闭集判据同源）。**FIXED 在这里一律被拒**：只改抬头会绕过「标 FIXED 必须有小记点名」那道硬门，产出 gen_plugins 拒绝生成的红账本，标修好请走 bug_fix。DUPLICATE 必须带 dup_of 且主编号要存在、不是自己、自身不再是 DUPLICATE（链条禁止）；FALSE_POSITIVE 传非空 evidence 时在条目正文追加一行 `- false_positive(<盖章时间>): …` 立据（只追加、不改既有叙述）。写盘面只有一行抬头，叙述面（正文/小记/reports/轮次日志）一律只追加——改掉旧状态不销毁历史。时间戳由服务端盖章，调用面没有 ts/now 参数（BUG-33 政策）。参数：project_dir(必填，相对 cwd)、bug_id(必填)、status(必填，FIXED 会被拒)、dup_of(仅 DUPLICATE 必填)、evidence(仅 FALSE_POSITIVE 可选)。",
+    "就地改**一条**缺陷的抬头状态（BUG-9 控制面的另一半：改判，不是销账）。返回 {bug_id, id, status, from_status, changed, duplicate_of?, path}：**changed=false 表示目标状态与主编号都没变（幂等 no-op，一个字节都不写）、from_status 是改之前的状态**。状态闭集 = OPEN/FIXED/DUPLICATE/FALSE_POSITIVE（真源 memory/bugs.md「记账规则」，与 gen_plugins 的闭集判据同源）。**FIXED 在这里一律被拒**：只改抬头会绕过「标 FIXED 必须有小记点名」那道硬门，产出 gen_plugins 拒绝生成的红账本，标修好请走 bug_fix。DUPLICATE 必须带 dup_of 且主编号要存在、不是自己、自身不再是 DUPLICATE（链条禁止）；FALSE_POSITIVE 传非空 evidence 时在条目正文追加一行 `- false_positive(<盖章时间>): …` 立据（只追加、不改既有叙述）。写盘面只有一行抬头，叙述面（正文/小记/reports/轮次日志）一律只追加——改掉旧状态不销毁历史。时间戳由服务端盖章，调用面没有 ts/now 参数（BUG-33 政策）。参数：project_dir(必填，未设 FIST_CALLER_CWD 时相对 server cwd；设置时相对调用方 cwd)、bug_id(必填)、status(必填，FIXED 会被拒)、dup_of(仅 DUPLICATE 必填)、evidence(仅 FALSE_POSITIVE 可选)。",
     schema(
       {
         "project_dir": string_prop(
-          "项目目录（必填，**相对 server 进程 cwd**，拒绝绝对路径/盘符/..）",
+          "项目目录（必填，未设 FIST_CALLER_CWD 时相对 server cwd；设置时相对调用方 cwd，拒绝绝对路径/盘符/..）",
         ),
         "bug_id": string_prop(
           "缺陷编号（必填，`9` 与 `BUG-9` 都收）",
