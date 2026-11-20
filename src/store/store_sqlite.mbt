@@ -408,6 +408,100 @@ pub fn SqliteStore::fb_purge_expired(self : SqliteStore, ns : String, now : Int)
 }
 
 ///|
+/// 0.3.15 task_events：任务生命周期审计账（append-only）。
+/// 追加一行「谁在何时对这个任务做了什么」；账只增不改不删。
+pub fn SqliteStore::event_append(
+  self : SqliteStore,
+  ns : String,
+  task_id : String,
+  event : String,
+  actor : String,
+  detail : String,
+  ts : String,
+) -> Bool {
+  match self.db {
+    None => false
+    Some(db) =>
+      match db.prepare(
+        "INSERT INTO task_events (ns, task_id, event, actor, detail, ts) VALUES (?, ?, ?, ?, ?, ?)",
+      ) {
+        None => false
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, event))),
+          )
+          ignore(
+            stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, actor))),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, detail)),
+            ),
+          )
+          ignore(
+            stmt.bind(6, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ts))),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          true
+        }
+      }
+  }
+}
+
+///|
+/// 0.3.15 task_events：按任务倒序读审计流（最新在前，limit 截断）。
+pub fn SqliteStore::event_list(
+  self : SqliteStore,
+  ns : String,
+  task_id : String,
+  limit : Int,
+) -> Array[Json] {
+  let out : Array[Json] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT event, actor, detail, ts FROM task_events WHERE ns = ? AND task_id = ? ORDER BY id DESC LIMIT ?"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+            ),
+          )
+          ignore(stmt.bind(3, @sqlite.SqlValue::Int(limit)))
+          while stmt.step() {
+            let m : Map[String, Json] = Map([])
+            m.set("event", Json::string(evolve_col_text(stmt, 0)))
+            m.set("actor", Json::string(evolve_col_text(stmt, 1)))
+            m.set("detail", Json::string(evolve_col_text(stmt, 2)))
+            m.set("ts", Json::string(evolve_col_text(stmt, 3)))
+            out.push(Json::object(m))
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
 /// 默认库路径（相对 server 进程 cwd）。
 let default_db_path : String = "fist-mbt.db"
 
@@ -479,6 +573,10 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     // （archive.task_json 同款模式：结构加字段不迁表）；唯一真相是持久化表，
     // 进程内状态不许冒充落库（BUG-119 同族哲学）。
     "CREATE TABLE IF NOT EXISTS file_binds (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', bind_json TEXT NOT NULL DEFAULT '', task_id TEXT NOT NULL DEFAULT '', bound_at INTEGER NOT NULL DEFAULT 0, ttl_secs INTEGER NOT NULL DEFAULT 0, UNIQUE(ns, project_dir, path))",
+    // 0.3.15 task_events：任务生命周期审计账（append-only，只增不改不删）。
+    // 每次 claim/submit/verify/reject/archive/reopen 成功迁移追加一行，
+    // 回答「谁在何时对这个任务做了什么」——多管家审计刚需。
+    "CREATE TABLE IF NOT EXISTS task_events (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT '', task_id TEXT NOT NULL DEFAULT '', event TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', ts TEXT NOT NULL DEFAULT '')",
     // 锁违例记录（过期未续 / 被抢占），追加式
     "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
     // 项目助理登记（multi-agent-lock v3 阶段2）：agent 为主键，同一助理一行
