@@ -89,6 +89,15 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
           db.close()
           return None
         }
+        // file_binds 幂等迁移：旧库建表时只有 id/ns/project_dir/path/bind_json，
+        // 缺 task_id/bound_at/ttl_secs —— 而 fb_release_task / fb_purge_expired 的
+        // DELETE 都引用这三列，js 侧 prepare 抛未捕获异常直接打死 server
+        // （实测日志 fist_server.log: crash.uncaughtException no such column: ttl_secs）。
+        // 补列失败同样按 fail-closed 拒载，绝不留一颗运行期炸弹。
+        if !s.ensure_file_bind_columns() {
+          db.close()
+          return None
+        }
         // 启用 WAL 模式提升并发读写性能
         s.exec_if_ok("PRAGMA journal_mode=WAL")
         s.exec_if_ok("PRAGMA synchronous=NORMAL")
@@ -469,7 +478,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     // 键 = (ns, project_dir, path)；release = 删行。载荷 bind_json 逐字存 FileBind
     // （archive.task_json 同款模式：结构加字段不迁表）；唯一真相是持久化表，
     // 进程内状态不许冒充落库（BUG-119 同族哲学）。
-    "CREATE TABLE IF NOT EXISTS file_binds (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', bind_json TEXT NOT NULL DEFAULT '', UNIQUE(ns, project_dir, path))",
+    "CREATE TABLE IF NOT EXISTS file_binds (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', bind_json TEXT NOT NULL DEFAULT '', task_id TEXT NOT NULL DEFAULT '', bound_at INTEGER NOT NULL DEFAULT 0, ttl_secs INTEGER NOT NULL DEFAULT 0, UNIQUE(ns, project_dir, path))",
     // 锁违例记录（过期未续 / 被抢占），追加式
     "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
     // 项目助理登记（multi-agent-lock v3 阶段2）：agent 为主键，同一助理一行
@@ -561,6 +570,66 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
         ),
         (
           "created_by", "ALTER TABLE tasks ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
+        ),
+      ]
+      let mut ok = true
+      for (name, sql) in needed {
+        if !cols.contains(name) {
+          match db.exec(sql) {
+            true => ()
+            false => ok = false
+          }
+          cols.set(name, true)
+        }
+      }
+      ok
+    }
+  }
+}
+
+///|
+/// 幂等迁移：确保 file_binds 表含 filebind 生命周期挂钩需要的三列
+/// （task_id / bound_at / ttl_secs）。
+///
+/// 旧代际库建表时只有 id/ns/project_dir/path/bind_json（见 create_schema 旧 SQL），
+/// 而 fb_release_task 的 `DELETE ... WHERE task_id = ?` 与 fb_purge_expired 的
+/// `DELETE ... WHERE ttl_secs > 0 AND bound_at + ttl_secs < ?` 都引用这三列 ⇒
+/// js 侧 prepare 抛未捕获异常，直接打死 server 进程（实测日志 fist_server.log:2
+/// `crash.uncaughtException Error: no such column: ttl_secs`，server.exit code=1）。
+/// 这里启动期探测并补列；补不动返回 false，由 open 决定**拒载**（明确失败，
+/// 而不是留一颗运行期炸弹）。重复调用不报错、不加多列（命中已有列直接跳过）；
+/// 已有绑定行自动拿到默认值（task_id='' / bound_at=0 / ttl_secs=0，语义=未带 TTL、
+/// 不按任务归属，向后兼容）。与 ensure_task_columns 同款 fail-closed 语义：
+/// 探测失败走显式 `probe_ok=false` 分支返回 false，**绝不吞 FFI 的 JS 运行时异常**。
+fn SqliteStore::ensure_file_bind_columns(self : SqliteStore) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let cols : Map[String, Bool] = Map([])
+      let mut probe_ok = true
+      match db.prepare("PRAGMA table_info(file_binds)") {
+        None => probe_ok = false
+        Some(stmt) => {
+          while stmt.step() {
+            let name = str_from_bytes(stmt.column_text(1))
+            cols.set(name, true)
+          }
+          stmt.finalize()
+        }
+      }
+      if !probe_ok {
+        return false
+      }
+      // 旧库可能缺的三列；其余列（id/ns/project_dir/path/bind_json）自建表起即在。
+      let needed : Array[(String, String)] = [
+        (
+          "task_id", "ALTER TABLE file_binds ADD COLUMN task_id TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+          "bound_at", "ALTER TABLE file_binds ADD COLUMN bound_at INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+          "ttl_secs", "ALTER TABLE file_binds ADD COLUMN ttl_secs INTEGER NOT NULL DEFAULT 0",
         ),
       ]
       let mut ok = true

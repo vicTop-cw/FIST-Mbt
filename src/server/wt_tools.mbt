@@ -796,3 +796,160 @@ pub async fn wt_destroy_impl(
   }
   Ok(Json::object(m))
 }
+
+///|
+/// F094 Phase 3 · wt_dispatch：按执行器派发沙箱。路径/分支一律由服务端推导
+/// （path=wt/<task>-<executor>，branch=wt/<task>-<executor>，相对 project_dir），
+/// 调用方只给 task/executor——防路径注入。同 task+executor 已有账且目录健在
+/// ⇒ 幂等返回（reused=true），不重建。
+pub async fn wt_dispatch_impl(
+  project_dir : String,
+  task : String,
+  executor : String,
+  base : String,
+  ttl_min : Int32,
+  timeout_ms : Int32,
+) -> Result[Json, String] {
+  if !wt_task_ok(task) {
+    return Err("非法 task id：只允许字母/数字/_/-（≤64 字符）")
+  }
+  if !wt_task_ok(executor) {
+    return Err("非法 executor：只允许字母/数字/_/-")
+  }
+  let wt_task = task + "-" + executor
+  if !wt_task_ok(wt_task) {
+    return Err("派发账 id <task>-<executor> 拼后超长（≤64 字符），换更短的 task/executor")
+  }
+  let path = "wt/" + wt_task
+  let branch = "wt/" + wt_task
+  // 幂等：同 task+executor 已有账且目录健在 ⇒ reused（不重建；reclaimable 与否如实透出）
+  match wt_load(project_dir, wt_task) {
+    Some(prev) => {
+      let prev_path = wt_norm_path(wt_s(prev, "path"))
+      if wt_norm_path(path) == prev_path && @fs.path_exists(path) {
+        let m : Map[String, Json] = Map([])
+        m.set("ok", Json::boolean(true))
+        m.set("task", Json::string(task))
+        m.set("executor", Json::string(executor))
+        m.set("path", Json::string(path))
+        m.set("branch", Json::string(wt_s(prev, "branch")))
+        m.set("created_sha", Json::string(wt_s(prev, "created_sha")))
+        m.set("reused", Json::boolean(true))
+        m.set(
+          "note",
+          Json::string("该执行器的沙箱已在派（账在、目录在），幂等返回不重建"),
+        )
+        return Ok(Json::object(m))
+      }
+    }
+    None => ()
+  }
+  let created = wt_create_impl(
+    project_dir,
+    path,
+    branch,
+    false,
+    wt_task,
+    base,
+    ttl_min,
+    timeout_ms,
+  )
+  match created {
+    Ok(j) => {
+      let m = match j {
+        Object(m) => m
+        _ => Map([])
+      }
+      m.set("task", Json::string(task))
+      m.set("executor", Json::string(executor))
+      m.set("reused", Json::boolean(false))
+      Ok(Json::object(m))
+    }
+    Err(e) => Err(e)
+  }
+}
+
+///|
+/// F094 Phase 3 · wt_collect：合并收口 + 回收。**脏先看**（沙箱有未提交改动
+/// ⇒ blocked，提示先 commit）；ff-only 优先，主线也前进导致 ff 不可行 ⇒
+/// blocked 点名（合并冲突由管家 reject 协调，force=true 才允许 --no-ff 强并）。
+/// merge 成功 ⇒ wt_destroy 回收沙箱 + 分支删除（成果已并入主线）。
+pub async fn wt_collect_impl(
+  project_dir : String,
+  task : String,
+  executor : String,
+  force : Bool,
+  timeout_ms : Int32,
+) -> Result[Json, String] {
+  let wt_task = task + "-" + executor
+  let manifest = match wt_load(project_dir, wt_task) {
+    Some(j) => j
+    None =>
+      return Err(
+        "无派发账（task=" + task + ", executor=" + executor + "）；先 wt_dispatch",
+      )
+  }
+  let path = wt_s(manifest, "path")
+  let branch = wt_s(manifest, "branch")
+  if !@fs.path_exists(path) {
+    return Err("沙箱目录不存在（path=" + path + "）；账存但目录丢，走 wt_destroy 清账")
+  }
+  // 脏先看（与 wt_status 同族裁决序）：未提交改动 = 还没准备好收口
+  let (dok, _, dout, _) = wt_git(["status", "--porcelain"], path, timeout_ms)
+  let dirty = if dok { wt_count_lines(dout) } else { -1 }
+  if dirty != 0 {
+    return Err(
+      "blocked：沙箱有 " +
+      dirty.to_string() +
+      " 条未提交改动（先在沙箱内 commit 再 collect；收口收的是提交，不是工作区）",
+    )
+  }
+  // ff-only 优先
+  let (mok, _, _, merr) = wt_git(
+    ["merge", "--ff-only", branch],
+    project_dir,
+    timeout_ms,
+  )
+  let mut merged_mode = ""
+  if mok {
+    merged_mode = "ff"
+  } else if force {
+    let (ok2, _, _, _) = wt_git(
+      ["merge", "--no-ff", branch],
+      project_dir,
+      timeout_ms,
+    )
+    if !ok2 {
+      return Err("blocked：--no-ff 强并也失败（真正的合并冲突，管家 reject 协调后重来）")
+    }
+    merged_mode = "no-ff"
+  } else {
+    return Err(
+      "blocked：主线已前进，ff-only 不可行（" +
+      merr.trim().to_owned() +
+      "）；force=true 才允许 --no-ff 强并，或先在沙箱内 rebase",
+    )
+  }
+  // merge 后分支尖已并入主线 ⇒ 回收沙箱 + 删分支（成果在主线，沙箱使命结束）
+  let destroyed = wt_destroy_impl(
+    project_dir,
+    path,
+    false,
+    true,
+    timeout_ms,
+  )
+  let m : Map[String, Json] = Map([])
+  m.set("ok", Json::boolean(true))
+  m.set("task", Json::string(task))
+  m.set("executor", Json::string(executor))
+  m.set("path", Json::string(path))
+  m.set("branch", Json::string(branch))
+  m.set("merged_mode", Json::string(merged_mode))
+  m.set("collect_blocked", Json::boolean(false))
+  match destroyed {
+    Ok(d) =>
+      m.set("destroy_note", Json::string(wt_s(d, "note")))
+    Err(e) => m.set("destroy_note", Json::string(e))
+  }
+  Ok(Json::object(m))
+}

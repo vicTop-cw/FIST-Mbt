@@ -1746,7 +1746,7 @@ fn executor_machine_merge(
 /// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
 /// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
 /// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
-let project_version : String = "0.3.13"
+let project_version : String = "0.3.14"
 
 ///|
 /// —— 结果转换辅助 ——
@@ -8901,6 +8901,89 @@ pub async fn run_server() -> Unit {
       let timeout_ms = get_int(args, "timeout_ms", default=30000)
       match
         wt_destroy_impl(project_dir, path, force, delete_branch, timeout_ms) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  // ---- F094 Phase 3：worktree 派发编排（dispatch 分配沙箱 / collect 合并收口）----
+  s1 = instrumented_tool(
+    s1,
+    "wt_dispatch",
+    "F094 Phase 3：按执行器派发 worktree 沙箱。路径/分支由服务端推导（path=wt/<task>-<executor>，branch=wt/<task>-<executor>，相对 project_dir），调用方只给 task/executor——防路径注入。同 task+executor 已有账且目录健在 ⇒ 幂等返回（reused=true）不重建。参数：project_dir(必填，git 仓库根)、task(必填)、executor(必填)、base(可选，缺省 HEAD)、ttl_min(可选，默认 120)、timeout_ms(可选，默认 60000)。返回 {ok, task, executor, path, branch, created_sha, reused, note}。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "task": string_prop("任务 id（必填，账 id = <task>-<executor>）"),
+        "executor": string_prop("执行器身份（必填）"),
+        "base": string_prop("基线 ref（可选，缺省 HEAD）"),
+        "ttl_min": int_prop("TTL 分钟（可选，默认 120，供 stale 判定）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
+      },
+      ["project_dir", "task", "executor"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let task = get_str(args, "task")
+      let executor = get_str(args, "executor")
+      let base = get_str(args, "base", default="")
+      let ttl_min = get_int(args, "ttl_min", default=120)
+      let timeout_ms = get_int(args, "timeout_ms", default=60000)
+      match
+        wt_dispatch_impl(project_dir, task, executor, base, ttl_min, timeout_ms) {
+        Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "wt_collect",
+    "F094 Phase 3：合并收口 + 回收。脏先看（沙箱有未提交改动 ⇒ blocked，先 commit）；git merge --ff-only 打回主线，主线已前进 ⇒ blocked 点名（force=true 才允许 --no-ff 强并，合并冲突由管家 reject 协调）；merge 成功 ⇒ 自动回收沙箱 + 删分支。FIST_BUILD_MUTEX=1 时受构建互斥约束。参数：project_dir(必填)、task(必填)、executor(必填)、force(可选默认 false)、timeout_ms(可选，默认 60000)。返回 {ok, task, executor, path, branch, merged_mode, collect_blocked, destroy_note}。",
+    schema(
+      {
+        "project_dir": string_prop("git 仓库根目录（必填）"),
+        "task": string_prop("任务 id（必填）"),
+        "executor": string_prop("执行器身份（必填）"),
+        "force": bool_prop("主线已前进时允许 --no-ff 强并（可选，默认 false）"),
+        "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
+      },
+      ["project_dir", "task", "executor"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let project_dir = get_str(args, "project_dir")
+      let task = get_str(args, "task")
+      let executor = get_str(args, "executor")
+      let force = get_bool(args, "force", default=false)
+      let timeout_ms = get_int(args, "timeout_ms", default=60000)
+      // F094 §四联动：merge 属构建类操作，enforce 模式下受 scope=build 互斥约束
+      let bm_holder = "wt_collect:" + task + "-" + executor
+      let bm_now = @ops.iso_to_secs(now_default())
+      let bm_taken = if fb_build_mutex_enabled() {
+        let c = fb_build_mutex_acquire(
+          "default",
+          project_dir,
+          bm_holder,
+          task,
+          bm_now,
+        )
+        if c != "" {
+          return Err(
+            @mcp_types.ToolError(
+              "wt_collect: 构建互斥冲突——同项目已有构建在跑，持有者 " +
+              c,
+            ),
+          )
+        }
+        true
+      } else {
+        false
+      }
+      let r = wt_collect_impl(project_dir, task, executor, force, timeout_ms)
+      if bm_taken {
+        fb_build_mutex_release("default", project_dir, bm_holder, bm_now)
+      }
+      match r {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
