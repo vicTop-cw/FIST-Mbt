@@ -1746,7 +1746,7 @@ fn executor_machine_merge(
 /// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
 /// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
 /// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
-let project_version : String = "0.3.12"
+let project_version : String = "0.3.13"
 
 ///|
 /// —— 结果转换辅助 ——
@@ -2370,25 +2370,141 @@ fn fb_store_key(ns : String, project_dir : String) -> String {
 }
 
 ///|
-/// 读账（该键无账时返回空数组）。
+/// 读账：唯一真相 = 持久化 file_binds 表（ns 库；跨进程可见）。
+/// 库不可用时退回进程内 Map（同进程可见性保底；跨进程不可见如实降级）。
 fn fb_store_read(
   ns : String,
   project_dir : String,
 ) -> Array[@filebind.FileBind] {
-  match file_binds.ledger.get(fb_store_key(ns, project_dir)) {
-    Some(a) => a
-    None => []
+  match mstore.get(ns) {
+    Some(st) => st.fb_list_rows(ns, project_dir)
+    None =>
+      match file_binds.ledger.get(fb_store_key(ns, project_dir)) {
+        Some(a) => a
+        None => []
+      }
   }
 }
 
 ///|
-/// 写账（原地 `Map.set`）。
+/// 写账（原地 `Map.set`，仅作库不可用时的降级通道）。
 fn fb_store_write(
   ns : String,
   project_dir : String,
   bs : Array[@filebind.FileBind],
 ) -> Unit {
   file_binds.ledger.set(fb_store_key(ns, project_dir), bs)
+}
+
+///|
+/// F094 §3.3 生命周期挂钩：按任务释放其全部绑定（服务端盖章，不靠 agent 自觉；
+/// verify/archive 成功路径自动调用；reject/reopen 绑定保留——打回重做还要用）。
+fn fb_release_task_binds(ns : String, project_dir : String, task_id : String) -> Unit {
+  match mstore.get(ns) {
+    Some(st) => ignore(st.fb_release_task(ns, project_dir, task_id))
+    None => {
+      // 库不可用的降级路径：进程内账本同步清
+      let key = fb_store_key(ns, project_dir)
+      match file_binds.ledger.get(key) {
+        Some(bs) => {
+          let kept = bs.filter(fn(b) { b.task_id != task_id })
+          file_binds.ledger.set(key, kept)
+        }
+        None => ()
+      }
+    }
+  }
+}
+
+///|
+/// F094 §3.3 生命周期挂钩：watchdog 通道顺带清理 TTL 过期绑定
+/// （复用既有看护 tick，不新增定时面）。
+fn fb_purge_expired_binds(ns : String, now : Int) -> Unit {
+  match mstore.get(ns) {
+    Some(st) => ignore(st.fb_purge_expired(ns, now))
+    None => ()
+  }
+}
+
+///|
+/// F094 §四 构建互斥：run_check 执行前自动 acquire scope=build 绑定（同项目
+/// 同时只允许一个构建/测试在跑）。**默认 advisory**——环境变量 FIST_BUILD_MUTEX=1
+/// 才 enforce（单 agent 场景零影响，多 agent 场景显式开）；冲突返回现持有者。
+fn fb_build_mutex_enabled() -> Bool {
+  match @env.get_env_var("FIST_BUILD_MUTEX") {
+    Some(v) => v.trim() == "1"
+    None => false
+  }
+}
+
+///|
+/// 尝试 acquire 构建互斥绑定（path="."、kind=dir、scope=build、ttl 上限 7200s——
+/// 进程崩溃后 TTL 到期自动失效，不留死锁）。返回 ""=成功；非空 = 冲突方描述。
+fn fb_build_mutex_acquire(
+  ns : String,
+  project_dir : String,
+  holder : String,
+  task_id : String,
+  now_secs : Int,
+) -> String {
+  let conflict : Ref[String] = Ref::Ref("")
+  let ok = fb_store_mutate(ns, project_dir, fn(ledger) {
+    let rows = @filebind.fb_plan_bind(
+      ledger, ns, project_dir, ["."], holder, now_secs, 7200,
+    )
+    let after = @filebind.fb_apply_bind(
+      ledger, ns, project_dir, rows, holder, task_id, "dir", "build",
+      "F094 build mutex", now_secs, 7200,
+    )
+    for r in rows {
+      if @filebind.fb_verdict_name(r.verdict) == "conflict" {
+        conflict.val = r.holder + "（bound_at=" + r.bound_at.to_string() + "）"
+      }
+    }
+    after
+  })
+  if !ok {
+    conflict.val = "存储不可用（fail-closed）"
+  }
+  conflict.val
+}
+
+///|
+/// 释放构建互斥绑定（只持有者本人；run_check 执行完毕即调，Ok/Err 两路都放）。
+fn fb_build_mutex_release(
+  ns : String,
+  project_dir : String,
+  holder : String,
+  now_secs : Int,
+) -> Unit {
+  ignore(
+    fb_store_mutate(ns, project_dir, fn(ledger) {
+      let rows = @filebind.fb_plan_release(
+        ledger, ns, project_dir, ["."], "", "build", holder, false,
+      )
+      @filebind.fb_apply_release(ledger, ns, project_dir, rows, "", "build")
+    }),
+  )
+}
+
+///|
+/// 读-改-写原子事务：BEGIN IMMEDIATE 下 mutate(旧账) → 落库（F094 §七
+/// 「两进程恰好一成一拒」的事务保证）。库不可用时降级走进程内账本
+/// （同进程保底，跨进程不可见——与 BUG-119 修复哲学同族：降级必须如实，
+/// 不许进程内状态冒充落库）。
+fn fb_store_mutate(
+  ns : String,
+  project_dir : String,
+  mutate : (Array[@filebind.FileBind]) -> Array[@filebind.FileBind],
+) -> Bool {
+  match mstore.get(ns) {
+    Some(st) => st.fb_txn(ns, project_dir, mutate)
+    None => {
+      let after = mutate(fb_store_read(ns, project_dir))
+      fb_store_write(ns, project_dir, after)
+      true
+    }
+  }
 }
 
 ///|
@@ -3081,13 +3197,32 @@ pub async fn run_server() -> Unit {
               )
             None => ()
           }
+          // F094 §四：构建互斥（默认 advisory；FIST_BUILD_MUTEX=1 enforce）。
+          // 同项目同时只允许一个构建/测试在跑；冲突点名现持有者并拒绝。
+          let bm_holder = match t.assignee {
+            Some(a) => if a == "" { "run_check" } else { a }
+            None => "run_check"
+          }
+          let bm_now = @ops.iso_to_secs(now)
+          if fb_build_mutex_enabled() {
+            let c = fb_build_mutex_acquire(ns, t.project_dir, bm_holder, task_id, bm_now)
+            if c != "" {
+              return Err(
+                @mcp_types.ToolError(
+                  "run_check: 构建互斥冲突——同项目已有构建在跑，持有者 " +
+                  c +
+                  "；等它完成或 TTL 过期后重试（F094 §四）",
+                ),
+              )
+            }
+          }
           let r = run_check_external(
             cmd,
             args_arr,
             run_check_effective_workdir(workdir, t.project_dir),
             timeout_ms,
           )
-          match r {
+          let result = match r {
             Ok(res) => {
               let status = match res {
                 Object(m) =>
@@ -3117,6 +3252,10 @@ pub async fn run_server() -> Unit {
             }
             Err(e) => Err(@mcp_types.ToolError(e))
           }
+          if fb_build_mutex_enabled() {
+            fb_build_mutex_release(ns, t.project_dir, bm_holder, bm_now)
+          }
+          result
         }
         None => {
           // BUG-374/376：任务不存在 → 拒绝并落审计，**不执行命令**（半途态禁令）。
@@ -3181,7 +3320,14 @@ pub async fn run_server() -> Unit {
         Ok(_) => ()
       }
       let docs_check = get_bool(args, "docs_check", default=false)
-      to_result(eng.verify(task_id~, verifier~, now=ts, docs_check~))
+      match eng.verify(task_id~, verifier~, now=ts, docs_check~) {
+        Ok(t) => {
+          // F094 §3.3：verify 服务端自动 release 该任务全部绑定（不靠 agent 自觉）
+          fb_release_task_binds(ns, t.project_dir, task_id)
+          to_result(Ok(t))
+        }
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
     },
   )
   s1 = instrumented_tool(
@@ -3397,7 +3543,11 @@ pub async fn run_server() -> Unit {
       // 的文案同样必须可诊断——否则「任务在主库」会被读成「ID 写错了」。
       // 文案裁决在 bug420_archive_error_text（纯函数，白盒锁 bug420_7）。
       match eng.archive_force(task_id~, by~, force~, now=ts) {
-        Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        Ok(t) => {
+          // F094 §3.3：archive 服务端自动 release 该任务全部绑定（不靠 agent 自觉）
+          fb_release_task_binds(ns, t.project_dir, task_id)
+          Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        }
         Err(e) =>
           Err(
             @mcp_types.ToolError(
@@ -4428,6 +4578,8 @@ pub async fn run_server() -> Unit {
           // 见下面 `flush_bug_queue 追加段`），此处不再传。
         ) {
         Ok(j) => {
+          // F094 §3.3：watchdog 通道顺带清理 TTL 过期绑定（复用既有看护 tick，不新增定时面）
+          fb_purge_expired_binds(ns, @ops.iso_to_secs(ts))
           // —— flush_bug_queue 追加段（append-only，不改上面任何代码）——
           let auto_flush = get_bool(args, "flush_bug_queue", default=false)
           let mut gh_ok = false
@@ -7057,15 +7209,26 @@ pub async fn run_server() -> Unit {
       let intent = get_str(args, "intent")
       let ttl = get_int(args, "ttl_secs", default=@filebind.fb_default_ttl())
       let now = @ops.iso_to_secs(now_default())
-      let ledger = fb_store_read(ns, project_dir)
-      let rows = @filebind.fb_plan_bind(
-        ledger, ns, project_dir, paths, holder, now, ttl,
-      )
-      let after = @filebind.fb_apply_bind(
-        ledger, ns, project_dir, rows, holder, task_id, kind, scope, intent, now,
-        ttl,
-      )
-      fb_store_write(ns, project_dir, after)
+      let rows_ref : Ref[Array[@filebind.BindPlanRow]] = Ref::Ref([])
+      let ok = fb_store_mutate(ns, project_dir, fn(ledger) {
+        let rows = @filebind.fb_plan_bind(
+          ledger, ns, project_dir, paths, holder, now, ttl,
+        )
+        let after = @filebind.fb_apply_bind(
+          ledger, ns, project_dir, rows, holder, task_id, kind, scope, intent,
+          now, ttl,
+        )
+        rows_ref.val = rows
+        after
+      })
+      if !ok {
+        return Err(
+          @mcp_types.ToolError(
+            "file_bind: 账本事务失败（存储不可用），拒绝写账（fail-closed）",
+          ),
+        )
+      }
+      let rows = rows_ref.val
       let row_jsons = rows.map(fn(r) { fb_render_bind_row(r, now) })
       let bound = fb_count_bound(rows)
       Ok(
@@ -7125,14 +7288,25 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
-      let ledger = fb_store_read(ns, project_dir)
-      let rows = @filebind.fb_plan_release(
-        ledger, ns, project_dir, paths, task_id, scope, holder, force,
-      )
-      let after = @filebind.fb_apply_release(
-        ledger, ns, project_dir, rows, task_id, scope,
-      )
-      fb_store_write(ns, project_dir, after)
+      let rows_ref : Ref[Array[@filebind.ReleaseRow]] = Ref::Ref([])
+      let ok = fb_store_mutate(ns, project_dir, fn(ledger) {
+        let rows = @filebind.fb_plan_release(
+          ledger, ns, project_dir, paths, task_id, scope, holder, force,
+        )
+        let after = @filebind.fb_apply_release(
+          ledger, ns, project_dir, rows, task_id, scope,
+        )
+        rows_ref.val = rows
+        after
+      })
+      if !ok {
+        return Err(
+          @mcp_types.ToolError(
+            "file_release: 账本事务失败（存储不可用），拒绝写账（fail-closed）",
+          ),
+        )
+      }
+      let rows = rows_ref.val
       let row_jsons = rows.map(fn(r) {
         Json::object({
           "path": Json::string(r.path),

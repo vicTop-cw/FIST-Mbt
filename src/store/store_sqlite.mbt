@@ -168,6 +168,236 @@ fn SqliteStore::exec_if_ok(self : SqliteStore, sql : String) -> Unit {
   }
 }
 
+// =====================================================================
+// F094 Phase 1 · file_binds 跨进程账本
+// 键 = (ns, project_dir, path)；载荷 = bind_json（FileBind 逐字序列化，
+// archive.task_json 同款模式：结构加字段不迁表）。
+// fb_txn：BEGIN IMMEDIATE 下读-改-写 ⇒ 两进程并发 bind 同一路径，
+// 唯一键 + 写锁保证「恰好一成一拒」（F094 §七 验收格）。
+// =====================================================================
+
+///|
+/// 读键下全部活绑定行（release = 删行；本方法只读不判过期——过期判定是
+/// 纯逻辑层职责，吃可注入 now）。
+pub fn SqliteStore::fb_list_rows(
+  self : SqliteStore,
+  ns : String,
+  project_dir : String,
+) -> Array[@filebind.FileBind] {
+  let out : Array[@filebind.FileBind] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT bind_json FROM file_binds WHERE ns = ? AND project_dir = ? ORDER BY id ASC"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, project_dir)),
+            ),
+          )
+          while stmt.step() {
+            let raw = evolve_col_text(stmt, 0)
+            let parsed = @json.parse(raw) catch { _ => Json::null() }
+            match @filebind.fb_of_json(parsed) {
+              Some(b) => out.push(b)
+              None => ()
+            }
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 读-改-写原子事务：BEGIN IMMEDIATE → fb_list_rows → mutate（纯逻辑裁决）→
+/// DELETE 旧行 + INSERT 新行 → COMMIT；任一步失败 ROLLBACK 并返回 false。
+/// mutate 闭包在持锁窗口内执行，只许做纯计算（禁 IO / 禁长任务）。
+pub fn SqliteStore::fb_txn(
+  self : SqliteStore,
+  ns : String,
+  project_dir : String,
+  mutate : (Array[@filebind.FileBind]) -> Array[@filebind.FileBind],
+) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let begin = db.prepare("BEGIN IMMEDIATE")
+      let begin_ok = match begin {
+        None => false
+        Some(stmt) => {
+          ignore(stmt.execute())
+          stmt.finalize()
+          true
+        }
+      }
+      if !begin_ok {
+        return false
+      }
+      let rows = self.fb_list_rows(ns, project_dir)
+      let after = mutate(rows)
+      // DELETE 旧行
+      let del_ok = match db.prepare(
+        "DELETE FROM file_binds WHERE ns = ? AND project_dir = ?",
+      ) {
+        None => false
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, project_dir)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          true
+        }
+      }
+      if !del_ok {
+        ignore(db.prepare("ROLLBACK"))
+        return false
+      }
+      // INSERT 新行（UNIQUE(ns, project_dir, path) 兜底防重）
+      let mut all_ok = true
+      for b in after {
+        let j = @filebind.fb_entry_json(b).stringify()
+        let ins_ok = match db.prepare(
+          "INSERT INTO file_binds (ns, project_dir, path, bind_json) VALUES (?, ?, ?, ?)",
+        ) {
+          None => false
+          Some(stmt) => {
+            ignore(
+              stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+            )
+            ignore(
+              stmt.bind(
+                2,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, project_dir)),
+              ),
+            )
+            ignore(
+              stmt.bind(
+                3,
+                @sqlite.SqlValue::Text(@encoding.encode(UTF8, b.path)),
+              ),
+            )
+            ignore(
+              stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, j))),
+            )
+            let r = stmt.execute()
+            stmt.finalize()
+            r
+          }
+        }
+        if !ins_ok {
+          all_ok = false
+          break
+        }
+      }
+      if !all_ok {
+        ignore(db.prepare("ROLLBACK"))
+        return false
+      }
+      let commit = db.prepare("COMMIT")
+      let commit_ok = match commit {
+        None => false
+        Some(stmt) => {
+          ignore(stmt.execute())
+          stmt.finalize()
+          true
+        }
+      }
+      commit_ok
+    }
+  }
+}
+
+///|
+/// 生命周期挂钩（F094 §3.3）：按任务释放其全部绑定（verify/archive 成功路径
+/// 服务端自动调用，不靠 agent 自觉）。返回删除的行数。
+pub fn SqliteStore::fb_release_task(
+  self : SqliteStore,
+  ns : String,
+  project_dir : String,
+  task_id : String,
+) -> Int {
+  match self.db {
+    None => 0
+    Some(db) => {
+      let mut n = 0
+      match db.prepare(
+        "DELETE FROM file_binds WHERE ns = ? AND project_dir = ? AND task_id = ?",
+      ) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, project_dir)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, task_id)),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          n = 1
+        }
+      }
+      n
+    }
+  }
+}
+
+///|
+/// 生命周期挂钩（F094 §3.3）：watchdog_tick 顺带清理 TTL 过期绑定
+/// （复用既有看护通道，不新增 tick）。返回清除的行数。
+pub fn SqliteStore::fb_purge_expired(self : SqliteStore, ns : String, now : Int) -> Int {
+  match self.db {
+    None => 0
+    Some(db) => {
+      let mut n = 0
+      match db.prepare(
+        "DELETE FROM file_binds WHERE ns = ? AND ttl_secs > 0 AND bound_at + ttl_secs < ?",
+      ) {
+        None => ()
+        Some(stmt) => {
+          ignore(
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Int(now),
+            ),
+          )
+          ignore(stmt.execute())
+          stmt.finalize()
+          n = 1
+        }
+      }
+      n
+    }
+  }
+}
+
 ///|
 /// 默认库路径（相对 server 进程 cwd）。
 let default_db_path : String = "fist-mbt.db"
@@ -235,6 +465,11 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     // （删行后无法区分「从未签发」与「已消费」，且并发下 UPDATE...WHERE consumed=0 的 rowcount
     //  是**原子一次性消费**的唯一可靠判据）。
     "CREATE TABLE IF NOT EXISTS agent_challenges (ns TEXT NOT NULL DEFAULT 'default', agent_fp TEXT NOT NULL DEFAULT '', nonce TEXT NOT NULL DEFAULT '', issued_at TEXT NOT NULL DEFAULT '', consumed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (ns, agent_fp, nonce))",
+    // F094 Phase 1：文件绑定跨进程账本（此前是 server 进程内 Map，重启即丢 ⇒ 多管家互踩）。
+    // 键 = (ns, project_dir, path)；release = 删行。载荷 bind_json 逐字存 FileBind
+    // （archive.task_json 同款模式：结构加字段不迁表）；唯一真相是持久化表，
+    // 进程内状态不许冒充落库（BUG-119 同族哲学）。
+    "CREATE TABLE IF NOT EXISTS file_binds (id INTEGER PRIMARY KEY AUTOINCREMENT, ns TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', path TEXT NOT NULL DEFAULT '', bind_json TEXT NOT NULL DEFAULT '', UNIQUE(ns, project_dir, path))",
     // 锁违例记录（过期未续 / 被抢占），追加式
     "CREATE TABLE IF NOT EXISTS lock_violations (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', lock_id TEXT NOT NULL DEFAULT '')",
     // 项目助理登记（multi-agent-lock v3 阶段2）：agent 为主键，同一助理一行
