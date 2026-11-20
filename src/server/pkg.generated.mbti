@@ -244,9 +244,13 @@ pub fn write_gate_path_ok(String) -> Bool
 
 pub fn wt_branch_default(String) -> String
 
+pub async fn wt_collect_impl(String, String, String, Bool, Int32) -> Result[@json.Json, String]
+
 pub async fn wt_create_impl(String, String, String, Bool, String, String, Int32, Int32) -> Result[@json.Json, String]
 
 pub async fn wt_destroy_impl(String, String, Bool, Bool, Int32) -> Result[@json.Json, String]
+
+pub async fn wt_dispatch_impl(String, String, String, String, Int32, Int32) -> Result[@json.Json, String]
 
 pub fn wt_entry_json(String, String, String, String, String, String, Int32, Int32) -> @json.Json
 
