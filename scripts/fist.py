@@ -395,6 +395,10 @@ def cmd_upgrade():
     if local == remote:
         print("已是最新（" + remote[:9] + "），无需升级。")
         return
+    _, ahead, _ = git("rev-list", "--count", remote + ".." + local)
+    if ahead.isdigit() and int(ahead) > 0:
+        print("本地领先远端 " + ahead + " 个提交（" + local[:9] + "），无发布版可升，无需操作。")
+        return
     code, out, err = git("pull", "--ff-only", "origin", "main")
     if code != 0:
         print("FAIL 升级失败（历史分叉，--ff-only 拒绝）：\n" + out + err)
