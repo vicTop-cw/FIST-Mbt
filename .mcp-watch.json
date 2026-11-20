@@ -2,7 +2,7 @@
   "schema_version": 1,
   "watch_id": "fist-self-tidy",
   "watch_dir": ".",
-  "recursive": false,
+  "recursive": true,
   "debounce_ms": 1500,
   "rules": [
     {
@@ -37,6 +37,52 @@
           "acceptance": {
             "expect_exit": 0,
             "stdout_contains": [],
+            "stdout_not_contains": [],
+            "stderr_not_contains": []
+          },
+          "ttl": 0,
+          "cleanup": "trash"
+        }
+      ],
+      "stop_after": false
+    },
+    {
+      "id": "fist_stale_dispatch",
+      "events": ["modify"],
+      "patterns": [".fist-mbt/data/fist-self-tidy.db*"],
+      "condition": null,
+      "actions": [
+        {
+          "kind": "command",
+          "argv": ["python", "scripts/fist_dispatch.py", "--mode", "stale", "--ns", "fist-self-tidy", "--stale-days", "7", "--tasks", "[{\"description\": \"fist-self-tidy 台账巡检（stale 自动补发）\"}]"],
+          "target": null,
+          "body": null,
+          "acceptance": {
+            "expect_exit": 0,
+            "stdout_contains": ["dispatched"],
+            "stdout_not_contains": [],
+            "stderr_not_contains": []
+          },
+          "ttl": 0,
+          "cleanup": "trash"
+        }
+      ],
+      "stop_after": false
+    },
+    {
+      "id": "fist_chain_dispatch",
+      "events": ["modify"],
+      "patterns": [".fist-mbt/data/fist-self-tidy.db*"],
+      "condition": null,
+      "actions": [
+        {
+          "kind": "command",
+          "argv": ["python", "scripts/fist_dispatch.py", "--mode", "chain", "--ns", "fist-self-tidy", "--tasks", "[{\"watch\": \"T0\", \"publish\": {\"description\": \"fist-self-tidy T0 后继巡检单\"}}]"],
+          "target": null,
+          "body": null,
+          "acceptance": {
+            "expect_exit": 0,
+            "stdout_contains": ["dispatched"],
             "stdout_not_contains": [],
             "stderr_not_contains": []
           },
