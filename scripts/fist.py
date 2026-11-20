@@ -371,6 +371,45 @@ def _selftest():
     sys.exit(0 if ok else 1)
 
 
+def cmd_upgrade():
+    """升级本地 fist-mbt 到远端发布版：fetch → ff-only pull → 报告版本。
+
+    本地发行形态 = 本仓自身（dist/fist-mbt.js 已随提交入库），所以「升级」
+    就是把本地 main 快进到 origin/main 的发布状态。脏工作区拒绝（本地开发态
+    不由本命令覆盖）；历史分叉时 --ff-only 当场拒绝，不强并。
+    """
+    def git(*args):
+        r = subprocess.run(["git", *args], capture_output=True, text=True)
+        return r.returncode, r.stdout.strip(), r.stderr.strip()
+
+    code, out, _ = git("status", "--porcelain", "-uno")
+    if code != 0 or out.strip():
+        print("FAIL 工作区有未提交改动（git status --porcelain -uno），先 stash/commit 再升级。")
+        sys.exit(1)
+    code, _, err = git("fetch", "origin", "main")
+    if code != 0:
+        print("FAIL git fetch 失败：" + err)
+        sys.exit(1)
+    _, local, _ = git("rev-parse", "HEAD")
+    _, remote, _ = git("rev-parse", "origin/main")
+    if local == remote:
+        print("已是最新（" + remote[:9] + "），无需升级。")
+        return
+    code, out, err = git("pull", "--ff-only", "origin", "main")
+    if code != 0:
+        print("FAIL 升级失败（历史分叉，--ff-only 拒绝）：\n" + out + err)
+        sys.exit(1)
+    ver = ""
+    with open("moon.mod", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("version"):
+                ver = line.split("=")[-1].strip().strip('"')
+                break
+    print("升级完成：" + local[:9] + " → " + remote[:9] + "（版本 " + ver + "）")
+    print("依赖面如需同步请另跑 moon update；dist 重建按需执行（moon build）。")
+
+
 def main():
     # 与守卫族同款：cp936 控制台下中文诊断会乱码甚至 UnicodeEncodeError（崩溃的入口等于没自检）。
     try:
@@ -385,6 +424,7 @@ def main():
         print("用法: python scripts/fist.py <subcommand> [args...]")
         print("  list-tools          列出所有 MCP 工具名")
         print("  call <tool> --k v   通用 MCP 工具调用（--raw：全部值逐字透传字符串，跳过自动类型转换）")
+        print("  upgrade             升级本地到远端发布版（fetch + ff-only pull；脏工作区拒绝）")
         print("示例:")
         print("  python scripts/fist.py call store_open --namespace scratch --scratch true")
         print("  python scripts/fist.py call publish --project-dir . --description '测试'")
@@ -398,6 +438,10 @@ def main():
 
     if sub == "list-tools":
         cmd_list_tools()
+        return
+
+    if sub == "upgrade":
+        cmd_upgrade()
         return
 
     if sub == "call":
