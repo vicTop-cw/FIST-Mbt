@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "watch_id": "SET-PER-REPO-e.g.-fist-mbt-quartermaster",
+  "watch_dir": ".",
+  "recursive": true,
+  "debounce_ms": 300,
+  "allowed_programs": [],
+  "_comment": "军需官默认规则 v1（2026-11-18）。安全模型：allowed_programs 留空 = 不执行任何外部命令，只做 trash/归档/记事件。watch_id 各仓自拟；watch_dir 按需覆盖。豁免清单见 rules[].exclude，与 fist-mbt docs/plans/2026-11-18-quartermaster-role-plan.md §三.2 对齐。",
+  "rules": [
+    {
+      "id": "qm-01-tmp-ttl",
+      "events": ["attrib", "*"],
+      "patterns": ["**/*.tmp", "**/*.bak", "**/*~", "**/*.orig", "**/_test_out.txt", "**/chk_out.txt", "**/build_js_out.txt", "**/dag_test_out.txt"],
+      "exclude": [".git/**", "_build/**", "target/**", "node_modules/**"],
+      "condition": { "not_modified_for": 604800 },
+      "actions": [{ "type": "internal", "op": "log_event", "message": "quartermaster: tmp artifact idle >7d, trash candidate" }],
+      "_note": "临时产物 7 天未动 → 记事件进入候选（trash 由军需官验收后放行）"
+    },
+    {
+      "id": "qm-02-oversized-log",
+      "events": ["*"],
+      "patterns": ["**/*.log", "**/server.log", "**/*.log.*"],
+      "exclude": [".git/**", "_build/**", "node_modules/**"],
+      "condition": { "file_size_gt": 10485760, "not_modified_for": 86400 },
+      "actions": [{ "type": "internal", "op": "log_event", "message": "quartermaster: log >10MB stale >1d, archive candidate" }],
+      "_note": "超 10MB 且 24h 未写入的日志 → 归档候选（gzip 归档待 command 白名单显式放行后启用）"
+    },
+    {
+      "id": "qm-03-report-archive",
+      "events": ["*"],
+      "patterns": ["temp/**", "_scratch/**", "_scratch-rounds/**", "tmp/**"],
+      "exclude": [".git/**", "**/.trash/**", "dist/**"],
+      "condition": { "age_seconds": 2592000 },
+      "actions": [{ "type": "internal", "op": "log_event", "message": "quartermaster: scratch older than 30d, sweep candidate" }],
+      "_note": "temp/_scratch/tmp 下 30 天前的产物 → 清扫候选（reports/ 有主报告不在此列）"
+    },
+    {
+      "id": "qm-04-wal-stale-alert",
+      "events": ["*"],
+      "patterns": ["**/*.db-wal", "**/*.db-shm", "**/wal-*.db"],
+      "exclude": [".git/**", "backup/**", "backups/**"],
+      "condition": { "not_modified_for": 172800 },
+      "actions": [{ "type": "internal", "op": "log_event", "message": "quartermaster: WAL/shm idle >48h, DB health review candidate" }],
+      "_note": "WAL/shm 超 48h 未动 → 数据库健康复核候选（只告警，绝不触碰 .db 本体）"
+    },
+    {
+      "id": "qm-05-owner-immune",
+      "events": ["*"],
+      "patterns": ["dist/**", "reports/2026-11-17-iter-r192-report.md"],
+      "condition": {},
+      "actions": [{ "type": "internal", "op": "log_event", "message": "quartermaster: owner-reserved zone touched, audit only" }],
+      "_note": "豁免区（dist 遗留 / iter-r192 车道等 owner 保留物）只审计不整理——不可删除，仅留痕"
+    }
+  ]
+}
