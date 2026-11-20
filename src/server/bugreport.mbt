@@ -46,9 +46,24 @@ fn bug_project_dir_ok(dir : String) -> Bool {
 }
 
 ///|
-/// bugs.md 路径。
+/// project_dir 的**生效目录**：调用方 cwd 有效时拼成绝对路径，否则逐字原样返回。
+/// ⚠️ 只用于派生落点（bug_file_path 等）；**绝不能**把它喂回 `bug_project_dir_ok`
+/// —— 那是对原始输入的校验，派生出来的绝对路径在 Windows 上带盘符、必被它拒。
+/// env 不存在时本函数与旧行为逐字一致（返回 project_dir 本身）。
+fn bug_eff_dir(project_dir : String) -> String {
+  let caller = bug_caller_cwd()
+  if caller.is_empty() {
+    project_dir
+  } else {
+    bug_abs_path(caller, project_dir)
+  }
+}
+
+///|
+/// bugs.md 路径。所有 bug 工具（report_bug / bug_list / bug_list_with_links /
+/// bug_mark_status / bug_fix / bug_read_text）统一走这一条 ⇒ 落点口径一致。
 fn bug_file_path(project_dir : String) -> String {
-  mem_join(mem_dir(project_dir), "bugs.md")
+  mem_join(mem_dir(bug_eff_dir(project_dir)), "bugs.md")
 }
 
 ///|
@@ -339,7 +354,8 @@ pub fn report_bug(
     Ok(_) => ()
     Err(e) => return Err(e)
   }
-  mem_ensure_dir(mem_dir(project_dir))
+  // 目录也要按生效基准创建；env 不存在时与旧行为逐字一致（仍是相对 server cwd）。
+  mem_ensure_dir(mem_dir(bug_eff_dir(project_dir)))
   let path = bug_file_path(project_dir)
   let old = match mem_read(path) {
     None => ""
@@ -442,13 +458,18 @@ pub fn report_bug(
   m.set("id", Json::string(bug_id))
   m.set("status", Json::string("OPEN"))
   m.set("path", Json::string(path))
-  // BUG-134：resolved_path 从此是**绝对**落点（BUG-5 的自述一直这么写，实现却回显相对路径）；
+  // BUG-134：resolved_path 是**绝对**落点（BUG-5 的自述一直这么写，实现却回显相对路径）；
   // server_cwd 同批回显，调用方拿两者一比就知道账写进了哪本台账（插件连接器的 cwd 不是仓库根时尤其必要）。
-  // 一次取数两处用：两个键必须出自同一次观测，否则回执内部自己就可能对不上。
+  // resolved_path 以**生效基准**算：FIST_CALLER_CWD 有效时落调用方 cwd，否则落 server cwd。
+  // server_cwd 仍是真实 server cwd（不因 env 被顶替）；caller_cwd 是新增键，旧键一个不删。
+  // env / cwd 属进程级稳定量，这几行紧邻读取不会互相漂移。
   let cwd = bug_server_cwd()
-  m.set("resolved_path", Json::string(bug_abs_path(cwd, project_dir)))
+  let caller = bug_caller_cwd()
+  let base = if caller.is_empty() { cwd } else { caller }
+  m.set("resolved_path", Json::string(bug_abs_path(base, project_dir)))
   m.set("server_cwd", Json::string(cwd))
   m.set("project_dir", Json::string(project_dir))
+  m.set("caller_cwd", Json::string(caller))
   m.set(
     "task_namespace",
     Json::string(if publish_task { eff_task_ns } else { "" }),
@@ -545,14 +566,18 @@ pub fn bug_list(project_dir : String) -> Result[Json, String] {
     Some(s) => s
   }
   let entries = bug_parse(text)
-  // 同 report_bug：两个键出自同一次观测，回执内部才不可能自相矛盾
+  // 同 report_bug：resolved_path 以生效基准算；server_cwd 仍是真实 server cwd；
+  // caller_cwd 新增键不删旧键。env / cwd 进程级稳定，紧邻读取不会漂移。
   let cwd = bug_server_cwd()
+  let caller = bug_caller_cwd()
+  let base = if caller.is_empty() { cwd } else { caller }
   Ok(
     Json::object({
       "path": Json::string(path),
       "project_dir": Json::string(project_dir),
-      "resolved_path": Json::string(bug_abs_path(cwd, project_dir)),
+      "resolved_path": Json::string(bug_abs_path(base, project_dir)),
       "server_cwd": Json::string(cwd),
+      "caller_cwd": Json::string(caller),
       "count": Json::number(entries.length().to_double()),
       "bugs": Json::array(entries),
     }),

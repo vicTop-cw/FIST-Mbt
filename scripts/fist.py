@@ -40,6 +40,10 @@ import sys
 
 from moon_env_probe import moon_env
 
+# 直接 `python scripts/fist.py` 调用时的兜底：把当前 shell 的 cwd 交给 server 进程，
+# 用于解析相对 project_dir。launcher 路径已在 spawn env 注入该变量，setdefault 不会覆盖。
+os.environ.setdefault("FIST_CALLER_CWD", os.getcwd())
+
 NODE = os.environ.get("FIST_NODE", "node")
 # BUG-122 同型收口：不带 FIST_DB_PATH 裸跑会把演示数据写进仓库根的自举台账 fist-mbt.db。
 # 默认改道 temp/ 下的隔离库；调用方显式设过 FIST_DB_PATH 就照它的（store_isolation_probe 那类必须自己控制）。

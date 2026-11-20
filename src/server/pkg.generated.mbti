@@ -18,6 +18,10 @@ pub fn boundary_probe_by_code(String, String) -> @json.Json
 
 pub fn bug_abs_path(String, String) -> String
 
+pub fn bug_caller_cwd() -> String
+
+pub fn bug_eff_base() -> String
+
 pub fn bug_fix(String, Array[String], evidence~ : String, ts~ : String) -> Result[@json.Json, String]
 
 pub fn bug_list(String) -> Result[@json.Json, String]

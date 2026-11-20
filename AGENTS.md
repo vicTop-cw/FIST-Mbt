@@ -419,3 +419,12 @@ Prompts: `fist:check_in`, `fist:verify`
 > 搬出的原因：`AGENTS.md` 超过 harness 指令预算（上限 65,244 字节），后段对 agent 不可见 ——
 > **清单是参考材料，规则必须可见**。判据：`python scripts/check_instruction_budget.py`；
 > 工具计数一致性判据 `check_tools_sync` 会把「本文件 + 那份清单」**合起来**当 AGENTS 面（R213）。
+
+## 线上仓库凭据（必读）
+
+- 一切线上仓库操作（git push / release / PR / 包发布）一律使用环境变量认证：`GITCODE_TOKEN`、`GITHUB_TOKEN`、`PYPI_TOKEN`。
+- 禁止交互式向用户索要账号密码，禁止弹窗要求凭据；缺少对应变量时直接报告，并先完成本地可进行的工作。
+- 用法示例：
+  - GitHub push：`git push https://x-access-token:${GITHUB_TOKEN}@github.com/<owner>/<repo>.git <branch>`
+  - GitCode push：`git push https://oauth2:${GITCODE_TOKEN}@gitcode.com/<owner>/<repo>.git <branch>`
+  - mooncakes 发布：`moon publish`，凭据同样取自环境，不向用户要 token。

@@ -15960,3 +15960,315 @@ src/engine/omega_strong_test.mbt 本次改动：
   `src/lib/fist_ops.mbt`（mcpcf-embed-skill 写的是**上游仓库**路径，不是本仓）。
   ⇒ 上限是否收紧至 4 仍是人的决定。
 - reported_by: lead
+## BUG-592 [2026-11-12T08:22:39Z] [medium] FIXED
+- summary: probe
+## BUG-593 [2026-11-12T08:29:35Z] [high] FIXED
+- summary: P3-BUG1【高】反馈链路查错表：ask_router.py 用 query_history 校验 failed_queries 的 id 必然 404
+- detail: 改为 get_failed 与 update_failed_feedback 回填原记录；新增 3 条 roundtrip 用例，pytest 381 到 384 全绿。回归锁：test_ask_feedback_roundtrip.py
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-594 [2026-11-12T08:29:37Z] [high] FIXED
+- summary: P3-BUG2【高】keep-alive 下 onMounted 与 onActivated 双注册致带 q 参数首次重复提问
+- detail: 单注册 + router.replace 清 q + loading 防重入；vue-tsc 0 error、vitest 43 passed。回归锁：askError.test.ts 与 sqlRanking.test.ts
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-595 [2026-11-12T08:29:39Z] [medium] FIXED
+- summary: P3-BUG3【中】vq_history_rate 缺 MCP 层 rating 校验，错误文案「0-5」与 0-10 分制矛盾
+- detail: 补 MCP 层 rating 校验 + 文案改 0-10 + 反橡皮章单测。回归锁：mcp_acceptance.py 的 rating 越界用例
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-596 [2026-11-12T08:29:41Z] [medium] FIXED
+- summary: P3-BUG4【中】/ask 未校验时 sql_valid 假报 True
+- detail: 改三态并补 validation_performed 字段，未校验不再假报 True。回归锁：test_ask_failure_surface.py
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-597 [2026-11-12T08:29:43Z] [medium] FIXED
+- summary: P3-BUG5【中】metadata/node/info 写库或重训失败被吞仍报 ok
+- detail: 响应如实带 warnings，失败不再静默。回归锁：metadata 相关 pytest 用例
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-598 [2026-11-12T08:29:46Z] [medium] FIXED
+- summary: P3-BUG6【中】验收脚本 #33 配额零覆盖、负向判据过宽、toggle 依赖初始状态
+- detail: 补 I2 配额端到端、M7 favorite 负向、M8 rating 越界、动态 toggle 期望；验收 73 到 76 全过。回归锁：mcp_acceptance.py
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-599 [2026-11-12T08:29:49Z] [low] FIXED
+- summary: P3-BUG7【低】SqlDisplay 固定高度与 min/max/overflow 死约束并覆盖 Monaco overflow
+- detail: 去 fallthrough 样式，解除固定高度与 min/max/overflow 死约束。回归锁：layout_gate 布局门禁
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+## BUG-600 [2026-11-12T08:29:51Z] [medium] FIXED
+- summary: P3-基建【根治】新增 .gitattributes 逐文件固定 42 个 rs 与 CHANGELOG.md 的 EOL，根治 system 级 core.autocrlf=true checkout 涂抹致 fmt_batch 假红
+- detail: 27 CRLF / 15 LF 逐文件钉死；零 blob diff、零门禁逻辑改动；V1 三方一致、V2 git check-attr、V3 负控制（移走变 unspecified）全过。回归锁：fmt_batch 门禁 + git check-attr 负控制
+- reported_by: P3 收口 / FIST-Mbt 生命周期闭环官
+
+
+### FIXED(2026-11-12T08:29:54Z / BUG-593, BUG-594, BUG-595, BUG-596, BUG-597, BUG-598, BUG-599, BUG-600, BUG-592)
+- evidence: 回归锁：test_ask_feedback_roundtrip.py（3 条 roundtrip，pytest 384/0）、askError.test.ts 与 sqlRanking.test.ts（vitest 43 passed）、mcp_acceptance.py（76/76）、fmt_batch 门禁（0/0）、layout_gate；全门禁 8/8 绿 GATES_FAILED=0、clippy 83/25。另含探测调用产生的 BUG-592 空条目随批清理，本修复不需锁。
+## BUG-601 [2026-11-13T06:09:43Z] [high] FIXED
+- summary: P4-1 /ask/confirm 硬编码 sql_valid=True 制造假校验通过
+- detail: semantic_router.confirm_semantic 把 sql_valid 写死 True，validation=None（缓存命中/生成失败）仍报校验通过；P3 已修 /ask 三态但漏了第二出口。改三态 + validation_performed。回归锁 test_ask_confirm_validation.py 7 项。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r23
+## BUG-602 [2026-11-13T06:09:45Z] [high] FIXED
+- summary: P4-2 vq_execute 只读守卫可被 readonly:false 连接绕过
+- detail: MCP 层不校验 ConnectionConfig.readonly，executor 仅在 readonly==true 时做 AST 只读判定，配置存在 readonly:false 连接即可执行 DDL/DML。MCP 入口强制校验并 structured_error 拒绝；CLI 侧保持可写。回归锁 MCP 验收 F4，77/77。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r24
+## BUG-603 [2026-11-13T06:09:47Z] [high] FIXED
+- summary: P4-3 spec 审批静默吞掉 P0 子集同步失败仍报 ok/已生效
+- detail: approve_revision 丢弃 _propagate_p0 的 bool 返回值，P0 规约损坏/概念未命中时事实源已改但缓存仍旧。改结构化结果 + warnings + p0_synced。回归锁 test_spec_governance.py 2 项参数化。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r25
+## BUG-604 [2026-11-13T06:09:49Z] [medium] FIXED
+- summary: P4-4 spec_router 500 端点把异常原文（含绝对路径）塞进响应
+- detail: list_concepts/diagnostics 用 500 + detail=str(e)，且 diagnostics 的 except ValueError 是死代码。改 logger.exception + 固定文案 + except Exception 兜底。回归锁 2 项参数化；400 业务文案按产品契约保留。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r26
+## BUG-605 [2026-11-13T06:09:51Z] [medium] FIXED
+- summary: P4-5 spec_router 只 catch ValueError 且事实源/版本库存在不一致窗口
+- detail: 非 ValueError 异常未被结构化；_atomic_write_json 在 SQLite 事务内写文件、随后才 UPDATE status，文件无法回滚导致事实源已生效但 revision 仍草稿可重复审批。改状态预占前移 + except Exception 兜底，未改表结构。回归锁 1 项故障注入。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r27
+## BUG-606 [2026-11-13T06:09:53Z] [medium] FIXED
+- summary: P4-6 metadata 四个写端点静默吞索引重建失败且无 warnings
+- detail: _rebuild_index_if_enabled 只 logger.warning，add_table/upload_ddl/upload_csv/delete_table 一律 status=ok。改 ContextVar 旁路回传固定文案 warnings，保住既有『不抛 + helper 返回 None』契约。回归锁 8 项参数化。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r28
+## BUG-607 [2026-11-13T06:09:55Z] [medium] FIXED
+- summary: P4-7 三个 Vue 视图 onMounted+onActivated 双触发重复请求
+- detail: keep-alive 首次挂载两钩子同时触发，IdeView/TrainingView/SpecGovernance 加载请求重复，后者首次进入共 4 次。删除 onMounted 中重复的数据加载，保留一次性初始化与事件监听。回归锁 viewLifecycle.test.ts 20 项，vitest 43→63。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r29
+## BUG-608 [2026-11-13T06:09:57Z] [medium] FIXED
+- summary: P4-8 register_metric 非原子写并就地把新指标污染进进程缓存
+- detail: load_metric_spec 返回缓存同一 dict 引用，ops.append 直接改缓存；open(w)+json.dump 非原子无锁无 try/except，失败会截断文件。改深拷贝 + write_metric_spec(tempfile+os.replace) + 固定 500 + 失败不 reload。回归锁 3 项。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r30
+## BUG-609 [2026-11-13T06:09:59Z] [medium] FIXED
+- summary: P4-9 test_bridge_contract 漏守 rollback/diagnostics 两条 spec 路由
+- detail: REQUIRED_ROUTES spec 段只有 5 条，endpoints.ts 的 specApi 有 7 个方法；治理回滚与诊断关键路径的桥护栏失效。补齐至 56 条，注释同步。30 passed + 3 passed。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r31
+## BUG-610 [2026-11-13T06:10:00Z] [medium] FIXED
+- summary: P4-10 ci.ps1 第 6 步可能拿陈旧 vq-mcp.exe 验收造成假绿
+- detail: 只 Test-Path 判存在不判新鲜度，且上游 build.ps1 失败后脚本仍继续跑第 6 步。补显式 cargo build -p vq-mcp --target gnu、上游失败短路、[ci][skip]→[ci][fail]；test.ps1 补 --basetemp。语法验证 bash -n rc=0 / ParseErrors=0 / BOM 保留。
+- reported_by: WorkBuddy P4 2026-11-13
+- task_id: T0r32
+
+
+### FIXED(2026-11-13T06:10:02Z / BUG-601, BUG-602, BUG-603, BUG-604, BUG-605, BUG-606, BUG-607, BUG-608, BUG-609, BUG-610)
+- evidence: P4 收口实测：全门禁 8/8 绿 GATES_FAILED=0；cargo test 双目标 0 failed；pytest 407/0；MCP 验收 77/77（新增 F4 readonly:false 负向）；clippy 83/25 无新增；fmt 0/0 且 EOL 42 项一致；layout PASS；vitest 63 passed / vue-tsc 0 error。新增回归锁：pytest 23 项、vitest 20 项、MCP 验收 1 项。
+## BUG-611 [2026-11-13T13:39:33Z] [high] FIXED
+- summary: P5-A spec 治理 HTTP 端点把异常原文/内部绝对路径塞进响应体
+- detail: spec_router.py 的 create_draft/approve/reject/rollback 四处 except ValueError 用 detail=str(e)，服务层 _load_concepts 抛的 ValueError 含事实源绝对路径与 Errno；_propagate_p0 的 warnings reason 带异常原文；_validate_verify_sql 把解析异常原文写进 400 detail；list_revisions 无 except Exception 兜底。修法：新增 _sanitize_value_error 仅对含 Errno/.json/spec_concepts/路径线索的 ValueError 收口为固定文案，合法业务 ValueError 原样透传；服务层固定文案 + logger.exception；list_revisions 补 500 守卫。回归锁 test_spec_governance.py 新增 2 条，31→33 passed。
+- reported_by: WorkBuddy P5 2026-11-13
+## BUG-612 [2026-11-13T13:41:59Z] [medium] FIXED
+- summary: P5-B sql_validator 把 sqlglot 异常原文塞进 errors[].detail 响应体
+- detail: 两处同源泄漏：dialect transpile 失败的 warning.detail 直接放 str(e)；syntax error 路径 detail=parse_error 也是 sqlglot 原文。修法：import logging + logger，warning.detail 置空并 logger.exception 保留原文；syntax error 路径按 parse_error=='SQL 为空' 分流业务文案或固定文案『SQL 语法错误，无法解析（详情见服务端日志）』，ast is None 单独分支固定文案，均不回显原文。回归锁新建 test_sql_validator.py 4 项（dialect 失败脱敏 / 成功无 warning / syntax error 脱敏 / 空 SQL 业务文案），4 passed。
+- reported_by: WorkBuddy P5 2026-11-13
+## BUG-613 [2026-11-13T13:42:01Z] [medium] FIXED
+- summary: P5-C vq-cli import_db 无表时假成功（失败仍 rc=0）违反退出码不变量
+- detail: crates/vq-cli/src/main.rs 的 sqlite 分支无表(:2158) 与 postgres/mysql 分支无表(:2164) 两处 return Ok(())，导致导入失败却返回成功退出码。修法：两处改 return Err(anyhow!("数据库中没有找到表"))。回归锁新建 crates/vq-cli/tests/import_db_exit_code.rs，双臂断言（--from-json 不存在 / --from-db 不存在连接）退出码==1，1 passed；main.rs 保持纯 CRLF，新测试文件纯 LF 并登记进 EOL 清单。
+- reported_by: WorkBuddy P5 2026-11-13
+## BUG-614 [2026-11-13T13:42:22Z] [medium] FIXED
+- summary: P5-#24.1 data/vq.db 的 settings 表 conn.pgdemo 口令明文落库
+- detail: data/vq.db 的 settings 表存 conn.pgdemo 时 password 以明文 JSON 写入，无加密无脱敏（KNOWN_ISSUES #24.1 长期登记为『方案 A 纯登记』）。运行时代码（vq-cli/vq-core/apps/api）零引用该连接、本机 PG 18.1 Stopped。经用户裁决『根治-脱敏 value』：UPDATE settings SET value=... 把 password 字段由明文改为 '***'，仅改 value 内容、绝不动表结构（否则撞 test_python_rust_schema_alignment.py）。改前建时间戳备份 data/vq.db.bak-24dot1-20261113-205244（267022336 字节）。只读复核实测 conn.pgdemo password='***'、conn.* 仅 1 行。
+- reported_by: WorkBuddy P5 2026-11-13
+## BUG-615 [2026-11-13T13:42:24Z] [low] FIXED
+- summary: P5 收口：新增 .rs 未登记 EOL 清单致 fmt_batch 判红（门禁按设计拦截，非功能回归）
+- detail: P5-C 新建 crates/vq-cli/tests/import_db_exit_code.rs（纯 LF）后未同步 scripts/fmt-eol-manifest.txt 与根 .gitattributes，首轮全门禁 fmt_batch rc=1、GATES_FAILED=1（清单 42 项 / 盘上 43 个 .rs，未登记 1 个）。按项目 EOL 根治纪律修：用官方脚本 fmt_gate.py --update-manifest 重建清单 42→43（CRLF 27 / LF 16），再从清单单向派生 .gitattributes 45→46 行（纯 CRLF），三方一致性 mismatches=0、git check-attr 新文件 eol=lf 生效。复跑全门禁 8/8 绿 GATES_FAILED=0。此缺陷证明门禁『未登记新文件判红』保护真实有效，未削弱门禁、未用通配放宽。
+- reported_by: WorkBuddy P5 2026-11-13
+
+
+### FIXED(2026-11-13T13:43:07Z / BUG-611, BUG-612, BUG-613, BUG-614, BUG-615)
+- evidence: P5 收口复跑实测（2026-11-13）：全门禁 8/8 全绿、FINAL_GATES_RC=0、GATES_FAILED=0（8m31s）；cargo test 双目标 MSVC 457/0、gnu 457/0（较 P4 +1，新增 import_db_exit_code 集成测试）；pytest 413 passed/0 failed（较 P4 407 +6：spec_governance +2、sql_validator +4）；MCP 验收 77/77、tools/list 18 工具；clippy 83 条/25 键、error 级 0、无新增键/无计数增加；fmt 漂移 0/0、EOL 清单 43 项（CRLF 27/LF 16）与磁盘三方一致、git check-attr 生效；layout PASS。回归锁：pytest 6 项新增、Rust 集成测试 1 项。前端本批未改动（沿用 P4 vitest 63/vue-tsc 0 error，未重跑，如实标注）。#24.1 脱敏后只读复核 conn.pgdemo password=*** 且备份就位。改动面经独立只读核验真实落盘、EOL/编码零异常、无越界。
+## BUG-616 [2026-11-13T15:41:41Z] [high] FIXED
+- summary: P6-BUG-616: vq-cli train delete 单条删除失败仅打印错误却返回 rc=0（假成功）
+- detail: crates/vq-cli/src/main.rs:2380-2383，Err(e) 分支只 eprintln 未 exit(1) 也未 return Err；同函数 :2374-2377 的按标签删除臂已 exit(1)，自相矛盾。影响：脚本误判删除成功、数据静默残留。
+- reported_by: vq-p6-commander
+## BUG-617 [2026-11-13T15:42:08Z] [high] FIXED
+- summary: P6-BUG-617: vq-cli metadata import 未指定导入源仍 rc=0（假成功）
+- detail: crates/vq-cli/src/main.rs:2236-2238，else 分支只打印请指定导入源，既不 exit(1) 也不 return Err；对照 execute --add-conn 三处参数错误臂均已 exit(1)。影响：裸命令 rc=0 且无任何导入发生，自动化误判成功。
+- reported_by: vq-p6-commander
+## BUG-618 [2026-11-13T15:42:10Z] [medium] FIXED
+- summary: P6-BUG-618: vq-cli completion 未知 shell 仍 rc=0 且 stdout 为空
+- detail: crates/vq-cli/src/main.rs:659-663，无效 --shell 走 _ 臂只打印提示，随后无条件 return Ok(())。影响：重定向生成空补全脚本且 rc=0，与 :981-985 防止空文件假成功的既有口径冲突。
+- reported_by: vq-p6-commander
+## BUG-619 [2026-11-13T15:42:12Z] [high] FIXED
+- summary: P6-BUG-619: vq-cli train nltk 部分或全部失败仍打印完成并 rc=0
+- detail: crates/vq-cli/src/main.rs:2563、2568、2573-2578，循环内两类 Err 只 eprintln，无失败计数；success=0 时仍打印成功 0/N 并 Ok(())。同文件 :2330-2337 的 train batch 明文要求失败必须非零退出。影响：自然语言训练全军覆没却报成功。
+- reported_by: vq-p6-commander
+## BUG-620 [2026-11-13T15:42:15Z] [medium] FIXED
+- summary: P6-BUG-620: vq-cli metadata import PRAGMA 部分失败被静默跳过仍报导入完成
+- detail: crates/vq-cli/src/main.rs:2130-2154，获取列信息失败只 eprintln 后跳过该表；若仅部分表失败，导入继续并在 :2228 打印完成且 rc=0。影响：元数据不完整缺表缺列却报成功，后续 ask 生成 SQL 会缺字段。
+- reported_by: vq-p6-commander
+## BUG-621 [2026-11-13T15:42:17Z] [medium] FIXED
+- summary: P6-BUG-621: vq-cli history rate 自动入训练集吞 Result 且无条件打印成功
+- detail: crates/vq-cli/src/main.rs:2709-2712，train_sql 的 Err 被 let _ = 完全吞掉，:2712 无条件打印已自动加入训练集。影响：副作用假成功加语料静默丢失。
+- reported_by: vq-p6-commander
+## BUG-622 [2026-11-13T15:42:19Z] [medium] FIXED
+- summary: P6-BUG-622: P5 修复点 main.rs:2158/2164 缺少直接回归锁
+- detail: crates/vq-cli/tests/import_db_exit_code.rs 两臂命中的是 :2087 读取文件失败与 :2233 连接数据库失败，并非 P5 实际改的数据库中没有找到表两臂；且无合法导入对照臂、无 A2 无源臂。影响：退出码不变量修复可被回退而不被任何测试发现。
+- reported_by: vq-p6-commander
+## BUG-623 [2026-11-13T15:42:21Z] [high] FIXED
+- summary: P6-BUG-623: database.py:227 吞异常零可观测且把任意 sqlite 错误误判为列缺失
+- detail: apps/api/app/database.py:221-228 _migrate_add_column_if_not_exists，except Exception 无 as e、无日志、无重抛，随后无条件 ALTER TABLE；SELECT 失败原因可能是表不存在、库锁或 I/O 错误。影响：静默迁移无审计、半初始化假成功、原始病因丢失只留更晦涩的 ALTER 报错。
+- reported_by: vq-p6-commander
+## BUG-624 [2026-11-14T01:24:03Z] [medium] FIXED
+- summary: P6-BUG-624: layout_gate 的文档/台账范围定义遗漏 deliverables 与 workbuddy 两个归档目录，且因只扫已跟踪文件而潜伏至提交后才暴露
+- detail: 2026-11-14 P6 收口首轮全门禁 layout_gate rc=1 / LAYOUT=FAIL，GATE2 命中 2 条：deliverables/round5-fist-ocr-frontend-audit-report.md 与 workbuddy/plan/2026-10-22-fist-ocr-frontend-audit.md。两份均为历史归档文档，叙述 2026-10 时 packages/sql-editor 尚未归档的历史事实，非活跃源码引用漂回；P6 改动（main.rs / 两个测试 / database.py）零引用。机制：stale_refs() 用 git grep -l 只扫已跟踪文件，这两份文件在 P5 提交 2edc7d545 才首次纳入跟踪，而 P5 收口门禁跑在提交之前，故潜伏红到本批才暴露，且若不修下一批仍会红。修复：SKIP_PREFIXES 补 deliverables/ 与 workbuddy/ 并在注释写明依据；判据有效性不变，GATE1 与 --control crates 负控制均未放宽，不改历史文档内容，不 git rm --cached。
+- reported_by: vq-p6-commander
+
+
+### FIXED(2026-11-14T01:31:00Z / BUG-616, BUG-617, BUG-618, BUG-619, BUG-620, BUG-621, BUG-622, BUG-623, BUG-624)
+- evidence: P6 收口实测：6 处 vq-cli 假成功已改为非零退出（crates/vq-cli/src/main.rs A1:2390-2396 / A2:2245-2248 / A3:659-662 / A4:2553+2592-2595 / A5:2127+2165-2168 / A6:2733-2739）；apps/api/app/database.py:224-234 吞异常改为 sqlite3.OperationalError 分类 + logger 留痕 + 非预期错误 fail-fast；补 5 个 Rust 回归锁（tests/import_db_exit_code.rs 扩至176行+2 用例、新建 tests/exit_code_invariants.rs 132行3 用例）与 4 个 pytest 用例（tests/test_database_migration_observability.py）；scripts/check_repo_layout.py 的 SKIP_PREFIXES 补 deliverables/ 与 workbuddy/ 归档目录。全门禁复跑 8/8 绿 GATES_FAILED=0：Rust 462/0 双目标、pytest 417/0、MCP 77/77 tools/list 18、clippy 83条/25键无新增、fmt 0/0、EOL 清单 44 项（CRLF27/LF17）、layout PASS。
+## BUG-625 [2026-11-14T02:47:27Z] [high] FIXED
+- summary: vq ask -i 因 question 必填而 rc=2，交互模式完全不可用
+- detail: crates/vq-cli/src/main.rs:54 Commands::Ask 的 question: String 为 clap 必填位置参数。执行 vq ask -i 时 clap 在参数解析阶段即报 missing required argument，退出码 2，REPL 根本进不去。根因：question 未标注 required_unless_present="interactive"。修复方向：为 question 增加 required_unless_present=interactive，或改 Option<String> 后在 interactive 分支不校验。
+- reported_by: vq-p7-commander
+## BUG-626 [2026-11-14T02:47:29Z] [high] FIXED
+- summary: vq template delete 删的是元数据树表而非模板
+- detail: crates/vq-cli/src/main.rs:2968 TemplateCommands::Delete 臂调用 svc.storage().delete_table(name)，而 Storage trait 提供的正确方法是 delete_template(id_or_name)（crates/vq-core/src/storage/mod.rs:81）。后果：用户想删 SQL 模板，实际删掉了元数据树里同名/同 id 的表，造成数据丢失且模板仍在。修复方向：改调 delete_template，并在删除后核验模板确实消失；删除失败/不存在时非零退出。
+- reported_by: vq-p7-commander
+## BUG-627 [2026-11-14T02:47:31Z] [medium] FIXED
+- summary: vq template train 是空壳：只打印不写训练集
+- detail: crates/vq-cli/src/main.rs:3006-3024 TemplateCommands::Train 臂在拿到模板后只 println! 提示语（无 SQL 内容时甚至只打印一句），从未调用 TrainingService::train_sql。后果：用户以为模板已进入检索语料，实际训练集无任何变化，检索召回不到。修复方向：真实调用 train_sql(question, sql, tags, weight) 写入 training_records 并即时进向量索引；失败须非零退出。
+- reported_by: vq-p7-commander
+## BUG-628 [2026-11-14T02:47:33Z] [low] FIXED
+- summary: vq history export --format 不生效，永远输出 JSON
+- detail: crates/vq-cli/src/main.rs:2767-2789 HistoryCommands::Export 臂读取 fmt 参数但只用于最后一行回显（format: {}），实际内容恒为 serde_json::to_string_pretty(&result.items)。后果：用户传 --format csv/md 得到的是 JSON 文件，误导下游消费方。修复方向：按 fmt 分派 json/csv/md 三种序列化；未知格式须报错并非零退出（不得静默回退 JSON）。
+- reported_by: vq-p7-commander
+## BUG-629 [2026-11-14T02:47:35Z] [medium] FIXED
+- summary: vq init 吞掉 create_dir_all / remove_file 错误
+- detail: crates/vq-cli/src/main.rs:839 std::fs::create_dir_all(&data_dir).ok() 与 :844 let _ = std::fs::remove_file(&db_path) 均静默丢弃错误；:845 open 失败走 exit(1) 但前面失败无任何提示。后果：在只读目录或权限不足时 init 打印成功却没建库，错误被彻底掩盖。修复方向：每个失败点改为 eprintln! + 非零退出；不得用 .ok()/let _ 吞错。
+- reported_by: vq-p7-commander
+## BUG-630 [2026-11-14T02:47:37Z] [low] FIXED
+- summary: vq metadata import --driver 默认 mysql 使 is_empty() 分支成死代码
+- detail: crates/vq-cli/src/main.rs:252 Import 子命令的 driver 参数声明 default_value = "mysql"，而 :2105-2109 的 driver.is_empty() => "postgres" 分支因此永不可达（除非显式传空串）。后果：默认值与代码内隐含默认（postgres）不一致，从 postgres 连接反向导入时会走 mysql information_schema 片段，产出错误结果。修复方向：明确单一默认值（与实际默认一致），未知驱动必须报错非零退出，不保留不可达分支。
+- reported_by: vq-p7-commander
+## BUG-631 [2026-11-14T02:47:39Z] [medium] FIXED
+- summary: MCP 无对话式上下文承接出口，prev_questions / prev_sql 无处可传
+- detail: crates/vq-mcp/src/server.rs 的 18 个工具全部无状态，RetrieveParams（:210-227）无 prev_questions / prev_sql 字段；vq-core 的 AskRequest 已有这两个字段（types.rs:295-300），AskService 也有对应装配逻辑，但 MCP 通道无任何出口把它传给 Agent。后果：Agent 在 MCP 通道做多轮追问时只能自己把上轮 SQL 拼进 question 字符串，核心的多轮上下文装配能力被完全旁路。修复方向：新增 vq_conversation_context 工具，入参带 prev_questions / prev_sql，服务端无状态（决策 3）。
+- reported_by: vq-p7-commander
+## BUG-632 [2026-11-14T02:47:42Z] [low] FIXED
+- summary: MCP 无图表配置出口，core ChartService::infer 纯未暴露
+- detail: crates/vq-core/src/chart/mod.rs:121 ChartService::infer(sql, question) -> Option<ChartConfig> 已实现；CLI 有 vq chart（crates/vq-cli/src/main.rs:1181）与 REPL /chart 命令；但 crates/vq-mcp/src/server.rs 的 18 个工具无任何图表相关入口。后果：MCP 客户端拿不到图表配置，只能自己猜 x/y 字段，与 vq 的 R7 能力割裂。修复方向：新增 vq_chart 工具；非 SELECT 时返回 inferred:false 软降级（与 CLI 现有行为一致）。
+- reported_by: vq-p7-commander
+## BUG-633 [2026-11-14T02:47:43Z] [medium] FIXED
+- summary: MCP 无训练记录读出口：写入与读取分属两表，闭环不可见
+- detail: crates/vq-mcp/src/server.rs 的 vq_train 写入 training_records 表，而 vq_history 读的是 query_history 表，两者不同；MCP 侧无任何读取 training_records 的工具（core TrainingService::list_training 存在但未暴露）。后果：Agent 调用 vq_train 后无法确认写入结果、也无法复查训练集内容，训练闭环在 MCP 通道不可观测。修复方向：新增 vq_training_list 工具（只读），支持 type 过滤与 limit。
+- reported_by: vq-p7-commander
+## BUG-634 [2026-11-14T02:47:45Z] [medium] FIXED
+- summary: MCP vq_history_rate 不触发入训练集，与 CLI 语义断裂
+- detail: crates/vq-cli/src/main.rs:2741-2753 的 history rate 在评分 >= 8 时会自动调用 train_sql 入训练集；而 crates/vq-mcp/src/server.rs:712-738 的 vq_history_rate 只调 history.rate_history，不做任何训练晋升。后果：同一操作在两个通道语义不一致，Agent 给出高分后训练闭环不闭合，examples 段永远召回不到该样例。修复方向：给 vq_history_rate 增加 promote_to_training 参数（默认 false，保持向后兼容），true 且 rating>=8 时执行 train_sql；晋升失败不得掩盖评分本身的成功。
+- reported_by: vq-p7-commander
+## BUG-635 [2026-11-14T02:47:47Z] [medium] FIXED
+- summary: MCP 无元数据树 / 历史详情 / 设置 / 变量读出口
+- detail: crates/vq-mcp/src/server.rs 的 18 个工具中无 metadata.get_tree、history.get_history、settings.get_all、storage.list_variables 的对应出口（core 侧 MetadataService::get_tree、HistoryService::get_history、SettingsService::get_all、Storage::list_variables 均已存在）。后果：Agent 无法读取元数据树来了解有哪些库表、无法取单条历史详情、无法读取全局设置与 SQL 变量，能力面显著窄于 CLI。修复方向：新增 vq_metadata_tree、vq_history_get、vq_settings_get、vq_variables 四个只读工具；vq_settings_get 必须对 conn.* 口令打码。
+- reported_by: vq-p7-commander
+
+
+### FIXED(2026-11-15T03:18:06Z / BUG-625, BUG-626, BUG-627, BUG-628, BUG-629, BUG-630, BUG-631, BUG-632, BUG-633, BUG-634, BUG-635)
+- evidence: clap `Ask.question` 改 `Option<String>` + `required_unless_present="interactive"`，两处用法 `unwrap_or_default()`/`as_deref().unwrap_or("")` 手工校验；消除 release 二进制 clap 断言 panic。回归锁：`crates/vq-cli/tests/p7_multi_outlet.rs::ask_i_not_rejected_by_clap_and_plain_ask_still_requires_question` （动态子进程：正向 `vq ask -i` rc≠2、反向 `vq ask` 无参 rc==2）。 || 改调 `storage().delete_template(name)`；删除后核验模板确实消失。回归锁：`p7_multi_outlet.rs::template_delete_targets_template_not_tree_table`（静态 `delete_template(name)` 存在性 + 「删除后模板 {} 仍然存在」负向串）。 || 真实写入：`TrainingService::train_sql(question, sql, "template", *weight)`。回归锁：`p7_multi_outlet.rs::template_train_writes_into_training_set`（静态「模板 '{}' 已入训练集 (id:」+ `"template"` 标签）。 || 真正生效：支持 `json`/`csv`/`md` 三分支，未知格式显式报错退出。回归锁：`p7_multi_outlet.rs::history_export_format_arms_present`（静态 `"json"=>`/`"csv"=>`/`"md"=>`/`不支持的导出格式`）。 || 改非零退出：`create_dir_all`/`remove_file`/`write` 失败 → `eprintln!` + `exit(1)`。 || 默认 `postgres` + 白名单校验，未知驱动显式报错退出（去除不可达死分支）。 || 新增 `vq_conversation_context`：复用 `build_retrieve_payload` + core `AskService::retrieve`，截断护栏（预算/优先级/examples 保底/显式标注）全继承；服务端无状态，prev 最多 6 轮。验收：`p7_o_group_probe.py` O1/O1b/O1c（对话承接段 + truncation 同构 retrieve + question 空 -32602）。 || 新增 `vq_chart`：复用 core `ChartService::infer`，非 SELECT/无 FROM/解析失败 ⇒ 软降级 `inferred:false`（非错误），与 CLI `vq chart` 同口径。验收：O2/O2b（SELECT inferred:true + DELETE inferred:false）。 || 新增 `vq_training_list`（core `list_training`，只读）。验收：O4/O4b（total=50 + learn 探针回读）。 || 扩展 `promote_to_training`（默认 false）；`true` 且 `rating≥8` ⇒ `train_sql` 自动入训练集，训练失败不掩盖评分成功。 || 新增 `vq_metadata_tree`/`vq_history_get`/`vq_settings_get`/`vq_variables` 四个只读出口。验收：O5/O5b（结构 + search）/O6/O6b（单条 + 语义化未找到）/O7/O7b（21 设置 + 口令打码）/O8（变量列表）。
+
+
+### FIXED(2026-11-15T03:18:41Z / BUG-625, BUG-626, BUG-627, BUG-628, BUG-629, BUG-630, BUG-631, BUG-632, BUG-633, BUG-634, BUG-635)
+- evidence: clap `Ask.question` 改 `Option<String>` + `required_unless_present="interactive"`，两处用法 `unwrap_or_default()`/`as_deref().unwrap_or("")` 手工校验；消除 release 二进制 clap 断言 panic。回归锁：`crates/vq-cli/tests/p7_multi_outlet.rs::ask_i_not_rejected_by_clap_and_plain_ask_still_requires_question` （动态子进程：正向 `vq ask -i` rc≠2、反向 `vq ask` 无参 rc==2）。 || 改调 `storage().delete_template(name)`；删除后核验模板确实消失。回归锁：`p7_multi_outlet.rs::template_delete_targets_template_not_tree_table`（静态 `delete_template(name)` 存在性 + 「删除后模板 {} 仍然存在」负向串）。 || 真实写入：`TrainingService::train_sql(question, sql, "template", *weight)`。回归锁：`p7_multi_outlet.rs::template_train_writes_into_training_set`（静态「模板 '{}' 已入训练集 (id:」+ `"template"` 标签）。 || 真正生效：支持 `json`/`csv`/`md` 三分支，未知格式显式报错退出。回归锁：`p7_multi_outlet.rs::history_export_format_arms_present`（静态 `"json"=>`/`"csv"=>`/`"md"=>`/`不支持的导出格式`）。 || 改非零退出：`create_dir_all`/`remove_file`/`write` 失败 → `eprintln!` + `exit(1)`。 || 默认 `postgres` + 白名单校验，未知驱动显式报错退出（去除不可达死分支）。 || 新增 `vq_conversation_context`：复用 `build_retrieve_payload` + core `AskService::retrieve`，截断护栏（预算/优先级/examples 保底/显式标注）全继承；服务端无状态，prev 最多 6 轮。验收：`p7_o_group_probe.py` O1/O1b/O1c（对话承接段 + truncation 同构 retrieve + question 空 -32602）。 || 新增 `vq_chart`：复用 core `ChartService::infer`，非 SELECT/无 FROM/解析失败 ⇒ 软降级 `inferred:false`（非错误），与 CLI `vq chart` 同口径。验收：O2/O2b（SELECT inferred:true + DELETE inferred:false）。 || 新增 `vq_training_list`（core `list_training`，只读）。验收：O4/O4b（total=50 + learn 探针回读）。 || 扩展 `promote_to_training`（默认 false）；`true` 且 `rating≥8` ⇒ `train_sql` 自动入训练集，训练失败不掩盖评分成功。 || 新增 `vq_metadata_tree`/`vq_history_get`/`vq_settings_get`/`vq_variables` 四个只读出口。验收：O5/O5b（结构 + search）/O6/O6b（单条 + 语义化未找到）/O7/O7b（21 设置 + 口令打码）/O8（变量列表）。
+## BUG-636 [2026-11-15T15:04:15Z] [high] FIXED
+- summary: [P7-3/环境] gnu 目标测试 exe 启动即 STATUS_ENTRYPOINT_NOT_FOUND（rustc 1.100 + MinGW 8.1.0 import lib 绑定过时）
+- detail: rustc 1.100 std 引用 WaitOnAddress/WakeByAddressAll/WakeByAddressSingle；MinGW 8.1.0 libkernel32.a 把三者静态绑定 KERNEL32.dll，而 Windows 11 build 26200 上它们只在 api-ms-win-core-synch-l1-2-0.dll 导出，导致 cargo test --target x86_64-pc-windows-gnu 的 4 个集成测试 exe 运行即 0xc0000139 / rc=127。已定位并验证修复：生成只删三旧成员的同名 libkernel32.a 到 target/gnu-compat/，配合 per-target RUSTFLAGS 的 -L native= 前置与 -l synchronization 接管（不放宽门禁、不改业务代码）。
+- reported_by: vq 统帅（P7-3）
+
+
+### FIXED(2026-11-15T15:40:40Z / BUG-636)
+- evidence: 回归锁：scripts/gates_mcp_round.sh 的 cargo_test_gnu 段（全量 471 用例）即为回归锁——若 compat 生成或 per-target RUSTFLAGS 被回退，4 个 gnu 集成测试 exe 立即 STATUS_ENTRYPOINT_NOT_FOUND / rc=127，门禁当场判红；crates/vq-cli/tests/p7_multi_outlet.rs 的 4 个用例即该 exe 的具体回归臂。根因：rustc 1.100 std 引用 WaitOnAddress/WakeByAddressAll/WakeByAddressSingle，MinGW 8.1.0 libkernel32.a 把三者绑定 KERNEL32.dll，而 Windows 11 build 26200 只在 api-ms-win-core-synch-l1-2-0.dll 导出；-Wl,--trace-symbol 实证解析自 dqifs01461.o。修复：门禁脚本内幂等生成 target/gnu-compat/libkernel32.a（只删 3 旧成员，1657/1660），配合 CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS=-L native=<Windows 风格路径> -l synchronization 接管，判据未放宽、业务代码零改动。证伪：单独 -l 只修好 1/3 符号仍 rc=127；ar r 并入成员触发 ld 2.30 corrupt .drectve / File truncated。结果：导入表三符号 hint 45/47/48 全落 API-set；p7_multi_outlet 4/4；全门禁 8/8 绿 GATES_FAILED=0，cargo_test_gnu rc=0（471/0）。
+## BUG-637 [2026-11-18T10:27:36Z] [high] FIXED
+- summary: PowerShell 6 步 CI 与 test.ps1 未同步 gnu compat，gnu 目标 exe 仍会 rc=127
+- detail: P7 只在 gates_mcp_round.sh 修了 WaitOnAddress/WakeByAddress 三符号compat；scripts/test.ps1 的 gnu 测试与 scripts/ci.ps1 第 6 步 gnu vq-mcp.exe 仍用旧 libkernel32.a。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r33
+## BUG-638 [2026-11-18T10:27:38Z] [medium] FIXED
+- summary: `vq ask --chart` 请求图表但推断失败仍 rc=0
+- detail: main.rs 请求 --chart 后仅在 resp.chart 为 None 时 eprintln 告警，脚本无法感知请求的能力未交付。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r34
+## BUG-639 [2026-11-18T10:27:39Z] [high] FIXED
+- summary: `vq ask --execute` 请求执行但因空 SQL/校验失败跳过仍 rc=0
+- detail: 请求了执行却未执行，属于 P6/P7 同一类假成功；--onlysql 与常规输出路径都要收口。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r35
+## BUG-640 [2026-11-18T10:27:41Z] [high] FIXED
+- summary: `alias-learn` 写 JSON 成功但同步 SQLite 0 行仍返回成功（半提交）
+- detail: main.rs 对 sync_sqlite 返回 0 行只警告，事实源 JSON 已改、DB 未改，下一进程读到的口径不一致。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r36
+## BUG-641 [2026-11-18T10:27:43Z] [high] FIXED
+- summary: 打开 SQLite 失败后静默降级内存库并继续 rc=0
+- detail: 数据库损坏/锁定/路径不可写时，用户以为写入了真实库，实际全在内存。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r37
+## BUG-642 [2026-11-18T10:27:45Z] [medium] FIXED
+- summary: REPL 注释称任一命令失败 rc=1，但多个软错误分支不置 repl_failed
+- detail: /dialect 空参、/top_k 非法、无 last_sql 的 /execute 与 /chart、图表推断失败均只 eprintln。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r38
+## BUG-643 [2026-11-18T10:27:47Z] [medium] FIXED
+- summary: LLM 匹配结果非法 JSON 被 unwrap_or_default() 吞成空列表
+- detail: handle_train_nltk 把解析失败当作「没有匹配的表」返回 Ok，用户误以为 LLM 正常判断无匹配。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r39
+## BUG-644 [2026-11-18T10:27:49Z] [medium] FIXED
+- summary: `execute --add-conn` 非法端口被 parse().ok() 吞成 None
+- detail: 端口字符串无效时连接配置仍被保存，执行阶段才以缺端口失败，错误离根因太远。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r40
+## BUG-645 [2026-11-18T10:27:51Z] [low] FIXED
+- summary: `vq init` 写文件错误源码已修但缺回归锁
+- detail: P7 BUG-629 已把 create_dir_all/remove_file/write 错误臂改为 exit(1)，但本批前无端到端用例。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r41
+## BUG-646 [2026-11-18T10:27:53Z] [high] FIXED
+- summary: FIST-Mbt 自身 3 条 MoonBit 编译错误使所有 fist call 无法工作
+- detail: server.mbt:4682 loop_create_handler 未绑定；:4702/:4716 两个 loop handler 同步签名与 async handler 表不匹配。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r42
+## BUG-647 [2026-11-18T10:27:54Z] [low] FIXED
+- summary: AskView 首屏静态引入 SqlDisplay 把 Monaco 链拉进问答首屏，且 loading 赋值重复
+- detail: 生产构建 index chunk 1.20MB/gzip 387KB；重复 loading.value=true 冗余。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r43
+
+
+## 勘误(2026-11-18 · VQ 项目账目误落本树)
+- 上面 0 条（无）是 **E:/IDEProjects/AI/vq** 项目的缺陷，不属于 FIST-Mbt。
+  成因：`fist-mbt call report_bug --project_dir .` 的 server 进程 cwd 被网关钉在本树，而 project_dir 只接受相对路径且拒绝 `..` ⇒ 调用方无法把账落到自己的项目。
+  同型尝试：把 `FIST_MBT_REPO` 指到调用方项目后，`fist-mbt call bug_list` 直接 rc=1 且**零输出**（bundle 发现失败但不自述），所以这条路也不通。
+- 处置：已逐字搬移到 `E:/IDEProjects/AI/vq/memory/bugs.md`；本树条目按 append-only 保留不回改，以本节为准。
+- 引擎侧待办：需要一个「按调用方项目落账」的出路（显式允许 project_dir 绝对路径，或网关传 cwd 时一并切 server cwd）。
+
+
+### FIXED(2026-11-18T10:27:57Z / BUG-637, BUG-638, BUG-639, BUG-640, BUG-641, BUG-642, BUG-643, BUG-644, BUG-645, BUG-646, BUG-647)
+- evidence: 回归锁：apps/api/tests/test_gnu_compat_wiring.py 四条静态断言钉住 helper 调用位置与 nm/ar d/ranlib/RUSTFLAGS 四步；scripts/gnu_compat.ps1 幂等生成 compat 库；全门禁 cargo_test_gnu/rc 与 mcp_acceptance 由 gates_mcp_round.sh 实测。 || 回归锁：crates/vq-cli/tests/exit_code_invariants.rs::p8_chart_missing_config_exits_nonzero_in_source（静态钉住 P8-C1 邻域的 exit(1) 与 JSON 错误臂）。 || 回归锁：exit_code_invariants.rs::p8_execute_skip_exits_nonzero_in_source 静态钉住 P8-C2 两处错误臂的 exit(1) 与中文提示。 || 回归锁：exit_code_invariants.rs::p8_alias_learn_zero_rows_rolls_back 静态钉住「同步 0 行，已回滚 JSON」、return Err 与备份写入失败不得吞。 || 回归锁：exit_code_invariants.rs::p8_db_open_failure_defaults_to_nonzero 静态钉住 VQ_ALLOW_MEMORY_FALLBACK=1 才允许降级；默认分支 rc=1。 || 回归锁：exit_code_invariants.rs::p8_repl_all_failure_arms_set_flag 静态计数 repl_failed = true ≥12 处并钉住 P8-C5 注释与 rc=1 口径一致。 || 回归锁：exit_code_invariants.rs::p8_llm_match_json_parse_error_in_source 静态钉住 map_err/JSON 解析失败/take(200)，并要求旧 unwrap_or_default 消失。 || 回归锁：exit_code_invariants.rs::p8_add_conn_invalid_port_exits_nonzero（动态非法端口 rc=1 + 文案）与 p8_port_parse_range_in_source（静态 1..=65535）；add_conn_exit_code.rs 保留合法连接对照臂。 || 回归锁：exit_code_invariants.rs::p8_init_data_file_conflict_exits_nonzero（动态：`vq init --path` 指向预建 data 普通文件的临时目录 ⇒ rc=1 且含「创建数据目录失败」）。 || 引擎编译命令即回归锁：moon build --target js cmd/cli rc=0；只读 `fist call bug_list --project_dir .` rc=0 并返回 JSON，不再出现「自动重建失败」。 || 回归锁：vue-tsc --noEmit rc=0、vitest 6 files/63 tests rc=0、npm run build rc=0；构建产物 index 降至 4.80kB，SqlDisplay 改 defineAsyncComponent。
+
+
+## 勘误(2026-11-18 · VQ 项目账目误落本树)
+- 上面 11 条（BUG-637, BUG-638, BUG-639, BUG-640, BUG-641, BUG-642, BUG-643, BUG-644, BUG-645, BUG-646, BUG-647）是 **E:/IDEProjects/AI/vq** 项目的缺陷，不属于 FIST-Mbt。
+  成因：`fist-mbt call report_bug --project_dir .` 的 server 进程 cwd 被网关钉在本树，而 project_dir 只接受相对路径且拒绝 `..` ⇒ 调用方无法把账落到自己的项目。
+  同型尝试：把 `FIST_MBT_REPO` 指到调用方项目后，`fist-mbt call bug_list` 直接 rc=1 且**零输出**（bundle 发现失败但不自述），所以这条路也不通。
+- 处置：已逐字搬移到 `E:/IDEProjects/AI/vq/memory/bugs.md`；本树条目按 append-only 保留不回改，以本节为准。
+- 引擎侧待办：需要一个「按调用方项目落账」的出路（显式允许 project_dir 绝对路径，或网关传 cwd 时一并切 server cwd）。
+
+
+### FIXED(2026-11-18T10:28:21Z / BUG-637, BUG-638, BUG-639, BUG-640, BUG-641, BUG-642, BUG-643, BUG-644, BUG-645, BUG-646, BUG-647)
+- evidence: 回归锁：apps/api/tests/test_gnu_compat_wiring.py 四条静态断言钉住 helper 调用位置与 nm/ar d/ranlib/RUSTFLAGS 四步；scripts/gnu_compat.ps1 幂等生成 compat 库；全门禁 cargo_test_gnu/rc 与 mcp_acceptance 由 gates_mcp_round.sh 实测。 || 回归锁：crates/vq-cli/tests/exit_code_invariants.rs::p8_chart_missing_config_exits_nonzero_in_source（静态钉住 P8-C1 邻域的 exit(1) 与 JSON 错误臂）。 || 回归锁：exit_code_invariants.rs::p8_execute_skip_exits_nonzero_in_source 静态钉住 P8-C2 两处错误臂的 exit(1) 与中文提示。 || 回归锁：exit_code_invariants.rs::p8_alias_learn_zero_rows_rolls_back 静态钉住「同步 0 行，已回滚 JSON」、return Err 与备份写入失败不得吞。 || 回归锁：exit_code_invariants.rs::p8_db_open_failure_defaults_to_nonzero 静态钉住 VQ_ALLOW_MEMORY_FALLBACK=1 才允许降级；默认分支 rc=1。 || 回归锁：exit_code_invariants.rs::p8_repl_all_failure_arms_set_flag 静态计数 repl_failed = true ≥12 处并钉住 P8-C5 注释与 rc=1 口径一致。 || 回归锁：exit_code_invariants.rs::p8_llm_match_json_parse_error_in_source 静态钉住 map_err/JSON 解析失败/take(200)，并要求旧 unwrap_or_default 消失。 || 回归锁：exit_code_invariants.rs::p8_add_conn_invalid_port_exits_nonzero（动态非法端口 rc=1 + 文案）与 p8_port_parse_range_in_source（静态 1..=65535）；add_conn_exit_code.rs 保留合法连接对照臂。 || 回归锁：exit_code_invariants.rs::p8_init_data_file_conflict_exits_nonzero（动态：`vq init --path` 指向预建 data 普通文件的临时目录 ⇒ rc=1 且含「创建数据目录失败」）。 || 引擎编译命令即回归锁：moon build --target js cmd/cli rc=0；只读 `fist call bug_list --project_dir .` rc=0 并返回 JSON，不再出现「自动重建失败」。 || 回归锁：vue-tsc --noEmit rc=0、vitest 6 files/63 tests rc=0、npm run build rc=0；构建产物 index 降至 4.80kB，SqlDisplay 改 defineAsyncComponent。
+## BUG-648 [2026-11-18T11:27:48Z] [high] FIXED
+- summary: 新增 cust_genre 概念字段非法且别名冲突，5 条 vq-core 正典用例失败
+- detail: 工作区已有 25 概念事实源：cust_genre.aggregation='classification' 不在允许枚举；aliases 含「客户类型」与 block_rate 的中文匹配冲突；3 处测试把概念数硬编码为 24。
+- reported_by: vq 统帅（P8 批次）
+- task_id: T0r44
+
+
+## 勘误(2026-11-18 · VQ 项目账目误落本树)
+- 上面 1 条（BUG-648）是 **E:/IDEProjects/AI/vq** 项目的缺陷，不属于 FIST-Mbt。
+  成因：`fist-mbt call report_bug --project_dir .` 的 server 进程 cwd 被网关钉在本树，而 project_dir 只接受相对路径且拒绝 `..` ⇒ 调用方无法把账落到自己的项目。
+  同型尝试：把 `FIST_MBT_REPO` 指到调用方项目后，`fist-mbt call bug_list` 直接 rc=1 且**零输出**（bundle 发现失败但不自述），所以这条路也不通。
+- 处置：已逐字搬移到 `E:/IDEProjects/AI/vq/memory/bugs.md`；本树条目按 append-only 保留不回改，以本节为准。
+- 引擎侧待办：需要一个「按调用方项目落账」的出路（显式允许 project_dir 绝对路径，或网关传 cwd 时一并切 server cwd）。
+
+
+### FIXED(2026-11-18T11:27:51Z / BUG-637, BUG-638, BUG-639, BUG-640, BUG-641, BUG-642, BUG-643, BUG-644, BUG-645, BUG-646, BUG-647, BUG-648)
+- evidence: 回归锁：apps/api/tests/test_gnu_compat_wiring.py 四条静态断言钉住 helper 调用位置与 nm/ar d/ranlib/RUSTFLAGS 四步；scripts/gnu_compat.ps1 幂等生成 compat 库；全门禁 cargo_test_gnu/rc 与 mcp_acceptance 由 gates_mcp_round.sh 实测。 || 回归锁：crates/vq-cli/tests/exit_code_invariants.rs::p8_chart_missing_config_exits_nonzero_in_source（静态钉住 P8-C1 邻域的 exit(1) 与 JSON 错误臂）。 || 回归锁：exit_code_invariants.rs::p8_execute_skip_exits_nonzero_in_source 静态钉住 P8-C2 两处错误臂的 exit(1) 与中文提示。 || 回归锁：exit_code_invariants.rs::p8_alias_learn_zero_rows_rolls_back 静态钉住「同步 0 行，已回滚 JSON」、return Err 与备份写入失败不得吞。 || 回归锁：exit_code_invariants.rs::p8_db_open_failure_defaults_to_nonzero 静态钉住 VQ_ALLOW_MEMORY_FALLBACK=1 才允许降级；默认分支 rc=1。 || 回归锁：exit_code_invariants.rs::p8_repl_all_failure_arms_set_flag 静态计数 repl_failed = true ≥12 处并钉住 P8-C5 注释与 rc=1 口径一致。 || 回归锁：exit_code_invariants.rs::p8_llm_match_json_parse_error_in_source 静态钉住 map_err/JSON 解析失败/take(200)，并要求旧 unwrap_or_default 消失。 || 回归锁：exit_code_invariants.rs::p8_add_conn_invalid_port_exits_nonzero（动态非法端口 rc=1 + 文案）与 p8_port_parse_range_in_source（静态 1..=65535）；add_conn_exit_code.rs 保留合法连接对照臂。 || 回归锁：exit_code_invariants.rs::p8_init_data_file_conflict_exits_nonzero（动态：`vq init --path` 指向预建 data 普通文件的临时目录 ⇒ rc=1 且含「创建数据目录失败」）。 || 引擎编译命令即回归锁：moon build --target js cmd/cli rc=0；只读 `fist call bug_list --project_dir .` rc=0 并返回 JSON，不再出现「自动重建失败」。 || 回归锁：vue-tsc --noEmit rc=0、vitest 6 files/63 tests rc=0、npm run build rc=0；构建产物 index 降至 4.80kB，SqlDisplay 改 defineAsyncComponent。 || 回归锁：5 条失败用例（test_real_concepts_pass_validation / test_real_facts_source_approval_and_rollback_preserve_key_shape / test_real_facts_source_roundtrip_is_shape_exact / test_r5_match_chinese_alias / test_load_from_file_pins_source_and_fails_loudly）修复后 `cargo test -p vq-core --lib` rc=0、404/0；保留 aggregation=expression、删除重复别名，硬编码 24 改为从 EMBEDDED_CONCEPTS_JSON 派生且仍断言 >=24 与逐键保形。修复前备份 spec_concepts.json.bak-p8-20261118-185939。
