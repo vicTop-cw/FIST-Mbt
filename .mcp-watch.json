@@ -17,7 +17,21 @@
       "actions": [
         {
           "kind": "command",
-          "argv": ["python", "scripts/fist.py", "call", "publish", "--project-dir", ".", "--description", "BACKLOG self-tidy trigger"],
+          "argv": ["python", "scripts/fist.py", "call", "store_open", "--ns", "fist-self-tidy"],
+          "target": null,
+          "body": null,
+          "acceptance": {
+            "expect_exit": 0,
+            "stdout_contains": [],
+            "stdout_not_contains": [],
+            "stderr_not_contains": []
+          },
+          "ttl": 0,
+          "cleanup": "trash"
+        },
+        {
+          "kind": "command",
+          "argv": ["python", "scripts/fist.py", "call", "publish", "--project-dir", ".", "--ns", "fist-self-tidy", "--description", "BACKLOG self-tidy trigger"],
           "target": null,
           "body": null,
           "acceptance": {
