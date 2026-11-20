@@ -11,7 +11,7 @@
 
 name = "vicTop-cw/fist-mbt"
 
-version = "0.3.14"
+version = "0.3.15"
 
 readme = "README.mbt.md"
 

@@ -271,6 +271,8 @@ pub fn SqliteStore::default_db_path() -> String
 pub fn SqliteStore::delete_heartbeat(Self, String) -> Result[Unit, String]
 pub fn SqliteStore::delete_task(Self, String) -> Result[Unit, String]
 pub fn SqliteStore::ensure_specs_table(Self) -> Bool
+pub fn SqliteStore::event_append(Self, String, String, String, String, String, String) -> Bool
+pub fn SqliteStore::event_list(Self, String, String, Int32) -> Array[@json.Json]
 pub fn SqliteStore::evolve_bump_child(Self, String) -> Bool
 pub fn SqliteStore::evolve_list(Self) -> Array[@json.Json]
 pub fn SqliteStore::evolve_upsert(Self, id~ : String, parent_id~ : String, goal~ : String, note~ : String, code~ : String, score~ : Double, parts_json~ : String, created_at~ : String) -> Result[Unit, String]

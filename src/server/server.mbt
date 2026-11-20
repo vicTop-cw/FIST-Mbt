@@ -1746,7 +1746,7 @@ fn executor_machine_merge(
 /// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
 /// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
 /// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
-let project_version : String = "0.3.14"
+let project_version : String = "0.3.15"
 
 ///|
 /// —— 结果转换辅助 ——
@@ -2427,6 +2427,23 @@ fn fb_purge_expired_binds(ns : String, now : Int) -> Unit {
 }
 
 ///|
+/// 0.3.15 task_events：生命周期事件追加（append-only 审计账）。
+/// 迁移成功路径调用；账写失败不影响主流程（审计尽力而为，主流程已成功）。
+fn task_event_log(
+  ns : String,
+  task_id : String,
+  event : String,
+  actor : String,
+  detail : String,
+  ts : String,
+) -> Unit {
+  match mstore.get(ns) {
+    Some(st) => ignore(st.event_append(ns, task_id, event, actor, detail, ts))
+    None => ()
+  }
+}
+
+///|
 /// F094 §四 构建互斥：run_check 执行前自动 acquire scope=build 绑定（同项目
 /// 同时只允许一个构建/测试在跑）。**默认 advisory**——环境变量 FIST_BUILD_MUTEX=1
 /// 才 enforce（单 agent 场景零影响，多 agent 场景显式开）；冲突返回现持有者。
@@ -2973,6 +2990,8 @@ pub async fn run_server() -> Unit {
         ) {
         Err(e) => Err(@mcp_types.ToolError(e))
         Ok(t) => {
+          // 0.3.15 task_events：生命周期审计（append-only）
+          task_event_log(ns, task_id, "claimed", assignee, "", ts)
           // 零回归：不传 challenge ⇒ tag 为空 ⇒ 返回体与修前**逐字相同**
           if inject == "" && tag == "" {
             return Ok(@mcp.ToolResult::text(t.to_json().stringify()))
@@ -3122,7 +3141,14 @@ pub async fn run_server() -> Unit {
         Err(e) => return Err(@mcp_types.ToolError(e))
         Ok(_) => ()
       }
-      to_result(eng.submit(task_id~, now=ts))
+      match eng.submit(task_id~, now=ts) {
+        Ok(t) => {
+          // 0.3.15 task_events：生命周期审计
+          task_event_log(t.ns, task_id, "submitted", agent, "", ts)
+          to_result(Ok(t))
+        }
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
     },
   )
   s1 = instrumented_tool(
@@ -3324,6 +3350,8 @@ pub async fn run_server() -> Unit {
         Ok(t) => {
           // F094 §3.3：verify 服务端自动 release 该任务全部绑定（不靠 agent 自觉）
           fb_release_task_binds(ns, t.project_dir, task_id)
+          // 0.3.15 task_events：生命周期审计
+          task_event_log(ns, task_id, "verified", verifier, "", ts)
           to_result(Ok(t))
         }
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -3359,7 +3387,14 @@ pub async fn run_server() -> Unit {
         Ok(_) => ()
       }
       let ts = now_default()
-      to_result(eng.reject_task(task_id~, reason~, by~, now=ts))
+      match eng.reject_task(task_id~, reason~, by~, now=ts) {
+        Ok(t) => {
+          // 0.3.15 task_events：生命周期审计（reject 带理由入账）
+          task_event_log(t.ns, task_id, "rejected", by, reason, ts)
+          to_result(Ok(t))
+        }
+        Err(e) => Err(@mcp_types.ToolError(e))
+      }
     },
   )
   s1 = instrumented_tool(
@@ -3424,7 +3459,11 @@ pub async fn run_server() -> Unit {
       }
       let ts = now_default()
       match eng.reopen_task(task_id, ts) {
-        Ok(t) => Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        Ok(t) => {
+          // 0.3.15 task_events：生命周期审计
+          task_event_log(t.ns, task_id, "reopened", "", "", ts)
+          Ok(@mcp.ToolResult::text(t.to_json().stringify()))
+        }
         Err(e) => Err(@mcp_types.ToolError(e))
       }
     },
@@ -3546,6 +3585,8 @@ pub async fn run_server() -> Unit {
         Ok(t) => {
           // F094 §3.3：archive 服务端自动 release 该任务全部绑定（不靠 agent 自觉）
           fb_release_task_binds(ns, t.project_dir, task_id)
+          // 0.3.15 task_events：生命周期审计
+          task_event_log(ns, task_id, "archived", by, "", ts)
           Ok(@mcp.ToolResult::text(t.to_json().stringify()))
         }
         Err(e) =>
@@ -8987,6 +9028,212 @@ pub async fn run_server() -> Unit {
         Ok(j) => Ok(@mcp.ToolResult::text(j.stringify()))
         Err(e) => Err(@mcp_types.ToolError(e))
       }
+    },
+  )
+  // ---- 0.3.15 查询面三件套：task_events / task_query / task_stats ----
+  s1 = instrumented_tool(
+    s1,
+    "task_events",
+    "任务生命周期审计流（append-only 账，只增不改不删）：回答「谁在何时对这个任务做了什么」。每次 claim/submit/verify/reject/archive/reopen 成功迁移由服务端自动记账。参数：task_id(必填)、namespace(可选，默认 default)、limit(可选，默认 50，封顶 500)。返回 {namespace, task_id, count, events: [{event, actor, detail, ts}]}，最新在前。",
+    schema(
+      {
+        "task_id": string_prop("任务 id（必填）"),
+        "namespace": string_prop("命名空间（可选，默认 default）"),
+        "limit": int_prop("返回条数上限（可选，默认 50，封顶 500）"),
+      },
+      ["task_id"],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns = get_str(args, "namespace", default="default")
+      let task_id = get_str(args, "task_id")
+      let limit0 = get_int(args, "limit", default=50)
+      let limit = if limit0 > 500 { 500 } else { if limit0 < 1 { 1 } else { limit0 } }
+      match mstore.get(ns) {
+        Some(st) => {
+          let events = st.event_list(ns, task_id, limit)
+          let m : Map[String, Json] = Map([])
+          m.set("namespace", Json::string(ns))
+          m.set("task_id", Json::string(task_id))
+          m.set("count", Json::number(events.length().to_double()))
+          m.set("events", Json::array(events))
+          Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+        }
+        None =>
+          Err(
+            @mcp_types.ToolError(
+              "task_events: 存储不可用（namespace " + ns + " 无法打开）",
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "task_query",
+    "结构化多条件任务查询（只读）：assignee/priority/status/卡死天数/关键词 组合过滤 + 排序 + 分页。参数：namespace(可选，默认 default)、status(可选，状态过滤)、assignee(可选，精确匹配认领人)、priority(可选，优先级过滤)、stale_days(可选，updated_at 距今超过 N 天视为卡死)、keyword(可选，对 description/deliverable 做包含匹配)、sort(可选 created_at|updated_at|priority，默认 created_at 倒序)、limit(可选，默认 50，封顶 500)、offset(可选，默认 0)。返回 {namespace, filtered, count, tasks: [...]}（tasks 为分页后的切片）。",
+    schema(
+      {
+        "namespace": string_prop("命名空间（可选，默认 default）"),
+        "status": string_prop("状态过滤（可选）"),
+        "assignee": string_prop("认领人过滤（可选，精确匹配）"),
+        "priority": string_prop("优先级过滤（可选）"),
+        "stale_days": int_prop("卡死检测：updated_at 距今超过 N 天（可选）"),
+        "keyword": string_prop("description/deliverable 关键词包含匹配（可选）"),
+        "sort": string_prop(
+          "排序 created_at|updated_at|priority（可选，默认 created_at 倒序）",
+        ),
+        "limit": int_prop("返回条数上限（可选，默认 50，封顶 500）"),
+        "offset": int_prop("跳过条数（可选，默认 0）"),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns_str = get_str(args, "namespace", default="default")
+      let status = get_str(args, "status", default="")
+      let assignee = get_str(args, "assignee", default="")
+      let priority = get_str(args, "priority", default="")
+      let stale_days = get_int(args, "stale_days", default=0)
+      let keyword = get_str(args, "keyword", default="")
+      let sort = get_str(args, "sort", default="created_at")
+      let limit0 = get_int(args, "limit", default=50)
+      let limit = if limit0 > 500 { 500 } else { if limit0 < 1 { 1 } else { limit0 } }
+      let offset = get_int(args, "offset", default=0)
+      let eng = match engine_for_ns(ns_str) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let all = if status == "" {
+        eng.list_all()
+      } else {
+        match @core.TaskStatus::from_string(status) {
+          Some(st) => eng.list_by_status(st)
+          None => return Err(@mcp_types.ToolError("未知状态: \{status}"))
+        }
+      }
+      let now_secs = @ops.iso_to_secs(now_default())
+      let stale_cutoff = if stale_days > 0 {
+        now_secs - stale_days * 86400
+      } else {
+        0
+      }
+      let pr_rank = fn(p : String) -> Int {
+        if p == "高" { 0 } else { if p == "低" { 2 } else { 1 } }
+      }
+      let filtered = all.filter(fn(t) {
+        if task_ns_of(t) != ns_str {
+          return false
+        }
+        if assignee != "" {
+          match t.assignee {
+            Some(a) => if a != assignee { return false }
+            None => return false
+          }
+        }
+        if priority != "" && t.priority != priority {
+          return false
+        }
+        if stale_cutoff > 0 && @ops.iso_to_secs(t.updated_at) > stale_cutoff {
+          return false
+        }
+        if keyword != "" && !(t.description.contains(keyword) || t.deliverable.contains(keyword)) {
+          return false
+        }
+        true
+      })
+      let total = filtered.length()
+      // 排序（均为倒序：最新 / 最高优先级在前）
+      filtered.sort_by(fn(a, b) {
+        if sort == "priority" {
+          let ra = pr_rank(a.priority)
+          let rb = pr_rank(b.priority)
+          ra - rb
+        } else {
+          let ka = if sort == "updated_at" { a.updated_at } else { a.created_at }
+          let kb = if sort == "updated_at" { b.updated_at } else { b.created_at }
+          if kb > ka { -1 } else { if kb < ka { 1 } else { 0 } }
+        }
+      })
+      let start = if offset > 0 { offset } else { 0 }
+      let slice : Array[@core.Task] = []
+      for idx, t in filtered {
+        if idx >= start && idx < start + limit {
+          slice.push(t)
+        }
+      }
+      let m : Map[String, Json] = Map([])
+      m.set("namespace", Json::string(ns_str))
+      m.set("filtered", Json::number(total.to_double()))
+      m.set("count", Json::number(slice.length().to_double()))
+      m.set("tasks", Json::array(slice.map(fn(t) { t.to_json() })))
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "task_stats",
+    "任务聚合观测（只读）：按状态/认领人/优先级分组计数 + 卡死检测（待领取|已领取 且 updated_at 距今超过阈值 stale_days，默认 7 天）。参数：namespace(可选)、stale_days(可选，默认 7)。返回 {namespace, total, by_status, by_assignee, by_priority, stale: {days, count, ids}}。",
+    schema(
+      {
+        "namespace": string_prop("命名空间（可选，默认 default）"),
+        "stale_days": int_prop("卡死阈值天数（可选，默认 7）"),
+      },
+      [],
+    ),
+    fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
+      let ns_str = get_str(args, "namespace", default="default")
+      let stale_days = get_int(args, "stale_days", default=7)
+      let eng = match engine_for_ns(ns_str) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      let all = eng.list_all().filter(fn(t) { task_ns_of(t) == ns_str })
+      let by_status : Map[String, Int] = Map([])
+      let by_assignee : Map[String, Int] = Map([])
+      let by_priority : Map[String, Int] = Map([])
+      let now_secs = @ops.iso_to_secs(now_default())
+      let stale_ids : Array[String] = []
+      for t in all {
+        let sk = t.get_status().to_string()
+        match by_status.get(sk) {
+          Some(c) => by_status.set(sk, c + 1)
+          None => by_status.set(sk, 1)
+        }
+        let ak = match t.assignee {
+          Some(a) => a
+          None => "未认领"
+        }
+        match by_assignee.get(ak) {
+          Some(c) => by_assignee.set(ak, c + 1)
+          None => by_assignee.set(ak, 1)
+        }
+        match by_priority.get(t.priority) {
+          Some(c) => by_priority.set(t.priority, c + 1)
+          None => by_priority.set(t.priority, 1)
+        }
+        let st = t.get_status()
+        if (st.is_pending() || st.is_active()) && @ops.iso_to_secs(t.updated_at) < now_secs - stale_days * 86400 {
+          stale_ids.push(t.id)
+        }
+      }
+      let jmap = fn(src : Map[String, Int]) -> Json {
+        let m : Map[String, Json] = Map([])
+        for k, v in src {
+          m.set(k, Json::number(v.to_double()))
+        }
+        Json::object(m)
+      }
+      let m : Map[String, Json] = Map([])
+      m.set("namespace", Json::string(ns_str))
+      m.set("total", Json::number(all.length().to_double()))
+      m.set("by_status", jmap(by_status))
+      m.set("by_assignee", jmap(by_assignee))
+      m.set("by_priority", jmap(by_priority))
+      let stale_m : Map[String, Json] = Map([])
+      stale_m.set("days", Json::number(stale_days.to_double()))
+      stale_m.set("count", Json::number(stale_ids.length().to_double()))
+      stale_m.set("ids", Json::array(stale_ids.map(fn(s) { Json::string(s) })))
+      m.set("stale", Json::object(stale_m))
+      Ok(@mcp.ToolResult::text(Json::object(m).stringify()))
     },
   )
   // ---- multi-store 命名空间工具 ----
