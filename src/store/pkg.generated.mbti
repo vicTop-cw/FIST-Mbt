@@ -6,6 +6,7 @@ import {
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
   "vicTop-cw/fist-mbt/src/core",
+  "vicTop-cw/fist-mbt/src/filebind",
 }
 
 // Values
@@ -276,6 +277,10 @@ pub fn SqliteStore::evolve_upsert(Self, id~ : String, parent_id~ : String, goal~
 pub fn SqliteStore::executor_clear(Self) -> Bool
 pub fn SqliteStore::executor_list(Self) -> Array[(String, String, String)]
 pub fn SqliteStore::executor_save(Self, name~ : String, abilities_json~ : String, created_at~ : String) -> Result[String, String]
+pub fn SqliteStore::fb_list_rows(Self, String, String) -> Array[@filebind.FileBind]
+pub fn SqliteStore::fb_purge_expired(Self, String, Int32) -> Int32
+pub fn SqliteStore::fb_release_task(Self, String, String, String) -> Int32
+pub fn SqliteStore::fb_txn(Self, String, String, (Array[@filebind.FileBind]) -> Array[@filebind.FileBind]) -> Bool
 pub fn SqliteStore::get_spec(Self, String) -> SpecRecord?
 pub fn SqliteStore::get_task(Self, String) -> @core.Task?
 pub fn SqliteStore::list_all_heartbeats(Self) -> Array[(String, String, String, String)]
