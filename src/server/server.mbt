@@ -1746,7 +1746,7 @@ fn executor_machine_merge(
 /// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
 /// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
 /// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
-let project_version : String = "0.3.11"
+let project_version : String = "0.3.12"
 
 ///|
 /// —— 结果转换辅助 ——
