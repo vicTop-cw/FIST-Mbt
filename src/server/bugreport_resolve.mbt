@@ -46,6 +46,44 @@ pub fn bug_server_cwd() -> String {
 }
 
 ///|
+/// CLI 调用方通过 env `FIST_CALLER_CWD` 传入的工作目录（相对 `project_dir` 的解析基准）。
+/// 空串 / 非绝对路径一律忽略（⇒ 退回 `bug_server_cwd()`，行为逐字不变）。
+/// 「绝对」口径：正斜杠开头（`/x`、`//server/share`），或盘符后紧跟斜杠（`E:/x`）。
+/// `C:foo` 这种盘符相对形态不算绝对，与 `bug_project_dir_ok` 的盘符判据同族。
+/// 规范化沿用 `bug_resolve_path`（反斜杠→正斜杠、去尾部斜杠）。
+pub fn bug_caller_cwd() -> String {
+  match @env.get_env_var("FIST_CALLER_CWD") {
+    None => ""
+    Some(v) =>
+      if v.is_empty() {
+        ""
+      } else {
+        let p = bug_resolve_path(v)
+        let is_abs = p.has_prefix("/") ||
+          (p.length() >= 3 && p[1] == ':' && p[2] == '/')
+        if is_abs {
+          p
+        } else {
+          ""
+        }
+      }
+  }
+}
+
+///|
+/// 相对 `project_dir` 的**生效基准**：env 有效时用调用方 cwd，否则用 server cwd。
+/// 注意：`bug_server_cwd()` 保留原样 —— 回执的 `server_cwd` 键仍回显真实 server cwd，
+/// 不许被本 helper 顶替；本 helper 只供 `resolved_path` 这类「相对哪个根」的计算用。
+pub fn bug_eff_base() -> String {
+  let caller = bug_caller_cwd()
+  if caller.is_empty() {
+    bug_server_cwd()
+  } else {
+    caller
+  }
+}
+
+///|
 /// BUG-4 fix（Round 1 最小收口，Round 2 起为**兼容别名**）：run_check 的 workdir 校验。
 /// 真正语义已搬到 run_check_guard.mbt 的 `run_check_workdir_in_project`：
 ///   - Round 1 版一律拒绝绝对路径/盘符，会打断真实调用面（execute_cron.py 与

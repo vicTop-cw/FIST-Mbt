@@ -1,1 +1,1 @@
-iterate-1102 批次闭环（2026-11-02）：T0r6（Tier2 PR3 executor_machine_merge）+ T0r11（CAF 三字段持久化）+ T0r12（check_usage_tool_count 参数列双向守卫）三车道终审通过，分四笔入库（4be45371/911bc1f2/f9a264ab/90809cdd）。测试计数 2020/2020 全绿。gitcode 容量 2.4GiB 警告持续。下一批候选：BUG-527 上游 issue / 测试计数 badge 同步 2020（另一 agent 已在做）/ check_usage_tool_count 注册 run_guards（已完成）。
+[Round 24 巡检] WIP 面 9 文件零收口（同 R21~R23，HEAD=5cbe4ce52）；非阻塞巡检 check_battery_count_doc PASS（gate=127）、check_arg_face_strict PASS（99 把全拒未知旗标）；无新发现未立新账；BUG-589 人工裁决维持待决；报告 reports/2026-11-10-watchdog-patrol-round24.md
