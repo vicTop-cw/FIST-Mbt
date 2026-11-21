@@ -280,6 +280,8 @@ class Gateway:
         if self.api_key_hash:
             log.info("API-key 已启用（sha256=%s…，明文不落盘；key 只在启动参数出现一次）",
                      self.api_key_hash[:12])
+        if not args_host_is_local(self.args):
+            log.info(firewall_check(self.args.host, self.args.port))
         patch_registry_now = now
         patch_session(self.db_path, self.service_id, "running", self.listen_addr,
                       self.session_token, os.getpid(), patch_registry_now)
@@ -397,6 +399,29 @@ class Gateway:
 def args_host_is_local(args) -> bool:
     """§4 暴露档判定：127.0.0.1/localhost = local；其余（0.0.0.0/网卡 IP）= lan/global。"""
     return args.host in ("127.0.0.1", "localhost")
+
+
+def firewall_check(host: str, port: int) -> str:
+    """§4.1 lan/global：入站规则 best-effort 检查（Windows netsh / posix iptables 探测）。
+
+    返回人话读数（不阻断启动——防火墙形态千差万别，给读数让指挥官裁决，
+    强制加规则走 --open-firewall）。能探就探，探不出如实说探不出。
+    """
+    if os.name == "nt":
+        try:
+            r = subprocess.run(
+                ["netsh", "advfirewall", "firewall", "show", "rule",
+                 "name=all", "dir=in"],
+                capture_output=True, text=True, timeout=15)
+            blob = r.stdout
+            if f":{port}" in blob or f"LocalPort: {port}" in blob:
+                return f"防火墙：已存在含端口 {port} 的入站规则（netsh 读数）"
+            return (f"防火墙：未见端口 {port} 的入站规则——外部调用方会被拦；"
+                    f"管理员放行：netsh advfirewall firewall add rule name=\"fist-gateway-{port}\" "
+                    f"dir=in action=allow protocol=TCP localport={port}")
+        except Exception as e:
+            return f"防火墙：netsh 探测失败（{e}）——请人工确认入站规则"
+    return f"防火墙：posix 侧请确认 {host}:{port} 可入站（iptables/ufw 自查）"
 
 
 def main() -> None:

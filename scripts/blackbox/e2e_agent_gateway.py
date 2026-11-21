@@ -149,6 +149,43 @@ def main() -> None:
                 headers={"X-API-Key": auth_key})
             assert code == 200 and "result" in authed, f"A2b FAIL: 带 key 应 200: {authed}"
             print("A2b PASS 认证门：无 key 401 / 带 key 200")
+            # A6 lan 绑定臂（§4）：0.0.0.0 绑定 + key，经 127.0.0.1 调通
+            #（本机即 lan 拓扑的最小可用形：绑定面与认证门全链）
+            svc2 = svc + "-lan"
+            seed_db(db, svc2)
+            lan_port = port + 1
+            lan = subprocess.Popen(
+                [sys.executable, str(GATEWAY), "--service-id", svc2,
+                 "--port", str(lan_port), "--db", db, "--host", "0.0.0.0",
+                 "--api-key", "e2e-lan-key"],
+                cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace",
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            )
+            try:
+                lan_alive = None
+                for _ in range(30):
+                    time.sleep(0.5)
+                    try:
+                        _, lan_alive = http_get(f"http://127.0.0.1:{lan_port}/health")
+                        if lan_alive.get("alive") is True:
+                            break
+                    except Exception:
+                        continue
+                assert lan_alive and lan_alive.get("alive") is True, f"A6 lan 网关未起: {lan_alive}"
+                code, _ = http_post(
+                    f"http://127.0.0.1:{lan_port}/mcp",
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                    headers={"X-API-Key": "e2e-lan-key"})
+                assert code == 200, f"A6 FAIL: lan 绑定带 key 应 200，实得 {code}"
+                print("A6 PASS lan 绑定（0.0.0.0）+ 认证全链")
+            finally:
+                if os.name == "posix":
+                    lan.send_signal(signal.SIGTERM)
+                else:
+                    lan.send_signal(signal.CTRL_BREAK_EVENT)
+                lan.wait(timeout=45)
+            assert read_status(db, svc2)[0] == "stopped", "A6 FAIL: lan 网关未落 stopped"
             # A3 心跳：session_last_heartbeat 被刷新（等一个心跳周期 >0 而非空串）
             hb = read_status(db, svc)[1]
             assert hb, "A3 心跳未落库"
