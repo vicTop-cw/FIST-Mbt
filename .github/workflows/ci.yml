@@ -10,6 +10,38 @@ permissions:
   contents: read
 
 jobs:
+  clean-deps-resolution:
+    name: clean dependency resolution (js, ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      # 干净依赖解析门：registry 索引缓存与已解包依赖全部清空 ⇒ 依赖解析只认
+      # moon.mod 声明面。防的形状：本机 ~/.moon 残留了「已从 moon.mod 摘除但
+      # 缓存还在」的旧依赖（或 .mooncakes 旧解包），代码 import 照样解析通过
+      # ⇒ 声明面与真实 import 面漂移，干净克隆上必红而本机/CI 常驻缓存全绿。
+      # position-why: 本作业与 check-and-test-js 并行，专职解析面，不重复全量测试。
+      - name: Wipe dependency caches (registry + .mooncakes)
+        run: |
+          rm -rf "$HOME/.moon/registry"
+          rm -rf .mooncakes
+
+      - name: Fresh resolve (moon update from empty registry)
+        run: moon update
+        env:
+          MOON_REGISTRY_UPDATE: "1"
+
+      - name: Check (js, clean resolution)
+        run: moon check --target js
+
+      - name: Build smoke (cmd/cli, clean resolution)
+        run: moon build --target js cmd/cli
+
   check-and-test-js:
     name: check + test (js, ubuntu)
     runs-on: ubuntu-latest
