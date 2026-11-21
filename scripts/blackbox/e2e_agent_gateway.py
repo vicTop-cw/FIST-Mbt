@@ -102,11 +102,12 @@ def main() -> None:
         db = os.path.join(td, "e2e.db")
         svc = "svc-gw-e2e"
         port = 18699
+        audit = os.path.join(td, "gw-audit.log")
         seed_db(db, svc)
         proc = subprocess.Popen(
             [sys.executable, str(GATEWAY), "--service-id", svc,
              "--port", str(port), "--db", db,
-             "--api-key", "e2e-p2-api-key"],
+             "--api-key", "e2e-p2-api-key", "--audit-log", audit],
             cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
@@ -218,6 +219,12 @@ def main() -> None:
         status, _ = read_status(db, svc)
         assert status == "stopped", f"A4 FAIL: 终止后状态={status}（应为 stopped）"
         print("A4 PASS 显式中断 → stopped（注册保留）")
+        # A7 P4 审计面：mcp_call 与 auth_fail 双事件均落审计账（append-only）
+        audit_lines = Path(audit).read_text(encoding="utf-8").strip().splitlines()
+        events = [json.loads(l).get("event") for l in audit_lines if l.strip()]
+        assert "mcp_call" in events, f"A7 FAIL: 审计无 mcp_call: {events}"
+        assert "auth_fail" in events, f"A7 FAIL: 审计无 auth_fail: {events}"
+        print(f"A7 PASS 审计账：{len(events)} 行（mcp_call + auth_fail 双事件在）")
     print("e2e_agent_gateway: ALL PASS")
 
 

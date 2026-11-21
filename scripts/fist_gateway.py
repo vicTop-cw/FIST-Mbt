@@ -95,6 +95,8 @@ class Gateway:
         self.rate_limit = args.rate_limit
         self._req_times: dict[str, deque] = {}   # key（或 ip）→ 窗口内时间戳
         self._req_lock = threading.Lock()
+        self.audit_path = args.audit_log or f"temp/gateway-{args.service_id}.log"
+        self._audit_lock = threading.Lock()
         self._proc: subprocess.Popen | None = None
         self._reader: threading.Thread | None = None
         self._running = False
@@ -306,6 +308,26 @@ class Gateway:
     def _on_signal(self, signum, frame) -> None:
         self._drain_and_stop()
 
+    def _audit(self, event: str, detail: dict) -> None:
+        """P4 §4.1 审计：每次 /mcp 调用/认证失败追加一行 JSON（append-only）。
+
+        落点 = --audit-log（默认 temp/gateway-<service_id>.log，服务端 cwd 相对
+        —— §7 红线：网关日志只落相对路径，拒绝盘符/上跳）。
+        """
+        try:
+            line = json.dumps({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "service_id": self.service_id,
+                "event": event,
+                **detail,
+            }, ensure_ascii=False)
+            with self._audit_lock:
+                Path(self.audit_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(self.audit_path, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+        except Exception as e:
+            log.error("审计写失败（不阻断主流程）: %s", e)
+
     def _drain_and_stop(self) -> None:
         """§3.3：running → draining（拒新任务）→ 终止子进程 → stopped（审计留痕走日志）。"""
         if self.stop_event.is_set():
@@ -359,7 +381,10 @@ class Gateway:
                     self.end_headers()
                     return
                 # §4.1 认证：给了 --api-key（或非本机绑定）即强制；失败 401 不泄露形状
-                if not gateway.auth_ok(self.headers, self.client_address[0]):
+                auth_ok = gateway.api_key_hash == "" or gateway.auth_ok(
+                    self.headers, self.client_address[0])
+                if not auth_ok:
+                    gateway._audit("auth_fail", {"ip": self.client_address[0]})
                     self.send_response(401)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", "0")
@@ -373,6 +398,8 @@ class Gateway:
                     self.end_headers()
                     return
                 method = str(payload.get("method", ""))
+                # P4 §4.1 审计：每次放行的 /mcp 调用落一行（auth_fail 在上支已落）
+                gateway._audit("mcp_call", {"ip": self.client_address[0], "method": method})
                 # draining 拒新任务（§3.3）；工具调用放行存量会话
                 if gateway.stop_event.is_set():
                     body = json.dumps({"jsonrpc": "2.0", "id": payload.get("id"),
@@ -438,6 +465,8 @@ def main() -> None:
                          "lan/global 档强制；local 档可选")
     ap.add_argument("--rate-limit", type=int, default=60,
                     help="per-key 限流：每分钟请求数上限（§4.1，默认 60）")
+    ap.add_argument("--audit-log", default="",
+                    help=f"审计文件路径（默认 temp/gateway-<service_id>.log，§4.1 P4 审计面）")
     args = ap.parse_args()
     if not Path(args.db).is_file():
         sys.exit(f"FATAL: 库不存在：{args.db}（--db 指向含 agent_service 表的库）")
