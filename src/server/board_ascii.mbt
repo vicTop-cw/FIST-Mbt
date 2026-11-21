@@ -59,13 +59,13 @@ pub fn render_board_ascii(
       None => ()
       Some(arr) => {
         rendered.set(st, true)
-        append_group(lines, st, arr)
+        append_group(lines, arr)
       }
     }
   }
   for (st, arr) in buckets {
     if !rendered.contains(st) {
-      append_group(lines, st, arr)
+      append_group(lines, arr)
     }
   }
   let sum : Array[String] = []
@@ -103,12 +103,97 @@ pub fn render_board_ascii(
 }
 
 ///|
-/// 把一个状态分组的任务追加到 lines（组内按深度、创建时间升序，深度缩进 + 状态 + 截断描述）。
-fn append_group(
-  lines : Array[String],
-  st : String,
-  arr : Array[@core.Task],
-) -> Unit {
+/// F094 §六 多管家看板：按任务当前归属（assignee，领取时盖章的执行者/管家身份）
+/// 分组渲染，每管家一行头标注在途/完成。未领取任务归「未领取」桶；在途 =
+/// 终态（已完成/已归档）之外全部；完成 = 已完成/已归档。桶名升序保证输出确定性。
+/// 注：publish 侧 created_by 硬门限人类指挥官，故管家维度取运行时归属 assignee
+/// 而非发布者——多管家并行同一项目时一眼看清各家工作量分布。
+pub fn render_butler_ascii(
+  tasks : Array[@core.Task],
+  ns_filter : String,
+) -> Json {
+  let buckets : Map[String, Array[@core.Task]] = Map([])
+  for t in tasks {
+    if ns_filter == "" || t.ns == ns_filter {
+      if t.status_to_string() == "" {
+        continue
+      }
+      let butler = match t.assignee {
+        Some(a) => if a == "" { "未领取" } else { a }
+        None => "未领取"
+      }
+      match buckets.get(butler) {
+        Some(a) => a.push(t)
+        None => buckets.set(butler, [t])
+      }
+    }
+  }
+  let names : Array[String] = []
+  for (k, _v) in buckets {
+    names.push(k)
+  }
+  names.sort()
+  let lines : Array[String] = []
+  let countsJson : Map[String, Json] = Map([])
+  let mut sum_in_flight = 0
+  let mut sum_done = 0
+  for name in names {
+    match buckets.get(name) {
+      Some(arr) => {
+        let mut in_flight = 0
+        let mut done = 0
+        for t in arr {
+          let st = t.status_to_string()
+          if st == "已完成" || st == "已归档" {
+            done = done + 1
+          } else {
+            in_flight = in_flight + 1
+          }
+        }
+        sum_in_flight = sum_in_flight + in_flight
+        sum_done = sum_done + done
+        lines.push(
+          "── 管家 " +
+          name +
+          "（在途 " +
+          in_flight.to_string() +
+          "｜完成 " +
+          done.to_string() +
+          "）──",
+        )
+        append_group(lines, arr)
+        countsJson.set(
+          name,
+          Json::object({
+            "in_flight": Json::number(in_flight.to_double()),
+            "done": Json::number(done.to_double()),
+          }),
+        )
+      }
+      None => ()
+    }
+  }
+  let ns_label = if ns_filter == "" { "全部命名空间" } else { ns_filter }
+  let header = "== FIST 多管家看板（" + ns_label + "） =="
+  let body = join_sep(lines, "\n")
+  let footer = "== 合计: 在途 " +
+    sum_in_flight.to_string() +
+    "｜完成 " +
+    sum_done.to_string() +
+    " =="
+  Json::object({
+    "counts": Json::object(countsJson),
+    "in_flight": Json::number(sum_in_flight.to_double()),
+    "done": Json::number(sum_done.to_double()),
+    "ascii": Json::string(header + "\n" + body + "\n" + footer),
+  })
+}
+
+///|
+/// 把一组任务追加到 lines（组内按深度、创建时间升序，深度缩进 + 各自状态 +
+/// 截断描述）。状态标签取**逐任务自身状态**——状态分组时与组标签恒等（输出不变），
+/// 管家分组（F094 §六）时同组混状态也各自如实标注。
+fn append_group(lines : Array[String], arr : Array[@core.Task]) -> Unit {
   let sorted = arr
   sorted.sort_by(fn(a, b) {
     if a.depth != b.depth {
@@ -134,6 +219,7 @@ fn append_group(
     for _k = 0; _k < t.depth; _k = _k + 1 {
       indent = indent + "· "
     }
+    let st = t.status_to_string()
     let tid = t.get_id()
     let short_id = if tid.length() > 10 { tid[0:10].to_owned() } else { tid }
     // R12-R6 性能：`t.get_description()` 对 SqliteStore 是 DB 读，这里只取一次。

@@ -717,3 +717,66 @@ test "property_ascii_views_consistency_seeded" {
     }
   }
 }
+
+///|
+/// F094 §六 多管家看板：按管家（created_by）分组、每家标注在途/完成，
+/// 管家名升序输出确定。构造：butler-a 发 2 单（在途），butler-b 发 1 单（在途）。
+test "多管家看板：按归属分组 + 在途/完成计数" {
+  let e = ba_engine()
+  let id1 = match
+    e.publish(
+      project_dir="/proj/board",
+      description="任务一",
+      created_by="human_steward",
+      now="2026-09-25T10:00:00Z",
+    ) {
+    Ok(id) => id
+    Err(m) => abort("publish1 failed: \{m}")
+  }
+  let id2 = match
+    e.publish(
+      project_dir="/proj/board",
+      description="任务二",
+      created_by="human_steward",
+      now="2026-09-25T10:01:00Z",
+    ) {
+    Ok(id) => id
+    Err(m) => abort("publish2 failed: \{m}")
+  }
+  let _ = match
+    e.publish(
+      project_dir="/proj/board",
+      description="任务三",
+      created_by="human_steward",
+      now="2026-09-25T10:02:00Z",
+    ) {
+    Ok(id) => id
+    Err(m) => abort("publish3 failed: \{m}")
+  }
+  // 两管家各领一单（publish 硬门限人类，管家身份在 claim 时盖章到 assignee）
+  let _ = e.claim(task_id=id1, assignee="butler-a", now="2026-09-25T10:05:00Z")
+  let _ = e.claim(task_id=id2, assignee="butler-b", now="2026-09-25T10:06:00Z")
+  let j = @server.render_butler_ascii(e.list_all(), "")
+  let ascii = match jget(j, "ascii") {
+    Some(Json::String(s)) => s
+    _ => abort("ascii 缺失")
+  }
+  assert_true(ascii.contains("── 管家 butler-a（在途 1｜完成 0）──"))
+  assert_true(ascii.contains("── 管家 butler-b（在途 1｜完成 0）──"))
+  assert_true(ascii.contains("── 管家 未领取（在途 1｜完成 0）──"))
+  assert_true(ascii.contains("== 合计: 在途 3｜完成 0 =="))
+  // counts JSON：每管家 {in_flight, done}
+  match jget(j, "counts") {
+    Some(Object(m)) => {
+      assert_true(m.contains("butler-a"))
+      assert_true(m.contains("butler-b"))
+      assert_true(m.contains("未领取"))
+    }
+    _ => abort("counts 缺失")
+  }
+  // 桶名升序：butler-a 段先于 butler-b 段
+  assert_true(
+    ascii.contains("管家 butler-a") && ascii.contains("管家 butler-b") &&
+    ascii.find("管家 butler-a") < ascii.find("管家 butler-b"),
+  )
+}
