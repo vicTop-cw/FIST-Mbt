@@ -284,6 +284,8 @@ class Gateway:
                      self.api_key_hash[:12])
         if not args_host_is_local(self.args):
             log.info(firewall_check(self.args.host, self.args.port))
+            if self.args.open_firewall:
+                log.info(firewall_open(self.args.port))
         patch_registry_now = now
         patch_session(self.db_path, self.service_id, "running", self.listen_addr,
                       self.session_token, os.getpid(), patch_registry_now)
@@ -451,6 +453,24 @@ def firewall_check(host: str, port: int) -> str:
     return f"防火墙：posix 侧请确认 {host}:{port} 可入站（iptables/ufw 自查）"
 
 
+def firewall_open(port: int) -> str:
+    """§4.1 --open-firewall：管理员面加 TCP 入站放行规则（Windows netsh）。
+
+    需管理员权限：netsh 失败（非管理员等）时如实返回错误原文，不阻断启动
+    （fail-open 到警告档——加规则失败 ≠ 服务不可用，只影响 lan/global 外部可达性）。
+    """
+    if os.name != "nt":
+        return "防火墙：--open-firewall 仅实现 Windows netsh；posix 请手工放行"
+    rule = f"fist-gateway-{port}"
+    r = subprocess.run(
+        ["netsh", "advfirewall", "firewall", "add", "rule", f"name={rule}",
+         "dir=in", "action=allow", "protocol=TCP", f"localport={port}"],
+        capture_output=True, text=True, timeout=15)
+    if r.returncode == 0 and "确定" in r.stdout or "Ok." in r.stdout:
+        return f"防火墙：入站放行规则 {rule}（TCP {port}）已添加"
+    return f"防火墙：加规则失败（需管理员权限）——{r.stderr.strip() or r.stdout.strip()}"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="fist-gateway：Agent 服务常驻网关（P1）")
     ap.add_argument("--service-id", required=True, help="agent_service 表中的 service_id")
@@ -465,6 +485,9 @@ def main() -> None:
                          "lan/global 档强制；local 档可选")
     ap.add_argument("--rate-limit", type=int, default=60,
                     help="per-key 限流：每分钟请求数上限（§4.1，默认 60）")
+    ap.add_argument("--open-firewall", action="store_true",
+                    help="lan/global 档尝试以管理员加 TCP 入站放行规则（Windows netsh；"
+                         "失败如实警告不阻断，§4.1 防火墙检查面）")
     ap.add_argument("--audit-log", default="",
                     help=f"审计文件路径（默认 temp/gateway-<service_id>.log，§4.1 P4 审计面）")
     args = ap.parse_args()
