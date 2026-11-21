@@ -1,4 +1,4 @@
-/// FIST-Mbt MCP server: 暴露 183 tools + 3 resources + 2 prompts。
+/// FIST-Mbt MCP server: 暴露 188 tools + 3 resources + 2 prompts。
 /// 接入 colmugx/mcp@0.17.4（2026-07-28 协议，Stdio/HTTP 双传输）。
 
 ///|
@@ -2399,7 +2399,11 @@ fn fb_store_write(
 ///|
 /// F094 §3.3 生命周期挂钩：按任务释放其全部绑定（服务端盖章，不靠 agent 自觉；
 /// verify/archive 成功路径自动调用；reject/reopen 绑定保留——打回重做还要用）。
-fn fb_release_task_binds(ns : String, project_dir : String, task_id : String) -> Unit {
+fn fb_release_task_binds(
+  ns : String,
+  project_dir : String,
+  task_id : String,
+) -> Unit {
   match mstore.get(ns) {
     Some(st) => ignore(st.fb_release_task(ns, project_dir, task_id))
     None => {
@@ -2419,7 +2423,7 @@ fn fb_release_task_binds(ns : String, project_dir : String, task_id : String) ->
 ///|
 /// F094 §3.3 生命周期挂钩：watchdog 通道顺带清理 TTL 过期绑定
 /// （复用既有看护 tick，不新增定时面）。
-fn fb_purge_expired_binds(ns : String, now : Int) -> Unit {
+fn fb_purge_expired_binds(ns : String, now : Int32) -> Unit {
   match mstore.get(ns) {
     Some(st) => ignore(st.fb_purge_expired(ns, now))
     None => ()
@@ -2455,29 +2459,39 @@ fn fb_build_mutex_enabled() -> Bool {
 }
 
 ///|
-/// 尝试 acquire 构建互斥绑定（path="."、kind=dir、scope=build、ttl 上限 7200s——
-/// 进程崩溃后 TTL 到期自动失效，不留死锁）。返回 ""=成功；非空 = 冲突方描述。
+/// 尝试 acquire 构建互斥绑定（哨兵路径 "__build__"、kind=dir、scope=build、
+/// ttl 上限 7200s——进程崩溃后 TTL 到期自动失效，不留死锁）。
+/// 注：不可用 "."——fb_norm 会把 "." 段过滤成空串 → fb_path_ok 判非法路径，
+/// 计划行静默变 invalid，互斥形同虚设（白盒判据实证过）。返回 ""=成功；
+/// 非空 = 冲突方描述。
 fn fb_build_mutex_acquire(
   ns : String,
   project_dir : String,
   holder : String,
   task_id : String,
-  now_secs : Int,
+  now_secs : Int32,
 ) -> String {
   let conflict : Ref[String] = Ref::Ref("")
   let ok = fb_store_mutate(ns, project_dir, fn(ledger) {
     let rows = @filebind.fb_plan_bind(
-      // 哨兵路径 "__build__"：不可用 "."——fb_norm 会把 "." 段过滤成空串
-      // → fb_path_ok 判非法路径，计划行静默变 invalid，互斥形同虚设（白盒判据实证）
-      ledger, ns, project_dir, ["__build__"], holder, now_secs, 7200,
+      ledger,
+      ns,
+      project_dir,
+      ["__build__"],
+      holder,
+      now_secs,
+      7200,
     )
     let after = @filebind.fb_apply_bind(
-      ledger, ns, project_dir, rows, holder, task_id, "dir", "build",
-      "F094 build mutex", now_secs, 7200,
+      ledger, ns, project_dir, rows, holder, task_id, "dir", "build", "F094 build mutex",
+      now_secs, 7200,
     )
     for r in rows {
       if @filebind.fb_verdict_name(r.verdict) == "conflict" {
-        conflict.val = r.holder + "（bound_at=" + r.bound_at.to_string() + "）"
+        conflict.val = r.holder +
+          "（bound_at=" +
+          r.bound_at.to_string() +
+          "）"
       }
     }
     after
@@ -2494,12 +2508,19 @@ fn fb_build_mutex_release(
   ns : String,
   project_dir : String,
   holder : String,
-  now_secs : Int,
+  now_secs : Int32,
 ) -> Unit {
   ignore(
     fb_store_mutate(ns, project_dir, fn(ledger) {
       let rows = @filebind.fb_plan_release(
-        ledger, ns, project_dir, ["__build__"], "", "build", holder, false,
+        ledger,
+        ns,
+        project_dir,
+        ["__build__"],
+        "",
+        "build",
+        holder,
+        false,
       )
       @filebind.fb_apply_release(ledger, ns, project_dir, rows, "", "build")
     }),
@@ -3233,7 +3254,13 @@ pub async fn run_server() -> Unit {
           }
           let bm_now = @ops.iso_to_secs(now)
           if fb_build_mutex_enabled() {
-            let c = fb_build_mutex_acquire(ns, t.project_dir, bm_holder, task_id, bm_now)
+            let c = fb_build_mutex_acquire(
+              ns,
+              t.project_dir,
+              bm_holder,
+              task_id,
+              bm_now,
+            )
             if c != "" {
               return Err(
                 @mcp_types.ToolError(
@@ -6263,12 +6290,12 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "board_ascii",
-    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。已完成一档在合计行里标出「(无交付物N)」——「已完成」不自动等于有成果（BUG-29 的探针/绕验收残留）。参数：namespace(可选，空=全部命名空间)、group_by(可选 status|butler；butler=按归属 assignee 分组、每家标注在途/完成，F094 §六多管家场景)。返回 { counts:{状态:数量}, done_no_artifact, ascii }。",
+    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。已完成一档在合计行里标出「(无交付物N)」——「已完成」不自动等于有成果（BUG-29 的探针/绕验收残留）。参数：namespace(可选，空=全部命名空间)、group_by(可选 status|butler；butler=按管家 created_by 分组、每家标注在途/完成，F094 §六多管家场景)。返回 { counts:{状态:数量}, done_no_artifact, ascii }。",
     schema(
       {
         "namespace": string_prop("命名空间(默认全部)"),
         "group_by": string_prop(
-          "分组维度：status（默认，按状态）| butler（按归属分组，F094 §六）",
+          "分组维度：status（默认，按状态）| butler（按管家分组，F094 §六）",
         ),
       },
       [],
@@ -7271,8 +7298,8 @@ pub async fn run_server() -> Unit {
           ledger, ns, project_dir, paths, holder, now, ttl,
         )
         let after = @filebind.fb_apply_bind(
-          ledger, ns, project_dir, rows, holder, task_id, kind, scope, intent,
-          now, ttl,
+          ledger, ns, project_dir, rows, holder, task_id, kind, scope, intent, now,
+          ttl,
         )
         rows_ref.val = rows
         after
@@ -8247,6 +8274,385 @@ pub async fn run_server() -> Unit {
       }
     },
   )
+  // ── P0：Agent 常驻服务注册表与生命周期（定案 §1.2 / §1.3 / §3.3）────────────
+  // register=静态登记（主库注册表 + 独立命名空间库 + ACL grant can_write=true）；
+  // start=对应 agent 手动调用（非网关自动拉起）；stop=唯一中断途径（running→draining→stopped）。
+  s1 = instrumented_tool(
+    s1,
+    "agent_service_register",
+    "**P0 定案 §1.2 register**：把发起方 agent 登记为常驻服务（静态登记，**不拉起进程**）。幂等：service_id 已存在则更新能力/传输/暴露档。登记即创建独立命名空间（ns=service_id 独立 SQLite 库）并向 owner agent 授予 can_write=true。**start 必须由对应 agent 手动调用**。参数：name(必填)、capabilities(可选能力标签数组)、transport(可选 mcp/cli/http，默认 mcp)、exposure(可选 local/lan/global，默认 local)、machine_id(可选主机标识)、by(可选发起方身份，默认 local)。返回 {service_id, status, ns, acl_granted, message}。",
+    schema(
+      {
+        "name": string_prop("服务名（必填，将作为 service_id 与独立命名空间，如 svc-marvis）"),
+        "capabilities": array_prop("能力标签数组（可选，如 [agent, search, write]）"),
+        "transport": string_prop("传输方式（可选：mcp / cli / http，默认 mcp）"),
+        "exposure": string_prop("暴露范围（可选：local / lan / global，默认 local）"),
+        "machine_id": string_prop("主机标识（可选，P0 记录性字段）"),
+        "by": string_prop("发起方 agent 身份（可选，默认 local）"),
+      },
+      ["name"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let name = get_str(args, "name", default= "")
+      if name.is_empty() {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_service_register: name 必填（将作为 service_id 与独立命名空间）",
+          ),
+        )
+      }
+      let transport = get_str(args, "transport", default= "mcp")
+      let exposure = get_str(args, "exposure", default= "local")
+      let by = get_str(args, "by", default= "local")
+      let machine_id = get_str(args, "machine_id", default= "")
+      if !(["mcp", "cli", "http"].contains(transport)) {
+        return Err(
+          @mcp_types.ToolError("agent_service_register: transport 仅允许 mcp/cli/http"),
+        )
+      }
+      if !(["local", "lan", "global"].contains(exposure)) {
+        return Err(
+          @mcp_types.ToolError("agent_service_register: exposure 仅允许 local/lan/global"),
+        )
+      }
+      // service_id 规范化：与 MultiStore::safe_ns 同口径（[A-Za-z0-9_-]，空串拒绝）
+      let service_id = match @store.MultiStore::safe_ns(name) {
+        None =>
+          return Err(
+            @mcp_types.ToolError("agent_service_register: name 仅允许 [A-Za-z0-9_-] 字符"),
+          )
+        Some(sv) => sv
+      }
+      let caps = ab_to_json(strlist(get_array(args, "capabilities")))
+      let now = now_default()
+      // 注册即创建独立命名空间库（幂等复用；data_dir 空→回退 self.data_dir）
+      if !(mstore.open(ns=service_id, data_dir="")) {
+        return Err(
+          @mcp_types.ToolError("agent_service_register: 创建命名空间库失败（非法 ns 或目录校验不过）"),
+        )
+      }
+      let eng = match engine_for_ns(service_id) {
+        Ok(e) => e
+        Err(m) => return Err(m)
+      }
+      // 命名空间 ACL：owner agent can_write=true（定案 §1.2「注册即授权」）
+      let fp = agent_fp(by)
+      let acl_ok = match
+        eng.agents_acl_grant(
+          agent_id=fp,
+          ns=service_id,
+          can_read=true,
+          can_write=true,
+          pid_bound=false,
+          now=now,
+          by="agent_service_register",
+        ) {
+        Ok(_) => true
+        Err(_) => false
+      }
+      // 全局注册表（主库）UPSERT
+      let r = engine.agent_service_upsert(
+        service_id=service_id,
+        owner_agent=fp,
+        capabilities=caps,
+        transport=transport,
+        exposure=exposure,
+        status="registered",
+        created_at=now,
+        updated_at=now,
+      )
+      match r {
+        Err(msg) =>
+          Err(@mcp_types.ToolError("agent_service_register: " + msg))
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "service_id": Json::string(service_id),
+                "status": Json::string("registered"),
+                "ns": Json::string(service_id),
+                "acl_granted": Json::boolean(acl_ok),
+                "machine_id": Json::string(machine_id),
+                "message": Json::string(
+                  "已登记（静态注册；须由对应 agent 手动 agent_service_start 后才进入 running）",
+                ),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "agent_service_start",
+    "**P0 定案 §1.3 start**：由**对应 agent 手动调用**（Marvis 启动 Marvis 服务、freebuff 启动 freebuff 服务），将已注册服务置为 running。**禁止网关自动拉起无头 CLI**：本工具不 spawn 进程，只登记会话（listen_addr/session_token/pid/last_heartbeat 落库持久化）。暴露范围映射：local→127.0.0.1、lan→0.0.0.0、global→0.0.0.0:443（TLS 由 P1 网关承接）。参数：service_id(必填)。返回 {service_id, status, session_token, listen_addr, pid, message}。",
+    schema(
+      {
+        "service_id": string_prop("已注册的 service_id（必填）"),
+        "gateway_pid": int_prop(
+          "可选：常驻网关进程 pid（P4 session_pid 语义统一——网关拉起后回填真实 pid；缺省 0 = 沿用 server 时间戳指纹旧语义）",
+        ),
+      },
+      ["service_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let service_id = get_str(args, "service_id", default= "")
+      if service_id.is_empty() {
+        return Err(@mcp_types.ToolError("agent_service_start: service_id 必填"))
+      }
+      let rec = match engine.agent_service_get(service_id) {
+        None => return Err(@mcp_types.ToolError("agent_service_start: 未注册：" + service_id))
+        Some(r) => r
+      }
+      if rec.status == "running" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_service_start: 已在运行（常驻不中断，仅显式 stop 可终止）",
+          ),
+        )
+      }
+      if rec.status == "draining" {
+        return Err(@mcp_types.ToolError("agent_service_start: 正在排空，请等待 stop 收敛"))
+      }
+      // 暴露范围三档映射（定案 §4）
+      let listen_addr = match rec.exposure {
+        "local" => "127.0.0.1:0"
+        "lan" => "0.0.0.0:0"
+        "global" => "0.0.0.0:443"
+        _ => return Err(@mcp_types.ToolError("agent_service_start: exposure 非法：" + rec.exposure))
+      }
+      let now = now_default()
+      // 会话 token：P0 以 agent_fp 派生（确定性、可复现）；P1 可换随机并轮换
+      let token = agent_fp(service_id + "@" + now)
+      // P4 session_pid 语义统一：调用方可回填真实网关 pid；缺省沿用旧指纹语义（零回归）
+      let gw_pid = get_int(args, "gateway_pid", default=0)
+      let pid = if gw_pid > 0 { gw_pid } else { current_pid_token() }
+      let r = engine.agent_service_patch_session(
+        service_id=service_id,
+        status="running",
+        listen_addr=listen_addr,
+        token=token,
+        pid=pid,
+        last_heartbeat=now,
+        updated_at=now,
+      )
+      match r {
+        Err(msg) =>
+          Err(@mcp_types.ToolError("agent_service_start: " + msg))
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "service_id": Json::string(service_id),
+                "status": Json::string("running"),
+                "session_token": Json::string(token),
+                "listen_addr": Json::string(listen_addr),
+                "pid": Json::string(pid.to_string()),
+                "message": Json::string(
+                  "常驻服务已启动；会话 token 已持久化，其他 agent/脚本经 API-key 驱动",
+                ),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "agent_service_stop",
+    "**P0 定案 §1.2 / §3.3 stop**：**唯一中断途径**。running→draining→stopped：置 draining 后请求对应 agent 进程优雅退出，30s 未优雅退出则 force 兜底（P0 内同步完成两跳，P1 watchdog 承接 30s 计时与强杀）。停止后 session 清空（token 失效）。参数：service_id(必填)。返回 {service_id, status, message}。",
+    schema(
+      {
+        "service_id": string_prop("运行中的 service_id（必填）"),
+      },
+      ["service_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let service_id = get_str(args, "service_id", default= "")
+      if service_id.is_empty() {
+        return Err(@mcp_types.ToolError("agent_service_stop: service_id 必填"))
+      }
+      let rec = match engine.agent_service_get(service_id) {
+        None => return Err(@mcp_types.ToolError("agent_service_stop: 未注册：" + service_id))
+        Some(r) => r
+      }
+      if rec.status == "registered" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_service_stop: 未运行（registered 为静态登记，须先 start）",
+          ),
+        )
+      }
+      if rec.status == "stopped" {
+        return Err(@mcp_types.ToolError("agent_service_stop: 已是 stopped"))
+      }
+      let now = now_default()
+      // 第一跳：running → draining（优雅排空窗口）
+      let r1 = engine.agent_service_patch_session(
+        service_id=service_id,
+        status="draining",
+        listen_addr=rec.session_listen_addr,
+        token=rec.session_token,
+        pid=rec.session_pid,
+        last_heartbeat=now,
+        updated_at=now,
+      )
+      match r1 {
+        Err(msg) =>
+          return Err(@mcp_types.ToolError("agent_service_stop: " + msg))
+        Ok(_) => ()
+      }
+      // 第二跳：draining → stopped（P0 同步收敛；30s force 强杀由 P1 watchdog 承接）
+      let r2 = engine.agent_service_patch_session(
+        service_id=service_id,
+        status="stopped",
+        listen_addr="",
+        token="",
+        pid=0,
+        last_heartbeat=now,
+        updated_at=now,
+      )
+      match r2 {
+        Err(msg) =>
+          Err(@mcp_types.ToolError("agent_service_stop: " + msg))
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "service_id": Json::string(service_id),
+                "status": Json::string("stopped"),
+                "message": Json::string(
+                  "已停止（running→draining→stopped；会话 token 已清空，常驻服务终止）",
+                ),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "agent_service_status",
+    "**P0 定案 §1.2 status**：查询指定服务的常驻状态 / 心跳 / 暴露端点。参数：service_id(必填)。返回完整注册行。",
+    schema(
+      {
+        "service_id": string_prop("service_id（必填）"),
+      },
+      ["service_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let service_id = get_str(args, "service_id", default= "")
+      if service_id.is_empty() {
+        return Err(@mcp_types.ToolError("agent_service_status: service_id 必填"))
+      }
+      let rec = match engine.agent_service_get(service_id) {
+        None => return Err(@mcp_types.ToolError("agent_service_status: 未注册：" + service_id))
+        Some(r) => r
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "service_id": Json::string(rec.service_id),
+            "owner_agent": Json::string(rec.owner_agent),
+            "capabilities": Json::string(rec.capabilities),
+            "transport": Json::string(rec.transport),
+            "exposure": Json::string(rec.exposure),
+            "status": Json::string(rec.status),
+            "session_listen_addr": Json::string(rec.session_listen_addr),
+            "session_pid": Json::string(rec.session_pid.to_string()),
+            "session_last_heartbeat": Json::string(rec.session_last_heartbeat),
+            "created_at": Json::string(rec.created_at),
+            "updated_at": Json::string(rec.updated_at),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "agent_service_list",
+    "**P0 定案 §1.2 list**：全量注册表（含状态过滤）。参数：status_filter(可选：registered/running/draining/stopped，不传返回全部)。",
+    schema(
+      {
+        "status_filter": string_prop("按状态过滤（可选）"),
+      },
+      [],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let filter = get_str(args, "status_filter", default= "")
+      let all = engine.agent_service_list()
+      let items : Array[Json] = []
+      for rec in all {
+        if filter.is_empty() || rec.status == filter {
+          items.push(
+            Json::object({
+              "service_id": Json::string(rec.service_id),
+              "owner_agent": Json::string(rec.owner_agent),
+              "capabilities": Json::string(rec.capabilities),
+              "transport": Json::string(rec.transport),
+              "exposure": Json::string(rec.exposure),
+              "status": Json::string(rec.status),
+              "session_listen_addr": Json::string(rec.session_listen_addr),
+              "session_pid": Json::string(rec.session_pid.to_string()),
+              "session_last_heartbeat": Json::string(rec.session_last_heartbeat),
+              "created_at": Json::string(rec.created_at),
+              "updated_at": Json::string(rec.updated_at),
+            }),
+          )
+        }
+      }
+      Ok(
+        @mcp.ToolResult::text(
+          Json::object({
+            "count": Json::number(items.length().to_double()),
+            "services": Json::array(items),
+          }).stringify(),
+        ),
+      )
+    },
+  )
+  s1 = instrumented_tool(
+    s1,
+    "agent_service_revoke",
+    "**P0 定案 §1.2 revoke**：撤销注册（**须先 stop**，running/draining 拒绝）。删除注册行（agent_service 表），保留命名空间库与 ACL（后续可重新 register 复用）。参数：service_id(必填)。",
+    schema(
+      {
+        "service_id": string_prop("已停止的 service_id（必填）"),
+      },
+      ["service_id"],
+    ),
+    async fn(args : Json) -> Result[@mcp.ToolResult, @mcp_types.MCPError] {
+      let service_id = get_str(args, "service_id", default= "")
+      if service_id.is_empty() {
+        return Err(@mcp_types.ToolError("agent_service_revoke: service_id 必填"))
+      }
+      let rec = match engine.agent_service_get(service_id) {
+        None => return Err(@mcp_types.ToolError("agent_service_revoke: 未注册：" + service_id))
+        Some(r) => r
+      }
+      if rec.status == "running" || rec.status == "draining" {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_service_revoke: 须先 agent_service_stop 才能撤销（当前 " + rec.status + "）",
+          ),
+        )
+      }
+      match engine.agent_service_delete(service_id) {
+        Err(msg) =>
+          Err(@mcp_types.ToolError("agent_service_revoke: " + msg))
+        Ok(_) =>
+          Ok(
+            @mcp.ToolResult::text(
+              Json::object({
+                "service_id": Json::string(service_id),
+                "revoked": Json::boolean(true),
+                "message": Json::string("已撤销注册（命名空间与 ACL 保留）"),
+              }).stringify(),
+            ),
+          )
+      }
+    },
+  )
   // ── BUG-430 / S3 第四段：公钥登记（让 agent 真的能通过挑战认证）──────────
   s1 = instrumented_tool(
     s1,
@@ -8970,10 +9376,14 @@ pub async fn run_server() -> Unit {
     schema(
       {
         "project_dir": string_prop("git 仓库根目录（必填）"),
-        "task": string_prop("任务 id（必填，账 id = <task>-<executor>）"),
+        "task": string_prop(
+          "任务 id（必填，账 id = <task>-<executor>）",
+        ),
         "executor": string_prop("执行器身份（必填）"),
         "base": string_prop("基线 ref（可选，缺省 HEAD）"),
-        "ttl_min": int_prop("TTL 分钟（可选，默认 120，供 stale 判定）"),
+        "ttl_min": int_prop(
+          "TTL 分钟（可选，默认 120，供 stale 判定）",
+        ),
         "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
       },
       ["project_dir", "task", "executor"],
@@ -9001,7 +9411,9 @@ pub async fn run_server() -> Unit {
         "project_dir": string_prop("git 仓库根目录（必填）"),
         "task": string_prop("任务 id（必填）"),
         "executor": string_prop("执行器身份（必填）"),
-        "force": bool_prop("主线已前进时允许 --no-ff 强并（可选，默认 false）"),
+        "force": bool_prop(
+          "主线已前进时允许 --no-ff 强并（可选，默认 false）",
+        ),
         "timeout_ms": int_prop("超时毫秒（可选，默认 60000）"),
       },
       ["project_dir", "task", "executor"],
@@ -9017,11 +9429,7 @@ pub async fn run_server() -> Unit {
       let bm_now = @ops.iso_to_secs(now_default())
       let bm_taken = if fb_build_mutex_enabled() {
         let c = fb_build_mutex_acquire(
-          "default",
-          project_dir,
-          bm_holder,
-          task,
-          bm_now,
+          "default", project_dir, bm_holder, task, bm_now,
         )
         if c != "" {
           return Err(
@@ -9054,7 +9462,9 @@ pub async fn run_server() -> Unit {
       {
         "task_id": string_prop("任务 id（必填）"),
         "namespace": string_prop("命名空间（可选，默认 default）"),
-        "limit": int_prop("返回条数上限（可选，默认 50，封顶 500）"),
+        "limit": int_prop(
+          "返回条数上限（可选，默认 50，封顶 500）",
+        ),
       },
       ["task_id"],
     ),
@@ -9062,7 +9472,13 @@ pub async fn run_server() -> Unit {
       let ns = get_str(args, "namespace", default="default")
       let task_id = get_str(args, "task_id")
       let limit0 = get_int(args, "limit", default=50)
-      let limit = if limit0 > 500 { 500 } else { if limit0 < 1 { 1 } else { limit0 } }
+      let limit = if limit0 > 500 {
+        500
+      } else if limit0 < 1 {
+        1
+      } else {
+        limit0
+      }
       match mstore.get(ns) {
         Some(st) => {
           let events = st.event_list(ns, task_id, limit)
@@ -9076,7 +9492,9 @@ pub async fn run_server() -> Unit {
         None =>
           Err(
             @mcp_types.ToolError(
-              "task_events: 存储不可用（namespace " + ns + " 无法打开）",
+              "task_events: 存储不可用（namespace " +
+              ns +
+              " 无法打开）",
             ),
           )
       }
@@ -9092,12 +9510,18 @@ pub async fn run_server() -> Unit {
         "status": string_prop("状态过滤（可选）"),
         "assignee": string_prop("认领人过滤（可选，精确匹配）"),
         "priority": string_prop("优先级过滤（可选）"),
-        "stale_days": int_prop("卡死检测：updated_at 距今超过 N 天（可选）"),
-        "keyword": string_prop("description/deliverable 关键词包含匹配（可选）"),
+        "stale_days": int_prop(
+          "卡死检测：updated_at 距今超过 N 天（可选）",
+        ),
+        "keyword": string_prop(
+          "description/deliverable 关键词包含匹配（可选）",
+        ),
         "sort": string_prop(
           "排序 created_at|updated_at|priority（可选，默认 created_at 倒序）",
         ),
-        "limit": int_prop("返回条数上限（可选，默认 50，封顶 500）"),
+        "limit": int_prop(
+          "返回条数上限（可选，默认 50，封顶 500）",
+        ),
         "offset": int_prop("跳过条数（可选，默认 0）"),
       },
       [],
@@ -9111,7 +9535,13 @@ pub async fn run_server() -> Unit {
       let keyword = get_str(args, "keyword", default="")
       let sort = get_str(args, "sort", default="created_at")
       let limit0 = get_int(args, "limit", default=50)
-      let limit = if limit0 > 500 { 500 } else { if limit0 < 1 { 1 } else { limit0 } }
+      let limit = if limit0 > 500 {
+        500
+      } else if limit0 < 1 {
+        1
+      } else {
+        limit0
+      }
       let offset = get_int(args, "offset", default=0)
       let eng = match engine_for_ns(ns_str) {
         Ok(e) => e
@@ -9131,8 +9561,14 @@ pub async fn run_server() -> Unit {
       } else {
         0
       }
-      let pr_rank = fn(p : String) -> Int {
-        if p == "高" { 0 } else { if p == "低" { 2 } else { 1 } }
+      let pr_rank = fn(p : String) -> Int32 {
+        if p == "高" {
+          0
+        } else if p == "低" {
+          2
+        } else {
+          1
+        }
       }
       let filtered = all.filter(fn(t) {
         if task_ns_of(t) != ns_str {
@@ -9150,7 +9586,8 @@ pub async fn run_server() -> Unit {
         if stale_cutoff > 0 && @ops.iso_to_secs(t.updated_at) > stale_cutoff {
           return false
         }
-        if keyword != "" && !(t.description.contains(keyword) || t.deliverable.contains(keyword)) {
+        if keyword != "" &&
+          !(t.description.contains(keyword) || t.deliverable.contains(keyword)) {
           return false
         }
         true
@@ -9163,9 +9600,23 @@ pub async fn run_server() -> Unit {
           let rb = pr_rank(b.priority)
           ra - rb
         } else {
-          let ka = if sort == "updated_at" { a.updated_at } else { a.created_at }
-          let kb = if sort == "updated_at" { b.updated_at } else { b.created_at }
-          if kb > ka { -1 } else { if kb < ka { 1 } else { 0 } }
+          let ka = if sort == "updated_at" {
+            a.updated_at
+          } else {
+            a.created_at
+          }
+          let kb = if sort == "updated_at" {
+            b.updated_at
+          } else {
+            b.created_at
+          }
+          if kb > ka {
+            -1
+          } else if kb < ka {
+            1
+          } else {
+            0
+          }
         }
       })
       let start = if offset > 0 { offset } else { 0 }
@@ -9202,9 +9653,9 @@ pub async fn run_server() -> Unit {
         Err(m) => return Err(m)
       }
       let all = eng.list_all().filter(fn(t) { task_ns_of(t) == ns_str })
-      let by_status : Map[String, Int] = Map([])
-      let by_assignee : Map[String, Int] = Map([])
-      let by_priority : Map[String, Int] = Map([])
+      let by_status : Map[String, Int32] = Map([])
+      let by_assignee : Map[String, Int32] = Map([])
+      let by_priority : Map[String, Int32] = Map([])
       let now_secs = @ops.iso_to_secs(now_default())
       let stale_ids : Array[String] = []
       for t in all {
@@ -9226,11 +9677,12 @@ pub async fn run_server() -> Unit {
           None => by_priority.set(t.priority, 1)
         }
         let st = t.get_status()
-        if (st.is_pending() || st.is_active()) && @ops.iso_to_secs(t.updated_at) < now_secs - stale_days * 86400 {
+        if (st.is_pending() || st.is_active()) &&
+          @ops.iso_to_secs(t.updated_at) < now_secs - stale_days * 86400 {
           stale_ids.push(t.id)
         }
       }
-      let jmap = fn(src : Map[String, Int]) -> Json {
+      let jmap = fn(src : Map[String, Int32]) -> Json {
         let m : Map[String, Json] = Map([])
         for k, v in src {
           m.set(k, Json::number(v.to_double()))

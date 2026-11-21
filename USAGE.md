@@ -145,7 +145,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-10-31 本机实测：**182 个工具**；
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-11-20 本机实测：**188 个工具**；
    这个数**不写死在文档里当契约** —— 唯一真源是 server 注册表，`scripts/mcp_smoke.py` 逐次与之对表，
    本手册内一切计数自述由 `scripts/check_usage_tool_count.py` 同步对表（BUG-525 守卫面））
 
@@ -167,7 +167,7 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测（2026-10-31，rc=0）：`python scripts/mcp_smoke.py` 输出**四行 `PASS` + 末行 `MCP-SMOKE PASS`** ——
-> `PASS tools/list → 182 个工具（含 publish/selfdrive_publish_next 等）` /
+> `PASS tools/list → 188 个工具（含 publish/selfdrive_publish_next 等）` /
 > `PASS issue_scan → 扫描 1 文件，命中 2 条` / `PASS publish → T0r16` / `PASS get → T0r16 [待领取]`。
 > ⚠️ 本节标题曾写「三步 = 该脚本的内部逻辑，二者完全一致」——**不成立**：脚本在 `tools/list` 与 `publish`
 > 之间还有一步 `issue_scan`（源码 Step 1b），所以是四行不是三行。文档给的三步是**评委手工复现的最小面**，
@@ -642,7 +642,39 @@ moon publish
 
 ---
 
-## 11. 常见问题排查
+## 11. Agent 服务（常驻网关 + 注册表）
+
+把任意 agent 注册为「Agent 服务」：服务会话长期不中断、仅显式中断指令才终止；暴露范围支持 local/lan/global 三档。
+计划全文：`docs/plans/2026-11-21-fist-agent-service-platform.md`。
+
+**六个 MCP 工具**（生命周期：registered → running → draining → stopped）：
+
+| 工具 | 语义 |
+|---|---|
+| `agent_service_register` | 注册（幂等；自动创建独立 ns + ACL；transport = mcp/cli/http；exposure = local/lan/global） |
+| `agent_service_start` | 对应 agent 手动拉起：置 running + 会话三件套落库（可选 `gateway_pid` 回填真实网关 pid） |
+| `agent_service_stop` | **唯一中断途径**：draining（拒新任务）→ stopped（注册保留，可再 start） |
+| `agent_service_status` / `agent_service_list` | 查询常驻状态 / 心跳 / 暴露端点 |
+| `agent_service_revoke` | 撤销注册（须先 stop） |
+
+**常驻网关**（`scripts/fist_gateway.py`，托管 stdio 子进程 + watchdog + 心跳 + 审计）：
+
+```bash
+# 先注册（MCP 工具），再由对应 agent 手动拉起网关：
+python scripts/fist_gateway.py --service-id svc-<name> --port 18640 \
+  --db .fist-mbt/data/agent-services.db --host 127.0.0.1 \
+  --api-key-file .fist-mbt/data/svc-<name>.apikey --open-firewall
+```
+
+- 端点：`GET /health`（活体）、`POST /mcp`（JSON-RPC 转发，调用方带 `X-API-Key` 头）
+- watchdog：子进程崩溃自动重启（退避 1s/5s/30s）；心跳 60s 刷新 `agent_service.session_last_heartbeat`
+- 模型自动路由：默认自动加入（端点登记进 `.fist-mbt/data/model-router-default.json` 的 `agent_services` 数组）；`--no-join-model-router` 退出
+- S3 挑战签名透传：`X-S3-Challenge` / `X-S3-Signature` 头自动注入 claim / reserve_scope / lock_acquire 参数（验签与 nonce 消费留在 fist serve）
+- 黑盒判据：`python scripts/blackbox/e2e_agent_gateway.py`（A1-A9 九臂）
+
+---
+
+## 12. 常见问题排查
 
 | 现象 | 原因与处理 |
 |---|---|
@@ -657,9 +689,9 @@ moon publish
 
 ---
 
-## 12. 一句话总结
+## 13. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **183 个 MCP 工具**；
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **188 个 MCP 工具**；
 此数由 `scripts/check_usage_tool_count.py` 与 server 注册真源逐次对表，漂移即红）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
