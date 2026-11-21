@@ -108,24 +108,58 @@ pub fn RouterConfig::from_json(json : Json) -> (RouterConfig, Array[String]) {
         Some(Json::Null) | None => (10, [])
         Some(_) => (10, ["caf_min_evidences 非整数，按 10 处理"])
       }
+      // P4：agent_services 高优路由池（常驻 fist-agent 服务端点，免费高优）。
+      // 缺字段/null → []（零回归）；非数组 → [] + warning；空串元素跳过。
+      // 注入形态：free 池追加 "agent:<endpoint>" 条目（价格 0、limit 巨大近乎不耗尽），
+      // pick_inner 第一优先级软提示层按 "agent:" 前缀先挑——配额硬约束一律不破。
+      let (agent_services, agent_warns) = match m.get("agent_services") {
+        Some(Json::Array(items)) => {
+          let mut eps : Array[String] = []
+          for it in items {
+            match it {
+              Json::String(s) =>
+                if s.trim().to_owned() != "" {
+                  eps = eps + [s.trim().to_owned()]
+                }
+              _ => ()
+            }
+          }
+          (eps, [])
+        }
+        Some(Json::Null) | None => ([], [])
+        Some(_) => ([], ["agent_services 非数组，按空处理"])
+      }
+      let free_models_full = free_models +
+        agent_services.map(
+          fn(ep) {
+            ModelQuota::new(
+              name="agent:" + ep,
+              tier=Free,
+              limit=1000000,
+              lane="agent_service",
+            )
+          },
+        )
       (
         {
           window_seconds: ws2,
           threshold_pct: tp2,
-          free_models,
+          free_models: free_models_full,
           paid_models,
           ofm_endpoint,
           use_laya,
           use_caf_memory,
           caf_default_preference,
           caf_min_evidences,
+          agent_services,
         },
         w2 +
         ofm_warns +
         use_laya_warns +
         use_caf_memory_warns +
         caf_default_preference_warns +
-        caf_min_evidences_warns,
+        caf_min_evidences_warns +
+        agent_warns,
       )
     }
     Json::Null => (d, []) // null = 没给配置，不算违例、不产噪音 warning
@@ -339,6 +373,9 @@ pub fn RouterConfig::to_json(self : RouterConfig) -> Json {
       self.caf_default_preference.map(fn(s) { Json::string(s) }),
     ),
     "caf_min_evidences": Json::number(self.caf_min_evidences.to_double()),
+    "agent_services": Json::array(
+      self.agent_services.map(fn(s) { Json::string(s) }),
+    ),
   })
 }
 

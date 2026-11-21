@@ -358,6 +358,10 @@ pub struct RouterConfig {
   caf_default_preference : Array[String]
   // P2d：视为「记忆充足」的最小证据数。默认 10；0 表示任何证据都算充足。
   caf_min_evidences : Int32
+  // P4：agent_services 高优路由池——常驻 fist-agent 服务端点（免费、质量好）。
+  // 非空时 pick 的**第一优先级软提示层**（先于 laya 档位提示）：从 free 池挑
+  // "agent:" 前缀条目；配额硬约束一律不破，无容量回落正常逻辑（零回归）。
+  agent_services : Array[String]
 }
 
 ///|
@@ -439,6 +443,7 @@ pub fn RouterConfig::default() -> RouterConfig {
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
+    agent_services: [],
   }
 }
 
@@ -1037,6 +1042,41 @@ fn ModelRouter::pick_inner(
   let free = self.config.free_models
   let paid = self.config.paid_models
   let nxt = window_deadline_iso(now, self.config.window_seconds)
+  // P4：agent_services 第一优先级软提示层——常驻 fist-agent 服务（免费高优）。
+  // 从 free 池挑 "agent:" 前缀条目（from_json 已注入）；配额硬约束由 pool_pick
+  // 强制，agent 池无容量回落正常逻辑（零回归）。游标不动：agent 条目近乎不耗尽，
+  // 恒取首个准入项即可。
+  if self.config.agent_services.length() > 0 {
+    let agent_pool = free.filter(fn(q) { q.name.has_prefix("agent:") })
+    if agent_pool.length() > 0 {
+      match pool_pick(agent_pool, 0, th, now~, unhealthy_ids~) {
+        Some(idx) => {
+          let was_switch = self.current_tier != Free
+          if was_switch {
+            self.switch_count = self.switch_count + 1
+            self.last_switch_at = now
+          }
+          self.current_tier = Free
+          quota_window_open(agent_pool[idx], now)
+          return {
+            model_name: agent_pool[idx].name,
+            tier: Free,
+            reason: "agent_service preferred (free high-priority)",
+            switched: was_switch,
+            next_switch_at: nxt,
+            available: true,
+            laya_reason: "agent_service:" + agent_pool[idx].name,
+            fallback_chain: compute_fallback_chain(
+              self.config,
+              agent_pool[idx].name,
+              unhealthy_ids~,
+            ),
+          }
+        }
+        None => () // agent 池无容量 → 回落正常逻辑
+      }
+    }
+  }
   // P2：laya 软性档位提示——先试提示档位，配额硬约束仍在，不破。
   // 档位字符串大小写归一（laya sidecar 可能返回 "Free"/"Paid"，from_string 只收小写）。
   if laya_prefer_tier != "" {
