@@ -105,11 +105,13 @@ def main() -> None:
         audit = os.path.join(td, "gw-audit.log")
         gw_log = str(ROOT / "temp" / "e2e_gateway.out.log")
         gw_log_f = open(gw_log, "w", encoding="utf-8")
+        router_cfg = os.path.join(td, "model-router-default.json")
         seed_db(db, svc)
         proc = subprocess.Popen(
             [sys.executable, str(GATEWAY), "--service-id", svc,
              "--port", str(port), "--db", db,
-             "--api-key", "e2e-p2-api-key", "--audit-log", audit],
+             "--api-key", "e2e-p2-api-key", "--audit-log", audit,
+             "--router-config", router_cfg],
             cwd=str(ROOT), stdout=gw_log_f, stderr=gw_log_f,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
@@ -151,6 +153,15 @@ def main() -> None:
                 headers={"X-API-Key": auth_key})
             assert code == 200 and "result" in authed, f"A2b FAIL: 带 key 应 200: {authed}"
             print("A2b PASS 认证门：无 key 401 / 带 key 200")
+            # A8 模型自动路由（默认自动加入）：路由配置的 agent_services 收到本服务条目
+            with open(router_cfg, encoding="utf-8") as f:
+                rcfg = json.load(f)
+            svc_entries = [s for s in rcfg.get("agent_services", [])
+                           if s.get("service_id") == svc]
+            assert svc_entries, f"A8 FAIL: 路由配置未登记本服务: {rcfg}"
+            assert svc_entries[0].get("endpoint", "").endswith("/mcp"), \
+                f"A8 FAIL: 路由条目缺端点: {svc_entries[0]}"
+            print("A8 PASS 模型自动路由：agent_services 已登记（默认自动加入）")
             # A6 lan 绑定臂（§4）：0.0.0.0 绑定 + key，经 127.0.0.1 调通
             #（本机即 lan 拓扑的最小可用形：绑定面与认证门全链）
             svc2 = svc + "-lan"
@@ -159,7 +170,8 @@ def main() -> None:
             lan = subprocess.Popen(
                 [sys.executable, str(GATEWAY), "--service-id", svc2,
                  "--port", str(lan_port), "--db", db, "--host", "0.0.0.0",
-                 "--api-key", "e2e-lan-key"],
+                 "--api-key", "e2e-lan-key",
+                 "--router-config", os.path.join(td, "model-router-lan.json")],
                 cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace",
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
