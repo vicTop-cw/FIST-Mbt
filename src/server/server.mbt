@@ -6263,15 +6263,28 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "board_ascii",
-    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。已完成一档在合计行里标出「(无交付物N)」——「已完成」不自动等于有成果（BUG-29 的探针/绕验收残留）。参数：namespace(可选，空=全部命名空间)。返回 { counts:{状态:数量}, done_no_artifact, ascii }。",
-    schema({ "namespace": string_prop("命名空间(默认全部)") }, []),
+    "返回当前命名空间的实时任务看板 ASCII：按状态分组 + 深度缩进，一眼看全貌（哪些任务、什么状态、在树哪层）。已完成一档在合计行里标出「(无交付物N)」——「已完成」不自动等于有成果（BUG-29 的探针/绕验收残留）。参数：namespace(可选，空=全部命名空间)、group_by(可选 status|butler；butler=按归属 assignee 分组、每家标注在途/完成，F094 §六多管家场景)。返回 { counts:{状态:数量}, done_no_artifact, ascii }。",
+    schema(
+      {
+        "namespace": string_prop("命名空间(默认全部)"),
+        "group_by": string_prop(
+          "分组维度：status（默认，按状态）| butler（按归属分组，F094 §六）",
+        ),
+      },
+      [],
+    ),
     fn(args : Json) -> Result[@mcp.ToolResult, @mcp.MCPError] {
       let ns = get_str(args, "namespace")
+      let group_by = get_str(args, "group_by", default="status")
       let eng = match engine_for_ns(ns) {
         Ok(e) => e
         Err(m) => return Err(m)
       }
-      let board = render_board_ascii(eng.list_all(), ns)
+      let board = if group_by == "butler" {
+        render_butler_ascii(eng.list_all(), ns)
+      } else {
+        render_board_ascii(eng.list_all(), ns)
+      }
       Ok(@mcp.ToolResult::text(board.stringify()))
     },
   )
