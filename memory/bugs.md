@@ -15694,7 +15694,7 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 车道 I 在写汇总前因账户额度耗尽中断，本追记内容全部由统帅现读复跑确认，未转抄车道结论。
 - reported_by: lead
 
-## BUG-583 [2026-11-09T13:14:00Z] [high] OPEN
+## BUG-583 [2026-11-09T13:14:00Z] [high] FIXED
 - summary: mcpcf 内嵌路径把裸 Unix 秒 `.to_int()` 截断喂 Int32 熔断器 ⇒ 2038-01-19T03:14:07Z 起正性哨兵恒假、熔断永久卡 Open 且 stale 复位失效；且 mcpcf 面零测试覆盖
 - detail: 定位：`src/server/mcpcf_embed.mbt:267` 与 `:360` `let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`（Int64→Int32 截断，core 语义 `%i64_to_i32`），分别喂 `circuit_fail/succeed/status`；消费点 `src/engine/engine_circuit.mbt:136` `opened_at > 0 &&`（恢复门）与 `:170` `rec > 0 && last_ts > 0 && now_secs - last_ts >= rec`（stale 复位）——全文件 Int32、无域声明。2039-01-01 探针：`trunc(2177452800000L/1000) = -2117514496`；两臂实测（车道 E 独立 MoonBit 探针，17/17 PASS）——臂 A（opened=2026 正、now=2039 负）减法经双回绕同余还原真实 elapsed ⇒ 门 true（**减法形安全，勿报**，与 BUG-580 的 600000 风暴臂同一机理）；臂 B（两端同为 2039 后截断负值、差 60s）差值同余正确但 `opened_at > 0` 假 ⇒ 卡 Open。坏的是**正性哨兵**不是算术。
 - 隔离结论（车道 G 只读调查，实锤「今日不共享行」）：主 MCP 路径 `src/server/server.mbt:5908/:5976/:6002` 用 `@ops.iso_to_secs(now)`（ops_ts 2024 基、域 2024..2091，见 `src/ops/ops_ts.mbt:48`）喂引擎，库落 `<target>/.fist-mbt/data/<ns>.db`（`src/store/multi_store.mbt:276`）或 `FIST_DB_PATH`（`src/store/store_sqlite.mbt:187`）；mcpcf 路径是**另一份引擎与另一份库**——模块级 `holder`（`mcpcf_embed.mbt:10-16`）+ 硬编码 `mcpconftest-ops.db`（`:48/:181`），目录默认 `%LOCALAPPDATA%\mcpconftest\data`，`set_engine` 仅这两处调用、永不被注入主引擎。表同名（`store_sqlite.mbt:237` `circuit_breakers`）但不同文件 ⇒ **不存在跨时基比较**（车道 E 的疑点已排除）。⚠ 隔离是**路径约定而非断言**：若 `FIST_DB_PATH` 被指到 `…\mcpconftest-ops.db`，两基（差≈1.7e9 秒）同库同表 ⇒ 熔断永久 Open / half-open 随机。
@@ -15711,6 +15711,12 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 顺带抓到的口径滞后（**未修，避免越界**）：`src/engine/engine_circuit_test.mbt` 头注释仍写「需 SQLite 后端（Mem 后端 cb 为 no-op）」，BUG-439 后内存后端已实读实写（车道 H 有 6 格用内存后端通过即为反证）⇒ 旧口径会误导后来者多开沙箱库。
 - 新增残余 ⇒ 另立 **BUG-588**（可测性缺口：mcpcf 无时钟入参 + `ops_data_dir()` 默认目录在测试内不可改道，`:48` 库名硬编码）。
 - 定时发信器如实预告：server `bug583_02` 的 Unix 正域带断言在 **2038-01-19 之后会自己红**（刻意设计）——届时若仍未修，那是预期信号而不是判据坏了。
+- reported_by: lead
+
+### FIXED(2026-11-21 / BUG-583 时钟 Int64 化收口)
+- **修法（引擎熔断链 Int64 + mcpcf 边界去截断 + 时钟注入）**：① `src/engine/engine_circuit.mbt` 全链 Int64（`now_secs`/`opened_at`/`last_fail_ts` 已为 `Int64`/`0L`，cb_save/cb_get 双后端同型）——引擎层无 Int32 时钟面；② mcpcf 调用边界弃 `.to_int()` 截断：`mcpcf_embed.mbt:286/:381` 改 `arg_now_secs(args, @env.now().reinterpret_as_int64() / 1000L)` 直通 Int64 Unix 秒（真源 `arg_now_secs:135` 返回 `Int64`）；③ 可测性缺口同轮修复（BUG-588，commit 75f77ffc7 轮 186）：`mcpcf.circuit`/`mcpcf.watchdog` 接受可选 `now_secs` 覆盖（Number/数字串，非法回落墙钟），2038/2039 档在调用层可锁。
+- **行为锁**：`engine_circuit_bug583_wbtest.mbt` 7 格 + `mcpcf_embed_bug583_wbtest.mbt` 4 格（轮 186 修复时按 `bug583_04` 预告改写）——本轮回跑实测 engine `403/403/0`、server `607/608`（唯一红为 WIP 遗留 TQ-E2，非本单面）。
+- **残余如实记账（不藏）**：主 MCP 路径喂时仍走 `@ops.iso_to_secs`（Int32，ops 域 2024..2091，BUG-218 设计边界）——该域内正性哨兵有效；2091 顶与「@ops.iso_to_secs Int64 变体」属方向③的根除剩余面，主路径未在本单内切 Unix Int64 基（跨时基同库风险见本单隔离结论，收敛须 owner 裁决）。mcpcf 沙箱库既有行为锁 Unix 秒 <2038 为正，与 Int64 直通同基，无需清表。
 - reported_by: lead
 
 ## BUG-584 [2026-11-09T13:14:00Z] [high] FIXED
