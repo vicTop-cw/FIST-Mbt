@@ -166,6 +166,16 @@ def main() -> None:
             assert row[2] == prompt[:500], f"B4 FAIL: 描述不符: {row[2]}"
             print(f"B4 PASS 任务落库（{row[0]} / ns={row[1]}）")
 
+            # B6 id 序列：同 ns 连续两次发布必须拿到不同 id（发布链无串号/复用）
+            code, pub2 = http_post(url, {"model": "agent-x", "messages": [
+                {"role": "user", "content": prompt + "/b"}]}, headers=auth)
+            assert code == 200 and pub2.get("fist_task_id"), \
+                f"B6 FAIL: 第二次发布未成功: {code} {pub2}"
+            task_id2 = pub2["fist_task_id"]
+            assert task_id2 != task_id, \
+                f"B6 FAIL: 连续两次发布返回同 id {task_id}（串号/复用）: {pub2}"
+            print(f"B6 PASS id 序列：{task_id} ≠ {task_id2}（发布链无串号）")
+
             # B5 审计行
             time.sleep(0.5)
             audit_text = Path(audit).read_text(encoding="utf-8", errors="replace")
