@@ -150,6 +150,34 @@ def main() -> None:
             print(f"  证据：GET → {json.dumps(body, ensure_ascii=False)[:200]}")
             print(f"  真源（get+namespace={svc}）→ status={src.get('status')}")
             print("  修法方向：网关侧 get 调用透传发布 ns（或回执面带 ns 解析）")
+
+            # 变通路径判据（缺陷期间的可用通路，须持续绿）：
+            # shim 发布 → /mcp claim → get+namespace 反映状态转移（待领取→已领取）。
+            # 前置：给认领身份授 ns 写权（ACL 默认拒写，授权链由 human_steward 代行）。
+            _, g = http_post(f"{base}/mcp", {"jsonrpc": "2.0", "id": 2,
+                             "method": "tools/call",
+                             "params": {"name": "agent_acl_grant", "arguments": {
+                                 "agent_id": "e2e-nsp", "namespace": svc,
+                                 "can_write": True, "by": "human_steward"}}},
+                             headers=auth)
+            assert "error" not in g, f"变通臂准备 FAIL: ACL �授权失败: {g}"
+            _, cl = http_post(f"{base}/mcp", {"jsonrpc": "2.0", "id": 3,
+                              "method": "tools/call",
+                              "params": {"name": "claim", "arguments": {
+                                  "task_id": task_id, "assignee": "e2e-nsp",
+                                  "namespace": svc}}}, headers=auth)
+            assert "error" not in cl, f"变通臂 FAIL: claim 未成功: {cl}"
+            _, gv = http_post(f"{base}/mcp", {"jsonrpc": "2.0", "id": 4,
+                              "method": "tools/call",
+                              "params": {"name": "get", "arguments": {
+                                  "task_id": task_id, "namespace": svc}}},
+                              headers=auth)
+            now = json.loads(gv["result"]["content"][0]["text"])
+            assert now.get("status") == "已领取", \
+                f"变通臂 FAIL: get+namespace 未反映已领取: {now.get('status')}"
+            assert now.get("description") == marker, \
+                f"变通臂 FAIL: 描述不符: {now.get('description')}"
+            print("PASS 变通臂：/mcp get+namespace 全程反映 ns 池状态转移（待领取→已领取）")
         finally:
             if os.name == "posix":
                 proc.send_signal(signal.SIGTERM)
