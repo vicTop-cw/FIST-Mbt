@@ -37,11 +37,16 @@ def main() -> None:
         for name, desc in SUITE:
             print(f"{name}  {desc}")
         return
+    mode = "--selftest" in sys.argv
     hard_fail = []
     for name, desc in SUITE:
         path = HERE / name
-        print(f"\n===== {name}  {desc} =====")
-        proc = subprocess.run([sys.executable, str(path)], cwd=str(ROOT))
+        label = "自证" if mode else "实弹"
+        print(f"\n===== [{label}] {name}  {desc} =====")
+        cmd = [sys.executable, str(path)]
+        if mode:
+            cmd.append("--selftest")
+        proc = subprocess.run(cmd, cwd=str(ROOT))
         if proc.returncode != 0:
             hard_fail.append(name)
     print("\n===== 套件读数 =====")
