@@ -176,6 +176,25 @@ def main() -> None:
                 f"B6 FAIL: 连续两次发布返回同 id {task_id}（串号/复用）: {pub2}"
             print(f"B6 PASS id 序列：{task_id} ≠ {task_id2}（发布链无串号）")
 
+            # B7 超长 prompt 截断契约：>500 字按 500 字截断入库（desc = prompt[:500]）
+            long_prompt = "L" * 600
+            code, pub3 = http_post(url, {"model": "agent-x", "messages": [
+                {"role": "user", "content": long_prompt}]}, headers=auth)
+            assert code == 200 and pub3.get("fist_task_id"), \
+                f"B7 FAIL: 超长发布未成功: {code} {pub3}"
+            con = sqlite3.connect(str(task_db))
+            try:
+                row = con.execute(
+                    "SELECT length(description), description FROM tasks WHERE id=?",
+                    (pub3["fist_task_id"],)).fetchone()
+            finally:
+                con.close()
+            assert row, "B7 FAIL: 超长任务未落库"
+            assert row[0] == 500, f"B7 FAIL: 描述应截断到 500 字，实得 {row[0]}"
+            assert row[1] == long_prompt[:500], \
+                f"B7 FAIL: 截断内容不符: {row[1][:60]}..."
+            print(f"B7 PASS 超长 prompt 截断（600 → 500 字，task_id={pub3['fist_task_id']}）")
+
             # B5 审计行
             time.sleep(0.5)
             audit_text = Path(audit).read_text(encoding="utf-8", errors="replace")
