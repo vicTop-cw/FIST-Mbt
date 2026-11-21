@@ -15,7 +15,7 @@ AIGC:
 > - **P0 注册表与生命周期**：🟢 `agent_service` 表已入 `create_schema` 基线建表面（e399dcc3 修 fresh 库缺表）+ 六工具全注册（server.mbt）+ 行为锁 `src/engine/agent_service_wbtest.mbt` 4 格（生命周期/重启恢复/内存后端降级/幂等 UPSERT）全绿
 > - **P1 常驻网关**：🟢 `scripts/fist_gateway.py`（MCPBridge 复用 + watchdog 退避 1s/5s/30s + svc_heartbeat 60s + 会话三件套落库 + §3.3 唯一退出路径）+ 黑盒判据 `scripts/blackbox/e2e_agent_gateway.py` 实弹 ALL PASS（39395dc0）
 > - **P2 三级暴露**：�代办认证门（API-key sha256 哈希不落盘、无 key 401/带 key 200 实弹）、per-key 限流（60/min 默认）、lan 裸奔启动门、防火墙 best-effort 读数、e2e A6 lan 绑定臂（1a3865a9/3d80c46f）；余 HTTPS/mTLS 前置（global 部署项）
-> - **P3 执行器矩阵**：�atomcode 🟢 已上线实弹（svc-atomcode @ 127.0.0.1:18640，API-key 认证，/health + /mcp 转发 + 无 key 401 全验证；库 `.fist-mbt/data/agent-services.db`）；freebuff/marvis/codearts 等无头类后续再接（§1.3 定案：各 agent 手动 start）
+> - **P3 执行器矩阵**：�atomcode 🟢 已上线实弹（svc-atomcode @ 127.0.0.1:18640，local 档 + API-key 文件模式 `--api-key-file`，/health + /mcp 转发 + status_summary 真数据调用 + 无 key 401 全验证；库 `.fist-mbt/data/agent-services.db`）；**模型自动路由默认自动加入**（`--no-join-model-router` 可退出，条目落 `.fist-mbt/data/model-router-default.json` 的 agent_services 数组——4d3b2cbe）；freebuff/marvis/codearts 等无头类后续再接（§1.3 定案：各 agent 手动 start）
 > - **P4 安全加固**：🟡 审计面已落（`--audit-log` mcp_call/auth_fail append-only，d22e876c）；S3 挑战签名/配额接全局档待做
 > - **P5 全球部署**：⚪ 需公网环境（反代 TLS + 远程 agent 接入）
 > - e2e：`python scripts/blackbox/e2e_agent_gateway.py`（A1/A2/A2b/A3/A4/A6/A7 全绿；A5 watchdog 重启臂 posix only）
