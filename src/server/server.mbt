@@ -2467,7 +2467,9 @@ fn fb_build_mutex_acquire(
   let conflict : Ref[String] = Ref::Ref("")
   let ok = fb_store_mutate(ns, project_dir, fn(ledger) {
     let rows = @filebind.fb_plan_bind(
-      ledger, ns, project_dir, ["."], holder, now_secs, 7200,
+      // 哨兵路径 "__build__"：不可用 "."——fb_norm 会把 "." 段过滤成空串
+      // → fb_path_ok 判非法路径，计划行静默变 invalid，互斥形同虚设（白盒判据实证）
+      ledger, ns, project_dir, ["__build__"], holder, now_secs, 7200,
     )
     let after = @filebind.fb_apply_bind(
       ledger, ns, project_dir, rows, holder, task_id, "dir", "build",
@@ -2497,7 +2499,7 @@ fn fb_build_mutex_release(
   ignore(
     fb_store_mutate(ns, project_dir, fn(ledger) {
       let rows = @filebind.fb_plan_release(
-        ledger, ns, project_dir, ["."], "", "build", holder, false,
+        ledger, ns, project_dir, ["__build__"], "", "build", holder, false,
       )
       @filebind.fb_apply_release(ledger, ns, project_dir, rows, "", "build")
     }),
