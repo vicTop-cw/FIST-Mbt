@@ -249,6 +249,40 @@ def main() -> None:
         assert "mcp_call" in events, f"A7 FAIL: 审计无 mcp_call: {events}"
         assert "auth_fail" in events, f"A7 FAIL: 审计无 auth_fail: {events}"
         print(f"A7 PASS 审计账：{len(events)} 行（mcp_call + auth_fail 双事件在）")
+        # A9 §3.2 重启恢复：网关进程重启 → 按注册表恢复 running（会话 token 落库语义）
+        gw_log_f.close()
+        gw_log_f2 = open(gw_log, "a", encoding="utf-8")
+        proc2 = subprocess.Popen(
+            [sys.executable, str(GATEWAY), "--service-id", svc,
+             "--port", str(port), "--db", db,
+             "--api-key", "e2e-p2-api-key", "--audit-log", audit,
+             "--router-config", router_cfg],
+            cwd=str(ROOT), stdout=gw_log_f2, stderr=gw_log_f2,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+        try:
+            h3 = None
+            for _ in range(30):
+                time.sleep(0.5)
+                try:
+                    _, h3 = http_get(f"http://127.0.0.1:{port}/health")
+                    if h3.get("alive") is True:
+                        break
+                except Exception:
+                    continue
+            assert h3 and h3.get("alive") is True, f"A9 FAIL: 重启后未恢复: {h3}"
+            st_restart, _ = read_status(db, svc)
+            assert st_restart == "running", f"A9 FAIL: 重启后注册表状态={st_restart}"
+            print("A9 PASS 重启恢复 running（§3.2 会话持久化）")
+        finally:
+            if os.name == "posix":
+                proc2.send_signal(signal.SIGTERM)
+            else:
+                proc2.send_signal(signal.CTRL_BREAK_EVENT)
+            proc2.wait(timeout=45)
+        st2, _ = read_status(db, svc)
+        assert st2 == "stopped", f"A9 FAIL: 二次终止后={st2}"
+        gw_log_f2.close()
     print("e2e_agent_gateway: ALL PASS")
 
 
