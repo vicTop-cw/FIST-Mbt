@@ -201,8 +201,12 @@ class Gateway:
                       self.session_token, self.current_pid(), now_iso)
 
     def current_pid(self) -> int:
-        p = self._proc
-        return p.pid if p and p.poll() is None else 0
+        """session_pid 语义（P4 统一）：网关进程自身 pid。
+
+        服务注册表的「服务在跑」以网关进程为准（托管子进程由 watchdog 换绑，
+        不构成服务身份）；此前写子进程 pid 与启动路径 os.getpid() 双语义漂移。
+        """
+        return os.getpid()
 
     # ---- 子进程托管（复用 run_fist_mbt_http.MCPBridge 模式） ----
 
@@ -446,7 +450,8 @@ class Gateway:
                 self.wfile.write(body)
 
             def do_POST(self) -> None:
-                if self.path.split("?")[0] != "/mcp":
+                path = self.path.split("?")[0]
+                if path not in ("/mcp", "/v1/chat/completions"):
                     self.send_response(404)
                     self.end_headers()
                     return
@@ -467,9 +472,25 @@ class Gateway:
                     self.send_response(400)
                     self.end_headers()
                     return
+                if path == "/v1/chat/completions":
+                    self._handle_chat_completions(gateway, payload)
+                    return
                 method = str(payload.get("method", ""))
                 # P4 §4.1 审计：每次放行的 /mcp 调用落一行（auth_fail 在上支已落）
                 gateway._audit("mcp_call", {"ip": self.client_address[0], "method": method})
+                # P4 S3 挑战签名透传：头形态注入挑战 consuming 工具的参数。
+                # 验签与 nonce 原子消费**留在 fist serve**（网关无公钥/无票账本，不可独立验）
+                if method == "tools/call":
+                    s3c = self.headers.get("X-S3-Challenge", "")
+                    s3s = self.headers.get("X-S3-Signature", "")
+                    if s3c and s3s:
+                        p = dict(payload.get("params") or {})
+                        a = dict(p.get("arguments") or {})
+                        if p.get("name", "") in ("claim", "reserve_scope", "lock_acquire"):
+                            a.setdefault("challenge", s3c)
+                            a.setdefault("challenge_sig", s3s)
+                            p["arguments"] = a
+                            payload["params"] = p
                 # draining 拒新任务（§3.3）；工具调用放行存量会话
                 if gateway.stop_event.is_set():
                     body = json.dumps({"jsonrpc": "2.0", "id": payload.get("id"),
@@ -480,6 +501,86 @@ class Gateway:
                     resp = gateway.call(method, payload.get("params"))
                     body = json.dumps(resp).encode()
                     self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _handle_chat_completions(self, gateway, payload: dict) -> None:
+                """P4 执行器落地（T0r8）：OpenAI 形状 → 任务池。
+
+                路由层选中 "agent:<endpoint>" 条目后，执行器 POST 本端点。
+                语义：把 prompt �成任务（publish 进本服务独立 ns），返回
+                OpenAI 形状回执（content 携带 task_id），调用方凭 id 追进度。
+                """
+                gateway._audit("chat_completions", {"ip": self.client_address[0]})
+                if gateway.stop_event.is_set():
+                    body = json.dumps({"error": {"message": "Gateway draining"}}).encode()
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                model = str(payload.get("model", "agent-service"))
+                msgs = payload.get("messages") or []
+                prompt = ""
+                for m in reversed(msgs):
+                    if isinstance(m, dict) and m.get("role") == "user":
+                        prompt = str(m.get("content", ""))
+                        break
+                if not prompt:
+                    body = json.dumps({"error": {"message": "messages 里没有 user 内容"}}).encode()
+                    self.send_response(400)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                desc = prompt[:500]
+                resp = gateway.call("tools/call", {
+                    "name": "publish",
+                    "arguments": {
+                        "project_dir": ".",
+                        "namespace": gateway.service_id,
+                        "description": desc,
+                        # created_by 信任链：本网关是人类配置的常驻执行器（API-key 认证 +
+                        # 本机/白名单档），publish 治理门（仅 human_steward）由网关代行。
+                        "created_by": "human_steward",
+                    },
+                })
+                try:
+                    inner = json.loads(resp["result"]["content"][0]["text"])
+                    task_id = inner.get("task_id") or inner.get("id") or ""
+                except (KeyError, TypeError, json.JSONDecodeError):
+                    task_id = ""
+                if not task_id:
+                    body = json.dumps({"error": {
+                        "message": "任务发布失败",
+                        "detail": resp.get("error", resp),
+                    }}).encode()
+                    self.send_response(502)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                content = (f"任务已受理：{task_id}（{gateway.service_id}）。"
+                           f"凭此 id 经 /mcp tools/call get 查进度。")
+                body = json.dumps({
+                    "id": f"chatcmpl-{task_id}",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": "stop",
+                    }],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "fist_task_id": task_id,
+                }).encode()
+                self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
