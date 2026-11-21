@@ -89,8 +89,16 @@ class Gateway:
         self.session_token = secrets.token_hex(16)
         # P2 §4.1：API-key 认证（lan/global 强制）。网关只存 sha256 哈希（明文不落盘）；
         # --api-key 由对应 agent 启动时给定并**只打印一次**给指挥官留存。
+        # --api-key-file：常驻化场景明文 key 落数据目录而非任务定义（§4.1 哈希存储口径）。
+        api_key_raw = args.api_key
+        if not api_key_raw and args.api_key_file:
+            try:
+                with open(args.api_key_file, encoding="utf-8") as f:
+                    api_key_raw = f.readline().strip()
+            except OSError as e:
+                log.error("读 %s 失败: %s", args.api_key_file, e)
         self.api_key_hash = (
-            hashlib.sha256(args.api_key.encode()).hexdigest() if args.api_key else ""
+            hashlib.sha256(api_key_raw.encode()).hexdigest() if api_key_raw else ""
         )
         self.rate_limit = args.rate_limit
         self._req_times: dict[str, deque] = {}   # key（或 ip）→ 窗口内时间戳
@@ -132,6 +140,53 @@ class Gateway:
                 return False
             dq.append(now)
         return True
+
+    # ---- P4 模型自动路由网关接入（默认自动加入；--no-join-model-router 退出） ----
+
+    def join_model_router(self) -> str:
+        """把本服务端点登记进模型路由配置（agent_services 数组，幂等更新）。
+
+        读改写 `--router-config`（默认 .fist-mbt/data/model-router-default.json）：
+        只动 agent_services 数组里本 service_id 的条目，其余字段逐字保留
+        （RouterConfig::from_json 对未知字段本就忽略，形状不破坏）。
+        返回人话读数。"""
+        path = self.args.router_config
+        if not path:
+            return "模型路由配置路径未设置（--router-config），跳过加入"
+        cfg: dict = {}
+        try:
+            with open(path, encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                cfg = loaded
+        except (OSError, json.JSONDecodeError):
+            cfg = {}   # 首次加入：文件缺席/坏档都从空配置起步
+        capabilities = ""
+        try:
+            con = sqlite3.connect(self.db_path)
+            try:
+                row = con.execute(
+                    "SELECT capabilities FROM agent_service WHERE service_id=?",
+                    (self.service_id,),
+                ).fetchone()
+                capabilities = row[0] if row else ""
+            finally:
+                con.close()
+        except Exception as e:
+            log.error("读注册表 capabilities 失败（加入路由继续，capability 置空）: %s", e)
+        services = [s for s in cfg.get("agent_services", [])
+                    if isinstance(s, dict) and s.get("service_id") != self.service_id]
+        services.append({
+            "service_id": self.service_id,
+            "endpoint": f"http://{self.args.host}:{self.args.port}/mcp",
+            "capabilities": capabilities,
+            "joined_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+        cfg["agent_services"] = services
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return f"已加入模型自动路由网关（{path} · agent_services[{len(services)}]）"
 
     def lan_binding_requires_key(self) -> bool:
         """§4.2：非本机绑定（lan/global）强制 API-key——启动期拒绝裸奔。"""
@@ -294,6 +349,11 @@ class Gateway:
             log.info(firewall_check(self.args.host, self.args.port))
             if self.args.open_firewall:
                 log.info(firewall_open(self.args.port))
+        # plan §1.2 模型自动路由：默认自动加入（服务端点登记进路由配置，供路由按需调用）
+        if self.args.join_model_router:
+            log.info(self.join_model_router())
+        else:
+            log.info("模型自动路由网关：按配置跳过加入（--no-join-model-router）")
         patch_registry_now = now
         patch_session(self.db_path, self.service_id, "running", self.listen_addr,
                       self.session_token, os.getpid(), patch_registry_now)
@@ -491,6 +551,8 @@ def main() -> None:
     ap.add_argument("--api-key", default="",
                     help="调用方 API-key（明文只在启动参数出现一次；网关只存 sha256）。"
                          "lan/global 档强制；local 档可选")
+    ap.add_argument("--api-key-file", default="",
+                    help="从文件首行读 API-key（常驻化场景：明文 key 落数据目录而非任务定义）")
     ap.add_argument("--rate-limit", type=int, default=60,
                     help="per-key 限流：每分钟请求数上限（§4.1，默认 60）")
     ap.add_argument("--open-firewall", action="store_true",
@@ -498,6 +560,12 @@ def main() -> None:
                          "失败如实警告不阻断，§4.1 防火墙检查面）")
     ap.add_argument("--audit-log", default="",
                     help=f"审计文件路径（默认 temp/gateway-<service_id>.log，§4.1 P4 审计面）")
+    ap.add_argument("--no-join-model-router", dest="join_model_router",
+                    action="store_false",
+                    help="退出模型自动路由网关（默认自动加入：服务端点登记进路由配置的 "
+                         "agent_services 数组，供模型路由按需调用，plan §1.2）")
+    ap.add_argument("--router-config", default=".fist-mbt/data/model-router-default.json",
+                    help="模型路由配置 JSON 路径（默认 .fist-mbt/data/model-router-default.json）")
     args = ap.parse_args()
     if not Path(args.db).is_file():
         sys.exit(f"FATAL: 库不存在：{args.db}（--db 指向含 agent_service 表的库）")
