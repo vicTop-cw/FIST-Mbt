@@ -254,9 +254,8 @@ pub fn SqliteStore::fb_txn(
       let rows = self.fb_list_rows(ns, project_dir)
       let after = mutate(rows)
       // DELETE 旧行
-      let del_ok = match db.prepare(
-        "DELETE FROM file_binds WHERE ns = ? AND project_dir = ?",
-      ) {
+      let del_ok = match
+        db.prepare("DELETE FROM file_binds WHERE ns = ? AND project_dir = ?") {
         None => false
         Some(stmt) => {
           ignore(
@@ -281,9 +280,10 @@ pub fn SqliteStore::fb_txn(
       let mut all_ok = true
       for b in after {
         let j = @filebind.fb_entry_json(b).stringify()
-        let ins_ok = match db.prepare(
-          "INSERT INTO file_binds (ns, project_dir, path, bind_json) VALUES (?, ?, ?, ?)",
-        ) {
+        let ins_ok = match
+          db.prepare(
+            "INSERT INTO file_binds (ns, project_dir, path, bind_json) VALUES (?, ?, ?, ?)",
+          ) {
           None => false
           Some(stmt) => {
             ignore(
@@ -340,14 +340,15 @@ pub fn SqliteStore::fb_release_task(
   ns : String,
   project_dir : String,
   task_id : String,
-) -> Int {
+) -> Int32 {
   match self.db {
     None => 0
     Some(db) => {
       let mut n = 0
-      match db.prepare(
-        "DELETE FROM file_binds WHERE ns = ? AND project_dir = ? AND task_id = ?",
-      ) {
+      match
+        db.prepare(
+          "DELETE FROM file_binds WHERE ns = ? AND project_dir = ? AND task_id = ?",
+        ) {
         None => ()
         Some(stmt) => {
           ignore(
@@ -378,25 +379,25 @@ pub fn SqliteStore::fb_release_task(
 ///|
 /// 生命周期挂钩（F094 §3.3）：watchdog_tick 顺带清理 TTL 过期绑定
 /// （复用既有看护通道，不新增 tick）。返回清除的行数。
-pub fn SqliteStore::fb_purge_expired(self : SqliteStore, ns : String, now : Int) -> Int {
+pub fn SqliteStore::fb_purge_expired(
+  self : SqliteStore,
+  ns : String,
+  now : Int32,
+) -> Int32 {
   match self.db {
     None => 0
     Some(db) => {
       let mut n = 0
-      match db.prepare(
-        "DELETE FROM file_binds WHERE ns = ? AND ttl_secs > 0 AND bound_at + ttl_secs < ?",
-      ) {
+      match
+        db.prepare(
+          "DELETE FROM file_binds WHERE ns = ? AND ttl_secs > 0 AND bound_at + ttl_secs < ?",
+        ) {
         None => ()
         Some(stmt) => {
           ignore(
             stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ns))),
           )
-          ignore(
-            stmt.bind(
-              2,
-              @sqlite.SqlValue::Int(now),
-            ),
-          )
+          ignore(stmt.bind(2, @sqlite.SqlValue::Int(now)))
           ignore(stmt.execute())
           stmt.finalize()
           n = 1
@@ -422,9 +423,10 @@ pub fn SqliteStore::event_append(
   match self.db {
     None => false
     Some(db) =>
-      match db.prepare(
-        "INSERT INTO task_events (ns, task_id, event, actor, detail, ts) VALUES (?, ?, ?, ?, ?, ?)",
-      ) {
+      match
+        db.prepare(
+          "INSERT INTO task_events (ns, task_id, event, actor, detail, ts) VALUES (?, ?, ?, ?, ?, ?)",
+        ) {
         None => false
         Some(stmt) => {
           ignore(
@@ -443,10 +445,7 @@ pub fn SqliteStore::event_append(
             stmt.bind(4, @sqlite.SqlValue::Text(@encoding.encode(UTF8, actor))),
           )
           ignore(
-            stmt.bind(
-              5,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, detail)),
-            ),
+            stmt.bind(5, @sqlite.SqlValue::Text(@encoding.encode(UTF8, detail))),
           )
           ignore(
             stmt.bind(6, @sqlite.SqlValue::Text(@encoding.encode(UTF8, ts))),
@@ -465,7 +464,7 @@ pub fn SqliteStore::event_list(
   self : SqliteStore,
   ns : String,
   task_id : String,
-  limit : Int,
+  limit : Int32,
 ) -> Array[Json] {
   let out : Array[Json] = []
   match self.db {
@@ -594,6 +593,10 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     "CREATE TABLE IF NOT EXISTS agents (agent_id TEXT PRIMARY KEY, agent_type TEXT NOT NULL DEFAULT 'unknown', role TEXT NOT NULL DEFAULT 'Executor', soldier TEXT NOT NULL DEFAULT '工兵', pid INTEGER NOT NULL DEFAULT 0, pubkey_fp TEXT NOT NULL DEFAULT '', first_seen TEXT NOT NULL DEFAULT '', last_seen TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active')",
     // Agent ACL：默认 can_write=0（fail-closed），按 ns 授权
     "CREATE TABLE IF NOT EXISTS agent_acl (agent_id TEXT NOT NULL, ns TEXT NOT NULL, can_read INTEGER NOT NULL DEFAULT 1, can_write INTEGER NOT NULL DEFAULT 0, pid_bound INTEGER NOT NULL DEFAULT 0, revoked_at TEXT NOT NULL DEFAULT '', revoked_by TEXT NOT NULL DEFAULT '', PRIMARY KEY (agent_id, ns))",
+    // fist-agent-service-platform-plan.md §1.1：Agent 服务注册表（P0 生命周期）。
+    // 此前建表语句只在 clear() 里 —— fresh 库 open 不建表，agent_service 工具族
+    // 首调即 `no such table: agent_service`（白盒判据 agent_service_wbtest 实证）。
+    "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, owner_agent TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]', transport TEXT NOT NULL DEFAULT 'mcp', exposure TEXT NOT NULL DEFAULT 'local', status TEXT NOT NULL DEFAULT 'registered', session_listen_addr TEXT NOT NULL DEFAULT '', session_token TEXT NOT NULL DEFAULT '', session_pid INTEGER NOT NULL DEFAULT 0, session_last_heartbeat TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
   ]
   match self.db {
     None => false
@@ -1444,6 +1447,16 @@ impl Store for SqliteStore with fn clear(self) {
           "CREATE TABLE IF NOT EXISTS agent_acl (agent_id TEXT NOT NULL, ns TEXT NOT NULL, can_read INTEGER NOT NULL DEFAULT 1, can_write INTEGER NOT NULL DEFAULT 0, pid_bound INTEGER NOT NULL DEFAULT 0, revoked_at TEXT NOT NULL DEFAULT '', revoked_by TEXT NOT NULL DEFAULT '', PRIMARY KEY (agent_id, ns))",
         ),
       )
+      // P0 定案（fist-agent-service-platform-plan.md §1.1）：Agent 服务注册表。
+      // service_id 全局唯一（`svc-<name>` / `svc-<name>-<machine_id>`）；capabilities 为
+      // JSON 数组字符串（与 executors.abilities_json 同风格）；session 子对象平铺为
+      // session_* 列（SQLite 无嵌套对象；listen_addr / session_token / pid / last_heartbeat
+      // 随 SqliteStore 持久化，会话 token 落库 —— §3.2 会话持久化）。
+      ignore(
+        db.exec(
+          "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, owner_agent TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]', transport TEXT NOT NULL DEFAULT 'mcp', exposure TEXT NOT NULL DEFAULT 'local', status TEXT NOT NULL DEFAULT 'registered', session_listen_addr TEXT NOT NULL DEFAULT '', session_token TEXT NOT NULL DEFAULT '', session_pid INTEGER NOT NULL DEFAULT 0, session_last_heartbeat TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
+        ),
+      )
       ignore(db.exec("DELETE FROM tasks"))
       ignore(db.exec("DELETE FROM archive"))
       ignore(db.exec("DELETE FROM call_log"))
@@ -1456,6 +1469,7 @@ impl Store for SqliteStore with fn clear(self) {
       ignore(db.exec("DELETE FROM assistant_reg"))
       ignore(db.exec("DELETE FROM file_locks"))
       ignore(db.exec("DELETE FROM lock_violations"))
+      ignore(db.exec("DELETE FROM agent_service"))
     }
   }
 }
@@ -3841,6 +3855,361 @@ pub fn SqliteStore::agents_stale_check(
           }
           stmt.finalize()
           out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// AgentServiceRecord —— `agent_service` 表的一行（Agent 服务注册表；随 SqliteStore 持久化）。
+/// `session_*` 为常驻会话信息（listen_addr / session_token / pid / last_heartbeat），
+/// P0 定案 §3.2：会话 token 落库，网关重启后按注册表恢复 running 态。
+pub struct AgentServiceRecord {
+  service_id : String
+  owner_agent : String
+  capabilities : String
+  transport : String
+  exposure : String
+  status : String
+  session_listen_addr : String
+  session_token : String
+  session_pid : Int32
+  session_last_heartbeat : String
+  created_at : String
+  updated_at : String
+}
+
+///|
+/// 登记/更新 Agent 服务注册行（幂等 UPSERT；P0 定案 §1.2 register 语义）。
+/// 新建以 status='registered' 落库；已存在则整行覆盖（服务注册是静态登记，随时可更新能力/暴露档）。
+pub fn SqliteStore::agent_service_upsert(
+  self : SqliteStore,
+  service_id~ : String,
+  owner_agent~ : String,
+  capabilities~ : String,
+  transport~ : String,
+  exposure~ : String,
+  status~ : String,
+  session_listen_addr~ : String = "",
+  session_token~ : String = "",
+  session_pid~ : Int32 = 0,
+  session_last_heartbeat~ : String = "",
+  created_at~ : String = "",
+  updated_at~ : String = "",
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "INSERT INTO agent_service (service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(service_id) DO UPDATE SET owner_agent=excluded.owner_agent, capabilities=excluded.capabilities, transport=excluded.transport, exposure=excluded.exposure, status=excluded.status, session_listen_addr=excluded.session_listen_addr, session_token=excluded.session_token, session_pid=excluded.session_pid, session_last_heartbeat=excluded.session_last_heartbeat, updated_at=excluded.updated_at"
+      match db.prepare(sql) {
+        None => Err("agent_service_upsert prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, owner_agent)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, capabilities)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              4,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, transport)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, exposure)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, status)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, session_listen_addr)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              8,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, session_token)),
+            ),
+          )
+          ignore(stmt.bind(9, @sqlite.SqlValue::Int(session_pid)))
+          ignore(
+            stmt.bind(
+              10,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, session_last_heartbeat)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              11,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, created_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              12,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, updated_at)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("agent_service_upsert execute failed")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 更新常驻会话与状态（start/stop 共用；仅改 status 与 session_* 列，注册静态字段不动）。
+pub fn SqliteStore::agent_service_patch_session(
+  self : SqliteStore,
+  service_id~ : String,
+  status~ : String,
+  listen_addr~ : String,
+  token~ : String,
+  pid~ : Int32,
+  last_heartbeat~ : String,
+  updated_at~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE agent_service SET status=?, session_listen_addr=?, session_token=?, session_pid=?, session_last_heartbeat=?, updated_at=? WHERE service_id=?"
+      match db.prepare(sql) {
+        None => Err("agent_service_patch_session prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, status)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, listen_addr)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, token)),
+            ),
+          )
+          ignore(stmt.bind(4, @sqlite.SqlValue::Int(pid)))
+          ignore(
+            stmt.bind(
+              5,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, last_heartbeat)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              6,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, updated_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              7,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("agent_service_patch_session execute failed")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 刷新心跳时间（§3.1 TTL=300s；P1 网关/服务进程周期性调用，P0 保留接口）。
+pub fn SqliteStore::agent_service_touch_heartbeat(
+  self : SqliteStore,
+  service_id~ : String,
+  now~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE agent_service SET session_last_heartbeat=?, updated_at=? WHERE service_id=?"
+      match db.prepare(sql) {
+        None => Err("agent_service_touch_heartbeat prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, now)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, now)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("agent_service_touch_heartbeat execute failed")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 按 service_id 读取注册行（不存在返回 None）。
+pub fn SqliteStore::agent_service_get(
+  self : SqliteStore,
+  service_id : String,
+) -> AgentServiceRecord? {
+  match self.db {
+    None => None
+    Some(db) => {
+      let sql = "SELECT service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, created_at, updated_at FROM agent_service WHERE service_id = ?"
+      match db.prepare(sql) {
+        None => None
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          if stmt.step() {
+            let rec = AgentServiceRecord::{
+              service_id: str_from_bytes(stmt.column_text(0)),
+              owner_agent: str_from_bytes(stmt.column_text(1)),
+              capabilities: str_from_bytes(stmt.column_text(2)),
+              transport: str_from_bytes(stmt.column_text(3)),
+              exposure: str_from_bytes(stmt.column_text(4)),
+              status: str_from_bytes(stmt.column_text(5)),
+              session_listen_addr: str_from_bytes(stmt.column_text(6)),
+              session_token: str_from_bytes(stmt.column_text(7)),
+              session_pid: stmt.column_int(8),
+              session_last_heartbeat: str_from_bytes(stmt.column_text(9)),
+              created_at: str_from_bytes(stmt.column_text(10)),
+              updated_at: str_from_bytes(stmt.column_text(11)),
+            }
+            stmt.finalize()
+            Some(rec)
+          } else {
+            stmt.finalize()
+            None
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 全量注册表（§1.2 list：全量注册表含状态过滤；过滤由调用方按 status 执行）。
+pub fn SqliteStore::agent_service_list(
+  self : SqliteStore,
+) -> Array[AgentServiceRecord] {
+  let out : Array[AgentServiceRecord] = []
+  match self.db {
+    None => out
+    Some(db) => {
+      let sql = "SELECT service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, created_at, updated_at FROM agent_service ORDER BY service_id"
+      match db.prepare(sql) {
+        None => out
+        Some(stmt) => {
+          while stmt.step() {
+            out.push(
+              AgentServiceRecord::{
+                service_id: str_from_bytes(stmt.column_text(0)),
+                owner_agent: str_from_bytes(stmt.column_text(1)),
+                capabilities: str_from_bytes(stmt.column_text(2)),
+                transport: str_from_bytes(stmt.column_text(3)),
+                exposure: str_from_bytes(stmt.column_text(4)),
+                status: str_from_bytes(stmt.column_text(5)),
+                session_listen_addr: str_from_bytes(stmt.column_text(6)),
+                session_token: str_from_bytes(stmt.column_text(7)),
+                session_pid: stmt.column_int(8),
+                session_last_heartbeat: str_from_bytes(stmt.column_text(9)),
+                created_at: str_from_bytes(stmt.column_text(10)),
+                updated_at: str_from_bytes(stmt.column_text(11)),
+              },
+            )
+          }
+          stmt.finalize()
+          out
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 撤销注册（§1.2 revoke：须先 stop；删除注册行）。
+pub fn SqliteStore::agent_service_delete(
+  self : SqliteStore,
+  service_id : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "DELETE FROM agent_service WHERE service_id = ?"
+      match db.prepare(sql) {
+        None => Err("agent_service_delete prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("agent_service_delete execute failed")
+          }
         }
       }
     }
