@@ -210,6 +210,29 @@ def main() -> None:
             assert code == 404, f"W3 FAIL: 应 404，实得 {code}: {body}"
             assert elapsed < 5.0, f"W3 FAIL: 404 应快速返回，耗时 {elapsed:.1f}s"
             print("W3 PASS wait=1 + 不存在任务 → 404 快速返回")
+
+            # W4 wait=1 + 已终态任务：终态即返（early-exit 分支，确定性观测——
+            # 共享池里守护会把任务快速推进到终态，任取一条终态任务即可）
+            w4_done = False
+            for attempt in range(3):
+                t = publish(f"w4-{attempt}")
+                code, probe, _ = http_get_timed(f"{base}/v1/tasks/{t}",
+                                                headers=auth)
+                assert code == 200, f"W4 FAIL: 首查应 200: {probe}"
+                if probe.get("status") not in TERMINAL_STATUSES:
+                    continue  # 还没到终态（罕见），换下一条
+                code, body, elapsed = http_get_timed(
+                    f"{base}/v1/tasks/{t}?wait=1", headers=auth)
+                assert code == 200, f"W4 FAIL: 应 200，实得 {code}: {body}"
+                assert elapsed < 2.0, \
+                    f"W4 FAIL: 已终态应即返，耗时 {elapsed:.2f}s: {body}"
+                assert body.get("status") == probe.get("status"), \
+                    f"W4 FAIL: 终态读数前后不一致: {probe} vs {body}"
+                w4_done = True
+                print(f"W4 PASS wait=1 + 已终态任务 → 即返（{elapsed:.2f}s / {body.get('status')}）")
+                break
+            if not w4_done:
+                print("W4 SKIP: 3 条任务均未在首查时到达终态（守护形态变化，非缺陷）")
             print("ALL PASS：wait 长轮询判据 W1-W3 全绿")
         finally:
             if os.name == "posix":
