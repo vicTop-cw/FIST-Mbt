@@ -91,6 +91,29 @@
         }
       ],
       "stop_after": false
+    },
+    {
+      "id": "fist_stale_dispatch_interval",
+      "events": ["interval:120000"],
+      "patterns": [],
+      "condition": null,
+      "actions": [
+        {
+          "kind": "command",
+          "argv": ["python", "scripts/fist_dispatch.py", "--mode", "stale", "--ns", "fist-self-tidy", "--stale-days", "7", "--tasks", "[{\"description\": \"fist-self-tidy 台账巡检（interval 周期补发）\"}]"],
+          "target": null,
+          "body": null,
+          "acceptance": {
+            "expect_exit": 0,
+            "stdout_contains": ["dispatched"],
+            "stdout_not_contains": [],
+            "stderr_not_contains": []
+          },
+          "ttl": 0,
+          "cleanup": "trash"
+        }
+      ],
+      "stop_after": false
     }
   ],
   "extensions": [],
