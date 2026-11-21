@@ -103,13 +103,14 @@ def main() -> None:
         svc = "svc-gw-e2e"
         port = 18699
         audit = os.path.join(td, "gw-audit.log")
+        gw_log = str(ROOT / "temp" / "e2e_gateway.out.log")
+        gw_log_f = open(gw_log, "w", encoding="utf-8")
         seed_db(db, svc)
         proc = subprocess.Popen(
             [sys.executable, str(GATEWAY), "--service-id", svc,
              "--port", str(port), "--db", db,
              "--api-key", "e2e-p2-api-key", "--audit-log", audit],
-            cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace",
+            cwd=str(ROOT), stdout=gw_log_f, stderr=gw_log_f,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
         try:
@@ -191,20 +192,31 @@ def main() -> None:
             hb = read_status(db, svc)[1]
             assert hb, "A3 心跳未落库"
             print("A3 PASS heartbeat:", hb)
-            # A5（posix only）杀 MCP 子进程 → watchdog 自动重启
+            # A5 watchdog：杀 MCP 子进程 → 自动重启恢复 alive（§3.1 进程层）
             if os.name == "posix":
                 children = subprocess.run(["pgrep", "-P", str(proc.pid)],
                                           capture_output=True, text=True).stdout.split()
-                if children:
-                    os.kill(int(children[0]), signal.SIGKILL)
-                    time.sleep(8)   # 退避 1s + 重启 + /health 复活
-                    _, h2 = http_get(f"http://127.0.0.1:{port}/health")
-                    assert h2.get("alive") is True, f"A5 watchdog 未恢复: {h2}"
-                    print("A5 PASS watchdog 自动重启")
-                else:
-                    print("A5 SKIP: 未找到子进程（pgrep 空）")
             else:
-                print("A5 SKIP: watchdog 重启臂仅 posix（Windows 句柄约束）")
+                # Windows：Get-CimInstance 按父进程找子进程（wmic 可能空返回，见既有教训）
+                children = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     f"(Get-CimInstance Win32_Process -Filter "
+                     f"\"ParentProcessId={proc.pid}\").ProcessId"],
+                    capture_output=True, text=True).stdout.split()
+            if children:
+                victim = int(children[0])
+                if os.name == "posix":
+                    os.kill(victim, signal.SIGKILL)
+                else:
+                    subprocess.run(["taskkill", "/F", "/PID", str(victim)],
+                                   capture_output=True)
+                # 退避 1s + 重启 + /health 复活（watchdog 第 0 档）
+                time.sleep(8)
+                _, h2 = http_get(f"http://127.0.0.1:{port}/health")
+                assert h2.get("alive") is True, f"A5 watchdog 未恢复: {h2}"
+                print("A5 PASS watchdog 自动重启（杀子进程后恢复 alive）")
+            else:
+                print("A5 SKIP: 未找到 MCP 子进程（枚举面无读数）")
         finally:
             # A4 显式中断：SIGTERM（posix）/ CTRL_BREAK（Windows，可捕获）→ stopped
             if os.name == "posix":
