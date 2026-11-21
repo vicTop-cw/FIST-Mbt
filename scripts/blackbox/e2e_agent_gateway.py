@@ -72,9 +72,11 @@ def http_get(url: str, timeout: float = 5.0) -> tuple[int, dict]:
         return r.status, json.loads(r.read().decode())
 
 
-def http_post(url: str, payload: dict, timeout: float = 30.0) -> tuple[int, dict]:
+def http_post(url: str, payload: dict, timeout: float = 30.0,
+              headers: dict | None = None) -> tuple[int, dict]:
+    h = {"Content-Type": "application/json", **(headers or {})}
     req = urllib.request.Request(
-        url, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
+        url, data=json.dumps(payload).encode(), headers=h)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, json.loads(r.read().decode())
 
@@ -103,7 +105,8 @@ def main() -> None:
         seed_db(db, svc)
         proc = subprocess.Popen(
             [sys.executable, str(GATEWAY), "--service-id", svc,
-             "--port", str(port), "--db", db],
+             "--port", str(port), "--db", db,
+             "--api-key", "e2e-p2-api-key"],
             cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace",
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
@@ -121,15 +124,31 @@ def main() -> None:
                     continue
             assert health and health.get("alive") is True, f"A1 /health 不活体: {health}"
             print("A1 PASS /health:", health["service_id"])
-            # A2 MCP 转发：initialize → tools/list
+            # A2 MCP 转发：initialize → tools/list（网关带 --api-key，请求须带认证头）
+            auth_key = "e2e-p2-api-key"
+            auth = {"X-API-Key": auth_key}
             _, init = http_post(f"http://127.0.0.1:{port}/mcp", {
                 "jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": "2026-07-28"}})
+                "params": {"protocolVersion": "2026-07-28"}}, headers=auth)
             assert "error" not in init, f"A2 initialize 失败: {init}"
             _, tools = http_post(f"http://127.0.0.1:{port}/mcp",
-                                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+                                 {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                                 headers=auth)
             assert "error" not in tools and "result" in tools, f"A2 tools/list 失败: {tools}"
-            print(f"A2 PASS /mcp 转发（tools/list result 键在）")
+            print("A2 PASS /mcp 转发（tools/list result 键在）")
+            # A2b §4.1 认证门：无 key → 401；带 key → 200
+            try:
+                http_post(f"http://127.0.0.1:{port}/mcp",
+                          {"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+                raise SystemExit("A2b FAIL: 无 key 请求未拒（认证门空转）")
+            except urllib.error.HTTPError as e:
+                assert e.code == 401, f"A2b FAIL: 无 key 应 401，实得 {e.code}"
+            code, authed = http_post(
+                f"http://127.0.0.1:{port}/mcp",
+                {"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
+                headers={"X-API-Key": auth_key})
+            assert code == 200 and "result" in authed, f"A2b FAIL: 带 key 应 200: {authed}"
+            print("A2b PASS 认证门：无 key 401 / 带 key 200")
             # A3 心跳：session_last_heartbeat 被刷新（等一个心跳周期 >0 而非空串）
             hb = read_status(db, svc)[1]
             assert hb, "A3 心跳未落库"
