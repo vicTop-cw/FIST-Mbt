@@ -246,7 +246,7 @@ class Gateway:
             if proc is None or proc.poll() is None:
                 backoff_idx = 0
                 continue
-            if self._running:
+            try:
                 delay = RESTART_BACKOFF_SECS[min(backoff_idx, len(RESTART_BACKOFF_SECS) - 1)]
                 backoff_idx += 1
                 log.warning("子进程已退出（rc=%s）→ %.0fs 后自动重启（退避第 %d 档）",
@@ -258,6 +258,14 @@ class Gateway:
                     # 重启成功 → 恢复 running 态（§3.1：恢复 running，会话 token 落库）
                     self.patch_registry("running", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
                     log.info("watchdog：子进程已恢复，服务保持 running")
+                else:
+                    log.error("watchdog：子进程重启失败（入口产物缺失？）")
+            except Exception as e:
+                # 守护线程不许静默死：任何异常落日志后备退避重试
+                #（真缺陷实录：曾用 `if self._running` 当前置——子进程死后 _read_loop
+                #  的 finally 恰好把它翻成 False，守护循环永远跳过重启，A5 实测逮住）
+                log.error("watchdog 迭代异常（线程继续）: %s", e)
+                backoff_idx += 1
 
     # ---- 心跳（§3.1 服务会话层：last_heartbeat 周期刷新） ----
 
