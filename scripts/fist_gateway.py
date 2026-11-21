@@ -442,6 +442,9 @@ class Gateway:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
                 path = self.path.split("?")[0]
+                if path.startswith("/v1/tasks/") and path != "/v1/tasks/":
+                    self._handle_task_status(gateway, path[len("/v1/tasks/"):])
+                    return
                 if path not in ("/health", "/v1/models"):
                     self.send_response(404)
                     self.end_headers()
@@ -456,6 +459,60 @@ class Gateway:
                     "alive": alive,
                     "listen_addr": gateway.listen_addr,
                     "pid": os.getpid(),
+                }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _handle_task_status(self, gateway, task_id: str) -> None:
+                """P4 结果回执面：GET /v1/tasks/<id> → 任务状态（OpenAI 生态内查进度）。
+
+                与 /v1/chat/completions 的 fist_task_id 配对——发布拿到 id，
+                凭 id 回查状态，闭环不打断 OpenAI 协议形状。
+                """
+                # 认证与 /mcp 同面
+                if gateway.api_key_hash != "" and not gateway.auth_ok(
+                        self.headers, self.client_address[0]):
+                    gateway._audit("auth_fail", {"ip": self.client_address[0]})
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                if gateway.stop_event.is_set():
+                    body = json.dumps({"error": {"message": "Gateway draining"}}).encode()
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                resp = gateway.call("tools/call", {
+                    "name": "get",
+                    "arguments": {"task_id": task_id},
+                })
+                try:
+                    inner = json.loads(resp["result"]["content"][0]["text"])
+                except (KeyError, TypeError, json.JSONDecodeError):
+                    inner = {}
+                if not inner:
+                    body = json.dumps({"error": {
+                        "message": f"任务不存在：{task_id}"}}).encode()
+                    self.send_response(404)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                body = json.dumps({
+                    "object": "task_status",
+                    "task_id": task_id,
+                    "status": inner.get("status", ""),
+                    "title": inner.get("title", ""),
+                    "assignee": inner.get("assignee", ""),
+                    "updated_at": inner.get("updated_at", ""),
                 }).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
