@@ -289,6 +289,7 @@ pub fn router_restore(
     use_caf_memory: caf_use,
     caf_default_preference: caf_pref,
     caf_min_evidences: caf_min,
+    agent_services: cfg.agent_services,
   }
   let r = ModelRouter::from_config(merged)
   let tier_str = st_str(sm, "current_tier")

@@ -19,11 +19,43 @@ fn rt_router(free_limit : Int32, paid_limit : Int32) -> ModelRouter {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=paid_limit)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
   }
   ModelRouter::from_config(cfg)
+}
+
+///|
+/// P4：agent_services 第一优先级——配置了端点时 pick 先选中 "agent:" 前缀条目
+/// （免费高优）。from_json 会把端点注入 free 池；直接构造 config 的测试须手动放条目。
+test "rt_agent_services_pick_first" {
+  let cfg = {
+    window_seconds: 18000,
+    threshold_pct: 95.0,
+    free_models: [
+      ModelQuota::new(name="free-a", tier=Free, limit=100),
+      ModelQuota::new(
+        name="agent:http://127.0.0.1:18640/mcp",
+        tier=Free,
+        limit=1000000,
+        lane="agent_service",
+      ),
+    ],
+    paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=50)],
+    ofm_endpoint: "",
+    use_laya: false,
+    agent_services: ["http://127.0.0.1:18640/mcp"],
+    use_caf_memory: false,
+    caf_default_preference: [],
+    caf_min_evidences: 10,
+  }
+  let r = ModelRouter::from_config(cfg)
+  let d = r.pick(now="2026-11-21T00:00:00Z")
+  assert_eq(d.model_name, "agent:http://127.0.0.1:18640/mcp")
+  assert_eq(d.reason, "agent_service preferred (free high-priority)")
+  assert_eq(d.tier, Free)
 }
 
 ///|
@@ -88,6 +120,7 @@ test "rt_4_空池不 panic：current_model=None 且决策显式不可用" {
     paid_models: [],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -268,6 +301,7 @@ test "rt_13_current_model 报真在用的模型而不是游标位（BUG-56 成�
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -322,6 +356,7 @@ test "rt_14_越界游标取模后 current_model 必须点名（补 rt_12 的弱�
     ],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -363,6 +398,7 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=10)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -387,6 +423,7 @@ test "rt_15_同档仍有健康模型时不许跳档（环形扫描要真的扫�
     paid_models: [ModelQuota::new(name="p1", tier=Paid, limit=10)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -427,6 +464,7 @@ test "rt_16_付费耗尽且免费已恢复_必须回退免费" {
     ],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -463,6 +501,7 @@ test "rt_health_1_pick 跳过黑名单模型" {
     paid_models: [],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -493,6 +532,7 @@ test "rt_health_2_黑名单精确匹配不误伤前缀" {
     paid_models: [],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -513,6 +553,7 @@ test "lp_1_laya_hint_paid_switches_when_current_free" {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
     ofm_endpoint: "",
     use_laya: true,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -537,6 +578,7 @@ test "lp_2_laya_hint_free_already_on_free" {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
     ofm_endpoint: "",
     use_laya: true,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -560,6 +602,7 @@ test "lp_3_laya_hint_tier_exhausted_falls_back" {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=1, used=1)],
     ofm_endpoint: "",
     use_laya: true,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -582,6 +625,7 @@ test "lp_4_laya_hint_invalid_tier_silent_fallback" {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
     ofm_endpoint: "",
     use_laya: true,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -603,6 +647,7 @@ test "lp_5_empty_hint_zero_regression" {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -730,6 +775,7 @@ test "fc_1_compute_fallback_chain" {
     ],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -754,6 +800,7 @@ test "fc_2_route_decision_has_fallback_chain" {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,
@@ -782,6 +829,7 @@ test "fc_3_fallback_chain_filters_unhealthy" {
     paid_models: [],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,

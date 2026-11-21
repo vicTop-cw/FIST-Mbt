@@ -40,6 +40,7 @@ fn bug586_router(window_seconds : Int32) -> ModelRouter {
     paid_models: [ModelQuota::new(name="paid-a", tier=Paid, limit=5)],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: false,
     caf_default_preference: [],
     caf_min_evidences: 10,

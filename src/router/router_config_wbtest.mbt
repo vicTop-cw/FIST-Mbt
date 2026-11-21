@@ -29,15 +29,16 @@ test "cfg_ofm_2_投影面顶层键集合被钉死_新增字段须显式登记" {
     Json::Object(m) => m
     _ => abort("to_json 应回对象")
   }
-  if m.keys().count() != 9 {
+  if m.keys().count() != 10 {
     abort(
-      "投影面顶层键数 != 9（got \{m.keys().count()}），新增字段必须显式进此锁",
+      "投影面顶层键数 != 10（got \{m.keys().count()}），新增字段必须显式进此锁",
     )
   }
   for
     k in [
       "window_seconds", "threshold_pct", "free_pool", "paid_pool", "ofm_endpoint",
       "use_laya", "use_caf_memory", "caf_default_preference", "caf_min_evidences",
+      "agent_services",
     ] {
     if !m.contains(k) {
       abort("投影面缺字段 '\{k}'")
@@ -223,6 +224,7 @@ test "cfg_caf_3_use_caf_memory坏类型回落 false + warning" {
     paid_models: [],
     ofm_endpoint: "",
     use_laya: false,
+    agent_services: [],
     use_caf_memory: true,
     caf_default_preference: [],
     caf_min_evidences: 10,

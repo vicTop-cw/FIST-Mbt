@@ -231,6 +231,7 @@ fn clone_pools(config : RouterConfig) -> RouterConfig {
     use_caf_memory: config.use_caf_memory,
     caf_default_preference: config.caf_default_preference,
     caf_min_evidences: config.caf_min_evidences,
+    agent_services: config.agent_services,
   }
 }
 
