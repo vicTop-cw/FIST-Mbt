@@ -188,6 +188,16 @@ class Gateway:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
         return f"已加入模型自动路由网关（{path} · agent_services[{len(services)}]）"
 
+    def router_agent_services(self) -> list:
+        """P4 发现面数据源：路由配置里的 agent_services 数组（坏档/缺席降空）。"""
+        try:
+            with open(self.args.router_config, encoding="utf-8") as f:
+                cfg = json.load(f)
+            services = cfg.get("agent_services") or []
+            return services if isinstance(services, list) else []
+        except (OSError, json.JSONDecodeError, AttributeError):
+            return []
+
     def lan_binding_requires_key(self) -> bool:
         """§4.2：非本机绑定（lan/global）强制 API-key——启动期拒绝裸奔。"""
         if args_host_is_local(self.args):
@@ -431,9 +441,13 @@ class Gateway:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                if self.path.split("?")[0] != "/health":
+                path = self.path.split("?")[0]
+                if path not in ("/health", "/v1/models"):
                     self.send_response(404)
                     self.end_headers()
+                    return
+                if path == "/v1/models":
+                    self._handle_models(gateway)
                     return
                 proc = gateway._proc
                 alive = proc is not None and proc.poll() is None
@@ -443,6 +457,33 @@ class Gateway:
                     "listen_addr": gateway.listen_addr,
                     "pid": os.getpid(),
                 }).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _handle_models(self, gateway) -> None:
+                """P4 发现面：OpenAI /v1/models 形状列出可路由的 agent 服务。
+
+                数据源 = 路由配置的 agent_services（本网关加入时自登记）；
+                id 形如 "agent:<endpoint>"，与 pick_inner 的第一优先级条目同形。
+                """
+                # 认证与 /mcp 同面：端点清单属部署事实，不裸奔
+                if gateway.api_key_hash != "" and not gateway.auth_ok(
+                        self.headers, self.client_address[0]):
+                    gateway._audit("auth_fail", {"ip": self.client_address[0]})
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                models = [{
+                    "id": f"agent:{s.get('endpoint', '')}",
+                    "object": "model",
+                    "owned_by": "fist-agent-service",
+                } for s in gateway.router_agent_services()]
+                body = json.dumps({"object": "list", "data": models}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
