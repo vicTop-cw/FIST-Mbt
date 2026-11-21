@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from queue import Queue, Empty
@@ -85,12 +87,55 @@ class Gateway:
         self.db_path = args.db
         self.listen_addr = f"{args.host}:{args.port}"
         self.session_token = secrets.token_hex(16)
+        # P2 §4.1：API-key 认证（lan/global 强制）。网关只存 sha256 哈希（明文不落盘）；
+        # --api-key 由对应 agent 启动时给定并**只打印一次**给指挥官留存。
+        self.api_key_hash = (
+            hashlib.sha256(args.api_key.encode()).hexdigest() if args.api_key else ""
+        )
+        self.rate_limit = args.rate_limit
+        self._req_times: dict[str, deque] = {}   # key（或 ip）→ 窗口内时间戳
+        self._req_lock = threading.Lock()
         self._proc: subprocess.Popen | None = None
         self._reader: threading.Thread | None = None
         self._running = False
         self._resp: Queue = Queue()
         self._lock = threading.Lock()   # 子进程 stdin 写锁
         self.stop_event = threading.Event()
+
+    # ---- P2 认证与限流（§4.1 安全矩阵） ----
+
+    def _key_fingerprint(self, headers) -> str:
+        """提取调用方 key 指纹：X-API-Key 或 Authorization: Bearer。"""
+        key = headers.get("X-API-Key", "")
+        if not key:
+            auth = headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                key = auth[len("Bearer "):]
+        return hashlib.sha256(key.encode()).hexdigest() if key else ""
+
+    def auth_ok(self, headers, peer_ip: str) -> bool:
+        """§4.1：本机档可免认证（127.0.0.1 且未给 --api-key）；给了 key 或非本机绑定即强制。"""
+        if not self.api_key_hash:
+            return args_host_is_local(self.args)
+        fp = self._key_fingerprint(headers)
+        if fp != self.api_key_hash:
+            return False
+        # per-key 限流（§4.1：per-key 限流/配额，复用 cost_budget_check 的语义位）
+        now = time.time()
+        with self._req_lock:
+            dq = self._req_times.setdefault(fp, deque())
+            while dq and now - dq[0] > 60.0:
+                dq.popleft()
+            if len(dq) >= self.rate_limit:
+                return False
+            dq.append(now)
+        return True
+
+    def lan_binding_requires_key(self) -> bool:
+        """§4.2：非本机绑定（lan/global）强制 API-key——启动期拒绝裸奔。"""
+        if args_host_is_local(self.args):
+            return False
+        return not self.api_key_hash
 
     # ---- 注册表（agent_service 表） ----
 
@@ -229,6 +274,12 @@ class Gateway:
         row = load_service(self.db_path, self.service_id)
         if row is None:
             sys.exit(f"FATAL: agent_service 表读不到 {self.service_id}（先 agent_service_register）")
+        # §4.2：lan/global 强制 API-key——启动期拒绝裸奔（fail-closed，不留运行期炸弹）
+        if self.lan_binding_requires_key():
+            sys.exit("FATAL: 非本机绑定（lan/global）必须给 --api-key（§4.1 强制认证）")
+        if self.api_key_hash:
+            log.info("API-key 已启用（sha256=%s…，明文不落盘；key 只在启动参数出现一次）",
+                     self.api_key_hash[:12])
         patch_registry_now = now
         patch_session(self.db_path, self.service_id, "running", self.listen_addr,
                       self.session_token, os.getpid(), patch_registry_now)
@@ -305,6 +356,13 @@ class Gateway:
                     self.send_response(404)
                     self.end_headers()
                     return
+                # §4.1 认证：给了 --api-key（或非本机绑定）即强制；失败 401 不泄露形状
+                if not gateway.auth_ok(self.headers, self.client_address[0]):
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 length = int(self.headers.get("Content-Length", "0"))
                 try:
                     payload = json.loads(self.rfile.read(length) or b"{}")
@@ -336,6 +394,11 @@ class Gateway:
         server.serve_forever()
 
 
+def args_host_is_local(args) -> bool:
+    """§4 暴露档判定：127.0.0.1/localhost = local；其余（0.0.0.0/网卡 IP）= lan/global。"""
+    return args.host in ("127.0.0.1", "localhost")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="fist-gateway：Agent 服务常驻网关（P1）")
     ap.add_argument("--service-id", required=True, help="agent_service 表中的 service_id")
@@ -345,6 +408,11 @@ def main() -> None:
     ap.add_argument("--db", default=str(ROOT / ".fist-mbt" / "data" / "default.db"),
                     help="含 agent_service 表的 SQLite 库路径")
     ap.add_argument("--cli-js", default="", help="显式 cli.js 路径（默认按 MAIN_CANDIDATES 探测）")
+    ap.add_argument("--api-key", default="",
+                    help="调用方 API-key（明文只在启动参数出现一次；网关只存 sha256）。"
+                         "lan/global 档强制；local 档可选")
+    ap.add_argument("--rate-limit", type=int, default=60,
+                    help="per-key 限流：每分钟请求数上限（§4.1，默认 60）")
     args = ap.parse_args()
     if not Path(args.db).is_file():
         sys.exit(f"FATAL: 库不存在：{args.db}（--db 指向含 agent_service 表的库）")
