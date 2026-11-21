@@ -180,6 +180,11 @@ def main() -> None:
             code, _ = http_get(f"{base}/v1/unknown", headers=auth)
             assert code == 404, f"X1 FAIL: 未知路径应 404，实得 {code}"
             print("X1 PASS 未知路径 404")
+
+            # X2 空 id 边界：/v1/tasks/（尾斜杠无 id）→ 404（前缀匹配显式排除）
+            code, _ = http_get(f"{base}/v1/tasks/", headers=auth)
+            assert code == 404, f"X2 FAIL: 空 id 应 404，实得 {code}"
+            print("X2 PASS 空 id（/v1/tasks/）→ 404")
             print("ALL PASS：发现面/回执面判据 M1-M2+R1-R3+X1 全绿")
         finally:
             if os.name == "posix":
