@@ -54,8 +54,10 @@ def inbox_tail(n: int = 3) -> int:
     for line in lines[-n:]:
         try:
             ev = json.loads(line)
+            # autoplan_decision 等事件无 service_id，补决策摘要（截 60 字）
+            detail = str(ev.get("choice") or ev.get("note") or "")[:60]
             print(f"    {ev.get('at', '?')} {ev.get('type', '?')} "
-                  f"{ev.get('service_id', '')}")
+                  f"{ev.get('service_id', '')} {detail}")
         except json.JSONDecodeError:
             print(f"    <非 JSON 行> {line[:80]}")
     return len(lines)
