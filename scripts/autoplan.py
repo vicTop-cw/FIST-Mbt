@@ -23,6 +23,9 @@ import json
 import time
 import urllib.request
 from pathlib import Path
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
 NS = "autoplan"
@@ -243,7 +246,23 @@ def cmd_feedback(text: str, as_list: bool) -> None:
     print(f"feedback 已入反馈区（{text[:60]}）")
 
 
+def cmd_selftest() -> None:
+    """判据自证：parse_plan 对工作项/裁决项双类目的拆解不漂移。"""
+    p = Path(".__autoplan_selftest__.md")
+    p.write_text("# t\n- [ ] 工作项甲\n? 裁决问题 | 选项：A / B | 建议：A\n",
+                 encoding="utf-8")
+    items = parse_plan(str(p))
+    p.unlink()
+    assert [i["kind"] for i in items] == ["work", "decision"], \
+        f"parse_plan 双类目拆解漂移: {items}"
+    assert "工作项甲" in items[0]["text"] and "裁决问题" in items[1]["text"]
+    print("selftest OK：parse_plan 工作项/裁决项双类目拆解自证成立")
+
+
 def main() -> None:
+    if "--selftest" in sys.argv:
+        cmd_selftest()
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("--service", default="http://127.0.0.1:18640")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -264,8 +283,12 @@ def main() -> None:
     fb = sub.add_parser("feedback")
     fb.add_argument("text", nargs="?")
     fb.add_argument("--list", action="store_true")
+    sub.add_parser("selftest")
     a = ap.parse_args()
     base, key = a.service, load_key()
+    if a.cmd == "selftest":
+        cmd_selftest()
+        return
     if a.cmd == "drop":
         cmd_drop(base, key, a.plan)
     elif a.cmd == "plans":

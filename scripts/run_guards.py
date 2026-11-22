@@ -165,6 +165,22 @@ SPECIAL_CASES = [
     # —— 判据面（纯静态，跨平台稳定）——
     # R59：memory 日志失控闸。只跑 --selftest（真日志可能极大，不在这里全量读）。
     case("check_memory_log_size.py", "--selftest"),
+    # —— agent-service-platform 配套面（2026-11-22 补登记，清 run_guards --list 缺面）——
+    # autoplan 协议 v2 工具：parse_plan 双类目拆解自证（纯计算，零 IO/零网络）。
+    case("autoplan.py", "--selftest"),
+    # notify 钩子：合成配置 + 临时收件箱的追加/幂等去重三格（零网络）。
+    case("notify_agent_service_up.py", "--selftest"),
+    # 管家巡检盘点工具：缺失收件箱/死端口两格不崩（零网络依赖）。
+    case("butler_patrol.py", "--selftest"),
+    # agent 网关黑盒判据族：--selftest 均为合成夹具自证（不起真服务）。
+    case("blackbox/e2e_agent_gateway.py", "--selftest"),
+    case("blackbox/e2e_agent_service_http.py", "--selftest"),
+    case("blackbox/e2e_agent_models_status.py", "--selftest"),
+    case("blackbox/e2e_agent_s3_header.py", "--selftest"),
+    case("blackbox/e2e_agent_shim_live.py", "--selftest"),
+    case("blackbox/e2e_agent_suite.py", "--selftest"),
+    case("blackbox/e2e_agent_task_ns_pairing.py", "--selftest"),
+    case("blackbox/e2e_agent_task_wait.py", "--selftest"),
     case("check_tools_sync.py"),
     # BUG-525 关闭条件：USAGE.md 工具计数散文自述 ↔ 真源 `_tool_registry.real_tools()` 对表
     # （精确式必须相等 / N+ 下限式真源 ≥ N / 整份无自述也红）。与 check_tools_sync 同一真源口径，
@@ -1030,6 +1046,12 @@ REGISTRY = {
     # 实测 BITES 5 / BLUNT 0 / SKIP 0，跑法见 scripts/README.md。
     "blackbox/e2e_guard_mutation.py": "端到端探针：「判据会不会咬」变异测试（clone + 造违例 + 复跑），跑法见 scripts/README.md",
     "blackbox/e2e_upgrade_mirror.py": "端到端探针：升级镜像真装（网络 + 沙箱），跑法见 scripts/README.md",
+    # 2026-11-20（F094 Phase 1/3）：两份跨进程 e2e 各起真 server + 真 git 沙箱
+    # （需 js 产物 + node + git 前提，真跑一次数分钟）⇒ 进 REGISTRY 而不进自动电池。
+    # 它们此前**两个面都没落**（既不在 CASES 也不在 REGISTRY）⇒ `check_battery_count_doc`
+    # FATAL「缺面清单」。活体跑法见 scripts/README.md。
+    "blackbox/e2e_filebind_xproc.py": "端到端探针：两进程 file_bind 协调（需 js 产物 + 真库），跑法见 scripts/README.md",
+    "blackbox/e2e_wt_dispatch.py": "端到端探针：worktree 派发/收口（真 git 沙箱 + 真 server），跑法见 scripts/README.md",
     "blackbox/patch_esm_main.py": "构建辅助：mcp_smoke/demo 启动前幂等注入 require shim（CI 在用，不单独当格跑）",
     # 2026-10-24（R46）：夹具 git 环境隔离的**单一真源**——纯辅助库（只定义 `isolated_git_env()`），
     # 无独立判据语义；它的正确性由 `check_git_sandbox_hygiene.py`（普查棘轮）+ 自身 `--selftest`

@@ -28,12 +28,15 @@ import signal
 import sqlite3
 import subprocess
 import sys
+import urllib.parse
 import threading
 import time
 from collections import deque
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from queue import Queue, Empty
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("fist-gateway")
@@ -441,9 +444,11 @@ class Gateway:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                path = self.path.split("?")[0]
+                path, _, query = self.path.partition("?")
+                wait = "wait" in urllib.parse.parse_qs(query)
                 if path.startswith("/v1/tasks/") and path != "/v1/tasks/":
-                    self._handle_task_status(gateway, path[len("/v1/tasks/"):])
+                    self._handle_task_status(
+                        gateway, path[len("/v1/tasks/"):], wait)
                     return
                 if path not in ("/health", "/v1/models"):
                     self.send_response(404)
@@ -466,11 +471,14 @@ class Gateway:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def _handle_task_status(self, gateway, task_id: str) -> None:
+            def _handle_task_status(self, gateway, task_id: str,
+                                    wait: bool = False) -> None:
                 """P4 结果回执面：GET /v1/tasks/<id> → 任务状态（OpenAI 生态内查进度）。
 
                 与 /v1/chat/completions 的 fist_task_id 配对——发布拿到 id，
                 凭 id 回查状态，闭环不打断 OpenAI 协议形状。
+                ?wait=1：长轮询——任务未到终态（已完成/已归档）时每 2s 复查，
+                至多 25s（留 5s 余量给客户端超时），终态即返或超时回当前态。
                 """
                 # 认证与 /mcp 同面
                 if gateway.api_key_hash != "" and not gateway.auth_ok(
@@ -489,14 +497,25 @@ class Gateway:
                     self.end_headers()
                     self.wfile.write(body)
                     return
-                resp = gateway.call("tools/call", {
-                    "name": "get",
-                    "arguments": {"task_id": task_id},
-                })
-                try:
-                    inner = json.loads(resp["result"]["content"][0]["text"])
-                except (KeyError, TypeError, json.JSONDecodeError):
-                    inner = {}
+                deadline = time.time() + 25.0
+                inner = {}
+                while True:
+                    resp = gateway.call("tools/call", {
+                        "name": "get",
+                        "arguments": {"task_id": task_id},
+                    })
+                    try:
+                        inner = json.loads(resp["result"]["content"][0]["text"])
+                    except (KeyError, TypeError, json.JSONDecodeError):
+                        inner = {}
+                    if not inner:
+                        break
+                    # 终态即返；wait=1 且未终态时继续轮询
+                    if not wait or inner.get("status") in ("已完成", "已归档"):
+                        break
+                    if time.time() >= deadline:
+                        break
+                    time.sleep(2.0)
                 if not inner:
                     body = json.dumps({"error": {
                         "message": f"任务不存在：{task_id}"}}).encode()
