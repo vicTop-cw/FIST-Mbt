@@ -145,7 +145,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-11-20 本机实测：**188 个工具**；
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-11-20 本机实测：**194 个工具**；
    这个数**不写死在文档里当契约** —— 唯一真源是 server 注册表，`scripts/mcp_smoke.py` 逐次与之对表，
    本手册内一切计数自述由 `scripts/check_usage_tool_count.py` 同步对表（BUG-525 守卫面））
 
@@ -167,7 +167,7 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测（2026-10-31，rc=0）：`python scripts/mcp_smoke.py` 输出**四行 `PASS` + 末行 `MCP-SMOKE PASS`** ——
-> `PASS tools/list → 188 个工具（含 publish/selfdrive_publish_next 等）` /
+> `PASS tools/list → 194 个工具（含 publish/selfdrive_publish_next 等）` /
 > `PASS issue_scan → 扫描 1 文件，命中 2 条` / `PASS publish → T0r16` / `PASS get → T0r16 [待领取]`。
 > ⚠️ 本节标题曾写「三步 = 该脚本的内部逻辑，二者完全一致」——**不成立**：脚本在 `tools/list` 与 `publish`
 > 之间还有一步 `issue_scan`（源码 Step 1b），所以是四行不是三行。文档给的三步是**评委手工复现的最小面**，
@@ -691,7 +691,7 @@ python scripts/fist_gateway.py --service-id svc-<name> --port 18640 \
 
 ## 13. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **188 个 MCP 工具**；
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **194 个 MCP 工具**；
 此数由 `scripts/check_usage_tool_count.py` 与 server 注册真源逐次对表，漂移即红）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。
