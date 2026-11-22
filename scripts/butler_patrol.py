@@ -81,7 +81,9 @@ def pool_summary() -> None:
 def main() -> None:
     extra = [a.split(":") for a in sys.argv[1:] if ":" in a]
     print("== 1) 服务健康 ==")
-    ok = all(health(p, s) for p, s in SERVICES + extra)
+    # 逐个必查：all() 生成器短路会漏检首个挂掉之后的成员（首轮实证）
+    results = [health(p, s) for p, s in SERVICES + extra]
+    ok = all(results)
     print("== 2) laya-inbox ==")
     inbox_tail()
     print("== 3) 任务池 svc-atomcode ==")
