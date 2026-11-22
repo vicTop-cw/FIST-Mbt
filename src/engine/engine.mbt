@@ -642,6 +642,147 @@ pub fn FistEngine::agents_stale_check(
 }
 
 ///|
+/// Agent 服务注册表：登记/更新注册行（P0 定案 §1.2 register；仅 SQLite 后端）。
+/// 委托 store 层 `agent_service` 表 UPSERT；`status` 默认 registered（静态登记，非拉起）。
+pub fn FistEngine::agent_service_upsert(
+  self : FistEngine,
+  service_id~ : String,
+  owner_agent~ : String,
+  capabilities~ : String,
+  transport~ : String,
+  exposure~ : String,
+  status~ : String,
+  session_listen_addr~ : String = "",
+  session_token~ : String = "",
+  session_pid~ : Int32 = 0,
+  session_last_heartbeat~ : String = "",
+  created_at~ : String = "",
+  updated_at~ : String = "",
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent service 注册表仅 SQLite 后端可用")
+    Some(s) =>
+      s.agent_service_upsert(
+        service_id~,
+        owner_agent~,
+        capabilities~,
+        transport~,
+        exposure~,
+        status~,
+        session_listen_addr~,
+        session_token~,
+        session_pid~,
+        session_last_heartbeat~,
+        created_at~,
+        updated_at~,
+      )
+  }
+}
+
+///|
+/// Agent 服务会话状态更新（start/stop 共用；仅 SQLite 后端）。
+pub fn FistEngine::agent_service_patch_session(
+  self : FistEngine,
+  service_id~ : String,
+  status~ : String,
+  listen_addr~ : String,
+  token~ : String,
+  pid~ : Int32,
+  last_heartbeat~ : String,
+  updated_at~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent service 注册表仅 SQLite 后端可用")
+    Some(s) =>
+      s.agent_service_patch_session(
+        service_id~,
+        status~,
+        listen_addr~,
+        token~,
+        pid~,
+        last_heartbeat~,
+        updated_at~,
+      )
+  }
+}
+
+///|
+/// Agent 服务心跳刷新（§3.1 TTL=300s；仅 SQLite 后端）。
+pub fn FistEngine::agent_service_touch_heartbeat(
+  self : FistEngine,
+  service_id~ : String,
+  now~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent service 注册表仅 SQLite 后端可用")
+    Some(s) => s.agent_service_touch_heartbeat(service_id~, now~)
+  }
+}
+
+///|
+/// Agent 服务注册行读取（仅 SQLite 后端；内存后端返回 None）。
+pub fn FistEngine::agent_service_get(
+  self : FistEngine,
+  service_id : String,
+) -> @store.AgentServiceRecord? {
+  match self.store.sqlite_store() {
+    None => None
+    Some(s) => s.agent_service_get(service_id)
+  }
+}
+
+///|
+/// Agent 服务全量注册表（仅 SQLite 后端；内存后端返回空）。
+pub fn FistEngine::agent_service_list(
+  self : FistEngine,
+) -> Array[@store.AgentServiceRecord] {
+  match self.store.sqlite_store() {
+    None => []
+    Some(s) => s.agent_service_list()
+  }
+}
+
+///|
+/// Agent 服务撤销注册（§1.2 revoke：须先 stop；删除注册行；仅 SQLite 后端）。
+pub fn FistEngine::agent_service_delete(
+  self : FistEngine,
+  service_id : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent service 注册表仅 SQLite 后端可用")
+    Some(s) => s.agent_service_delete(service_id)
+  }
+}
+
+///|
+/// Agent 服务写入 API-key 哈希（P2：lan/global 强制 API-key；只存哈希绝不落明文）。
+pub fn FistEngine::agent_service_set_api_key(
+  self : FistEngine,
+  service_id~ : String,
+  api_key_hash~ : String,
+  updated_at~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent service 注册表仅 SQLite 后端可用")
+    Some(s) => s.agent_service_set_api_key(service_id~, api_key_hash~, updated_at~)
+  }
+}
+
+///|
+/// Agent 服务写入「首次经 lan 档验证」时间戳（P2 升级路径：global 须先经 lan）。
+pub fn FistEngine::agent_service_set_lan_verified(
+  self : FistEngine,
+  service_id~ : String,
+  verified_at~ : String,
+  updated_at~ : String,
+) -> Result[Unit, String] {
+  match self.store.sqlite_store() {
+    None => Err("agent service 注册表仅 SQLite 后端可用")
+    Some(s) => s.agent_service_set_lan_verified(service_id~, verified_at~, updated_at~)
+  }
+}
+
+///|
 /// 登记 Saga 补偿步骤（R92，durable action log；委托给 store 后端）。
 pub fn FistEngine::store_write_saga_action(
   self : FistEngine,

@@ -98,6 +98,15 @@ pub fn SqliteStore::open(db_path : String) -> SqliteStore? {
           db.close()
           return None
         }
+        // agent_service 幂等迁移（P2 三级暴露）：旧库建表时只有 12 列（无
+        // api_key_hash / lan_verified_at）——lan/global 档强制 API-key（哈希落库）
+        // 与「global 须先经 lan 验证」的升级路径校验都依赖这两列，缺列会在
+        // prepare 时抛未捕获 SQL 异常直接打死 serve 进程（同 ensure_task_columns
+        // fail-closed 语义）。
+        if !s.ensure_agent_service_columns() {
+          db.close()
+          return None
+        }
         // 启用 WAL 模式提升并发读写性能
         s.exec_if_ok("PRAGMA journal_mode=WAL")
         s.exec_if_ok("PRAGMA synchronous=NORMAL")
@@ -596,7 +605,7 @@ fn SqliteStore::create_schema(self : SqliteStore) -> Bool {
     // fist-agent-service-platform-plan.md §1.1：Agent 服务注册表（P0 生命周期）。
     // 此前建表语句只在 clear() 里 —— fresh 库 open 不建表，agent_service 工具族
     // 首调即 `no such table: agent_service`（白盒判据 agent_service_wbtest 实证）。
-    "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, owner_agent TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]', transport TEXT NOT NULL DEFAULT 'mcp', exposure TEXT NOT NULL DEFAULT 'local', status TEXT NOT NULL DEFAULT 'registered', session_listen_addr TEXT NOT NULL DEFAULT '', session_token TEXT NOT NULL DEFAULT '', session_pid INTEGER NOT NULL DEFAULT 0, session_last_heartbeat TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, owner_agent TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]', transport TEXT NOT NULL DEFAULT 'mcp', exposure TEXT NOT NULL DEFAULT 'local', status TEXT NOT NULL DEFAULT 'registered', session_listen_addr TEXT NOT NULL DEFAULT '', session_token TEXT NOT NULL DEFAULT '', session_pid INTEGER NOT NULL DEFAULT 0, session_last_heartbeat TEXT NOT NULL DEFAULT '', api_key_hash TEXT NOT NULL DEFAULT '', lan_verified_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
   ]
   match self.db {
     None => false
@@ -731,6 +740,58 @@ fn SqliteStore::ensure_file_bind_columns(self : SqliteStore) -> Bool {
         ),
         (
           "ttl_secs", "ALTER TABLE file_binds ADD COLUMN ttl_secs INTEGER NOT NULL DEFAULT 0",
+        ),
+      ]
+      let mut ok = true
+      for (name, sql) in needed {
+        if !cols.contains(name) {
+          match db.exec(sql) {
+            true => ()
+            false => ok = false
+          }
+          cols.set(name, true)
+        }
+      }
+      ok
+    }
+  }
+}
+
+///|
+/// 幂等迁移：确保 agent_service 表含 P2 三级暴露需要的两列
+/// （api_key_hash / lan_verified_at）。
+///
+/// 旧代际库建表时只有 12 列（service_id ... updated_at，见 create_schema 旧 SQL），
+/// 而 P2 的 lan/global 认证（API-key 哈希落库）与升级路径校验
+/// （global 须先经 lan 档运行验证）都引用这两列 ⇒ 缺列会在 prepare 时抛未捕获
+/// SQL 异常打死 serve 进程。这里启动期探测并补列；补不动返回 false，由 open
+/// 决定**拒载**。重复调用不报错、不加多列；已有注册行自动拿到默认值
+/// （api_key_hash=''=未配置 key、lan_verified_at=''=未经过 lan 验证，向后兼容）。
+fn SqliteStore::ensure_agent_service_columns(self : SqliteStore) -> Bool {
+  match self.db {
+    None => false
+    Some(db) => {
+      let cols : Map[String, Bool] = Map([])
+      let mut probe_ok = true
+      match db.prepare("PRAGMA table_info(agent_service)") {
+        None => probe_ok = false
+        Some(stmt) => {
+          while stmt.step() {
+            let name = str_from_bytes(stmt.column_text(1))
+            cols.set(name, true)
+          }
+          stmt.finalize()
+        }
+      }
+      if !probe_ok {
+        return false
+      }
+      let needed : Array[(String, String)] = [
+        (
+          "api_key_hash", "ALTER TABLE agent_service ADD COLUMN api_key_hash TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+          "lan_verified_at", "ALTER TABLE agent_service ADD COLUMN lan_verified_at TEXT NOT NULL DEFAULT ''",
         ),
       ]
       let mut ok = true
@@ -1454,7 +1515,7 @@ impl Store for SqliteStore with fn clear(self) {
       // 随 SqliteStore 持久化，会话 token 落库 —— §3.2 会话持久化）。
       ignore(
         db.exec(
-          "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, owner_agent TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]', transport TEXT NOT NULL DEFAULT 'mcp', exposure TEXT NOT NULL DEFAULT 'local', status TEXT NOT NULL DEFAULT 'registered', session_listen_addr TEXT NOT NULL DEFAULT '', session_token TEXT NOT NULL DEFAULT '', session_pid INTEGER NOT NULL DEFAULT 0, session_last_heartbeat TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
+          "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, owner_agent TEXT NOT NULL DEFAULT '', capabilities TEXT NOT NULL DEFAULT '[]', transport TEXT NOT NULL DEFAULT 'mcp', exposure TEXT NOT NULL DEFAULT 'local', status TEXT NOT NULL DEFAULT 'registered', session_listen_addr TEXT NOT NULL DEFAULT '', session_token TEXT NOT NULL DEFAULT '', session_pid INTEGER NOT NULL DEFAULT 0, session_last_heartbeat TEXT NOT NULL DEFAULT '', api_key_hash TEXT NOT NULL DEFAULT '', lan_verified_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')",
         ),
       )
       ignore(db.exec("DELETE FROM tasks"))
@@ -3876,6 +3937,8 @@ pub struct AgentServiceRecord {
   session_token : String
   session_pid : Int32
   session_last_heartbeat : String
+  api_key_hash : String
+  lan_verified_at : String
   created_at : String
   updated_at : String
 }
@@ -4108,7 +4171,7 @@ pub fn SqliteStore::agent_service_get(
   match self.db {
     None => None
     Some(db) => {
-      let sql = "SELECT service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, created_at, updated_at FROM agent_service WHERE service_id = ?"
+      let sql = "SELECT service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, api_key_hash, lan_verified_at, created_at, updated_at FROM agent_service WHERE service_id = ?"
       match db.prepare(sql) {
         None => None
         Some(stmt) => {
@@ -4130,8 +4193,10 @@ pub fn SqliteStore::agent_service_get(
               session_token: str_from_bytes(stmt.column_text(7)),
               session_pid: stmt.column_int(8),
               session_last_heartbeat: str_from_bytes(stmt.column_text(9)),
-              created_at: str_from_bytes(stmt.column_text(10)),
-              updated_at: str_from_bytes(stmt.column_text(11)),
+              api_key_hash: str_from_bytes(stmt.column_text(10)),
+              lan_verified_at: str_from_bytes(stmt.column_text(11)),
+              created_at: str_from_bytes(stmt.column_text(12)),
+              updated_at: str_from_bytes(stmt.column_text(13)),
             }
             stmt.finalize()
             Some(rec)
@@ -4154,7 +4219,7 @@ pub fn SqliteStore::agent_service_list(
   match self.db {
     None => out
     Some(db) => {
-      let sql = "SELECT service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, created_at, updated_at FROM agent_service ORDER BY service_id"
+      let sql = "SELECT service_id, owner_agent, capabilities, transport, exposure, status, session_listen_addr, session_token, session_pid, session_last_heartbeat, api_key_hash, lan_verified_at, created_at, updated_at FROM agent_service ORDER BY service_id"
       match db.prepare(sql) {
         None => out
         Some(stmt) => {
@@ -4171,8 +4236,10 @@ pub fn SqliteStore::agent_service_list(
                 session_token: str_from_bytes(stmt.column_text(7)),
                 session_pid: stmt.column_int(8),
                 session_last_heartbeat: str_from_bytes(stmt.column_text(9)),
-                created_at: str_from_bytes(stmt.column_text(10)),
-                updated_at: str_from_bytes(stmt.column_text(11)),
+                api_key_hash: str_from_bytes(stmt.column_text(10)),
+                lan_verified_at: str_from_bytes(stmt.column_text(11)),
+                created_at: str_from_bytes(stmt.column_text(12)),
+                updated_at: str_from_bytes(stmt.column_text(13)),
               },
             )
           }
@@ -4209,6 +4276,101 @@ pub fn SqliteStore::agent_service_delete(
             Ok(())
           } else {
             Err("agent_service_delete execute failed")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 写入 API-key 哈希（P2 三级暴露：lan/global 强制 API-key；**只存哈希、绝不落明文**）。
+/// start 进入 running 时由 server 侧生成随机 key 并 sha256 落库；status/list 回执
+/// 只回显 `api_key_configured` 布尔，明文 key 仅在**生成当次**返回调用方一次。
+pub fn SqliteStore::agent_service_set_api_key(
+  self : SqliteStore,
+  service_id~ : String,
+  api_key_hash~ : String,
+  updated_at~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE agent_service SET api_key_hash=?, updated_at=? WHERE service_id=?"
+      match db.prepare(sql) {
+        None => Err("agent_service_set_api_key prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, api_key_hash)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, updated_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("agent_service_set_api_key execute failed")
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+/// 写入「首次经 lan 档验证」时间戳（P2 升级路径：global 档 start 前须已有 lan 档
+/// 运行记录，禁止 local 一步直升 global）。lan 档首次 start 时由 server 侧落库。
+pub fn SqliteStore::agent_service_set_lan_verified(
+  self : SqliteStore,
+  service_id~ : String,
+  verified_at~ : String,
+  updated_at~ : String,
+) -> Result[Unit, String] {
+  match self.db {
+    None => Err("sqlite store 未打开")
+    Some(db) => {
+      let sql = "UPDATE agent_service SET lan_verified_at=?, updated_at=? WHERE service_id=?"
+      match db.prepare(sql) {
+        None => Err("agent_service_set_lan_verified prepare failed")
+        Some(stmt) => {
+          ignore(
+            stmt.bind(
+              1,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, verified_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              2,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, updated_at)),
+            ),
+          )
+          ignore(
+            stmt.bind(
+              3,
+              @sqlite.SqlValue::Text(@encoding.encode(UTF8, service_id)),
+            ),
+          )
+          let ok = stmt.execute()
+          stmt.finalize()
+          if ok {
+            Ok(())
+          } else {
+            Err("agent_service_set_lan_verified execute failed")
           }
         }
       }
