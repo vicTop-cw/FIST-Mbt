@@ -23,8 +23,7 @@
 
 ## 已知缺陷（截至 2026-11-22）
 
-**GET /v1/tasks/<id> 跨 ns 读池错位**（T0r10）：shim 发布落本服务 ns 池
-（`.fist-mbt/data/<service_id>.db`），但网关回执面的 get 调用不带 namespace，
-撞全局默认池同 id 旧任务。修法：网关侧 get 透传发布 ns。
-变通通路（须持续绿）：`/mcp tools/call get` 显式带 namespace
-（e2e_agent_task_ns_pairing.py 变通臂锁定）。
+**GET /v1/tasks/<id> 跨 ns 读池错位**（T0r10）：✅ 已修复（fc4ddc24d 入库）。
+shim 发布落本服务 ns 池，网关回执面 get 调用现已透传发布 ns
+（`namespace=gateway.service_id`），回归锁 e2e_agent_task_ns_pairing.py 转严格
+PASS；wait 长轮询 W2 亦转确定性观测（26s 轮询至超时回当前态）。
