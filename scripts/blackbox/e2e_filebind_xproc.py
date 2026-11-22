@@ -17,6 +17,13 @@ import sys
 import threading
 import time
 
+# BUG-58/138 编码闸：本机 cp936 控制台上，一红就崩在结论行之前（`print` 的 `⇒` 抛
+# UnicodeEncodeError），留下的 rc 会被读成「缺陷在场」。CI 在 Linux UTF-8 下是无损 no-op。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CLI = os.path.join(ROOT, "_build", "js", "debug", "build", "cmd", "cli", "cli.js")
 BOX = os.path.join(ROOT, "temp", "fb-xproc-box")

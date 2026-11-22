@@ -701,10 +701,12 @@ SPECIAL_CASES = [
     #   batch 2 还 N1 6 份（_new_script_hygiene→check_new_script_hygiene、_run_check_t0r21→check_t0r21、
     #   calibrate_goal_drift→run_calibrate_goal_drift、mcp_bug_loop→run_mcp_bug_loop、
     #   output_validate→check_output_validate，并**删除** gitignored 孤儿 fix_esm_require.py）
-    #   ⇒ 现读 0 条命名判定面（拆开看：N1=16（上限 16）/ N2=0（上限 0，2026-10-31 由自检第 8 格顶下来））⇒ rc=0。
-    #   ⚠️ 「现读 0 条命名判定面」这个**形状**是给 `check_registration_numbers.py` 反解用的：
-    #   它按 `现读 (\d+) 条命名判定面` 从本文件正文取登记值，与它自己跑出来的实测对表
-    #   ⇒ 数字与「条命名判定面」之间不许插 `**`（正则吃不下），也别只写 `N1=/N2=` 的形状。
+    #   ⇒ 判定面归零（拆开看：N1=16（上限 16）/ N2=0（上限 0，2026-10-31 由自检第 8 格顶下来））⇒ rc=0。
+    #   ⚠️ 形状纪律：`check_registration_numbers.py` 按 `现读 (\d+) 条命名判定面` 从本文件正文
+    #   取**当前**登记值与它的实测对表——历史读数不许写成这个形状（2026-11-22 实测：
+    #   历史注释里的旧读数会被 re.search 先行命中，把当前登记顶成漂移假红）。
+    #   数字与「条命名判定面」之间不许插 `**`（正则吃不下），也别只写 `N1=/N2=` 的形状。
+    #   当前登记值由下方 gated(...) 的 why 携带（2026-11-22 起：agent 服务三尺入册，判定面 2 条）。
     #   R115 改名那批正是换成后一种 ⇒ 尺子解析不到登记 ⇒ 当场红（不是判据坏，是登记漂移）。
     #   ⚠️ 上限常量的两次动作要分开读：改名那一批**没动**上限（「改名还债」不等于「为变绿改常量」）；
     #   2026-10-31 是判据自己的第 8 格 `real-ceiling-not-looser-than-measured` 报红（实测 0 < 上限 4 ⇒
@@ -735,7 +737,11 @@ SPECIAL_CASES = [
              "诊断格：交付物硬门 CLI 的裸跑形状 = 打 usage + rc=2（无实参时它必须拒绝出绿，这不是门禁红）；"
              "真语义由 server 侧白盒锁覆盖，跑法见 scripts/README.md 同名条目。",
              kind="diag"),
-    case("check_scripts_naming.py"),
+    # TASK-008 第一批：scripts/ 命名词法门（N1 无角色名 / N2 连字符名，棘轮只许下降）。
+    # 词表真源 = scripts/NAMING.md 的两条 anchor 行；读不到词法即自拒 rc=2，不报「都合规」。
+    # why 里的「现读 2 条命名判定面」由 R119（check_registration_numbers）逐值对表——
+    # 改判据面（新增/修复命名违规）必须同批改这个数。
+    gated("check_scripts_naming.py", "NAMING.md", why="现读 2 条命名判定面"),
     # 【债已还完】（R185 登记 → R55 还债）：R185 时的「判定面 5 条 > 上限 0」已清零 ——
     # 4 处 `raise SystemExit("FATAL…")`（check_badge ×1 / check_test_sync ×3）改成
     # `print(…) + raise SystemExit(2)`（**把码改真**）；check_index_gitlinks 的元组出口补了字面
