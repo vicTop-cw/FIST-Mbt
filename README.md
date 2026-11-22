@@ -5,12 +5,12 @@
 
 [![Made with MoonBit](https://img.shields.io/badge/MoonBit-0.1.20261016-blue)](https://www.moonbitlang.com)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green)](./LICENSE)
-[![Tests](https://img.shields.io/badge/tests-2067%2F2067-brightgreen)](./src)
+[![Tests](https://img.shields.io/badge/tests-2095%2F2095-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **183 个 MCP 工具**（19 组）暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **188 个 MCP 工具**（19 组）暴露给任意 MCP 客户端。
 
-**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 2067 项测试全绿、跨环境可复现。
+**为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 2095 项测试全绿、跨环境可复现。
 
 > 它用**它自己的**自驱式 + 递归拆解把自己打磨到了可交付态——完整自我迭代证据见 `docs/selfdrive-walkthrough.md`，CLI `python scripts/fist.py call project_standards` 可一键拉取本项目遵守的 AI 开发规范。
 > 「它说自己有效」不算证据：本项目的**叙事与实证面**在伴生仓 **fist-evidence** <https://github.com/vicTop-cw/fist-evidence>——三组受控实验 + 十份真实项目驱动实例（覆盖八项目），报告/日志/裁判测试一字可回溯（详见「资源」节）。
@@ -24,7 +24,7 @@
 - **Native 目标**：系统 SQLite 开发库（`sqlite3.h` + `sqlite3.lib`）。一键装载：`pwsh ./scripts/native-env.ps1`；Windows 需 VS Build Tools，细节见 AGENTS.md「native 目标构建环境要求」。
 - **Windows 上跑 `moon test --target js`**：若 PATH 上的 `node` 是 `node.cmd` / `.bat` 垫片，测试参数经 `cmd.exe` 转发会吞掉引号（BUG-380）⇒ 用 `python scripts/moon_test_env.py --target js`（自动剔除垫片并注入 `MOONC_OVERRIDE`，同时绕开 moonc 的 `\\?\` 路径 ICE）。
 
-> **JS 后端**：`moon test --target js` = **2067/2067**（2026-11-11 本机实测；权威稳定门槛 = JS 后端）。
+> **JS 后端**：`moon test --target js` = **2095/2095**（2026-11-11 本机实测；权威稳定门槛 = JS 后端）。
 > **Native 后端**：2026-10-01 在 WSL ubuntu-22.04 实测 `moon test --target native -j 1` = **572/572**（与 JS 同数，工作树含上几轮构建残留时）；
 > 同一 commit 的 `git archive HEAD` **干净树**上同一条命令必崩（native 测试二进制被信号打死），根因在依赖的 native FFI，
 > 见账本 BUG-133 与判据 `scripts/blackbox/e2e_native_heap_probe.py`；上一版这句写的是「native 未复跑」，就此作废。边界条款见 `AI-DEVELOPMENT-STANDARD.md` §7「已知边界」与 [`docs/known-boundaries.md`](docs/known-boundaries.md)（面向评审的完整自曝面）。
@@ -48,20 +48,20 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 1. ✅ MCP 工具注册了？ → `server.mbt` instrumented_tool 块
 2. ✅ CLI 封装到位？ → `scripts/fist.py call <tool>` 或独立 `scripts/xxx.py`
 3. ✅ Skill 文档写了？ → `docs/xxx-skill.md`
-4. ✅ `moon test` 全绿？ → 2067/2067 零回归（`--target js`，2026-11-11 本机实测）
+4. ✅ `moon test` 全绿？ → 2095/2095 零回归（`--target js`，2026-11-11 本机实测）
 5. ✅ 交付物过 `output_validate` L4 硬门？ → verdict=pass
 6. ✅ README / AGENTS.md 计数同步？ → 工具数、测试数
 7. ✅ 插件态已重生成且与真源一致？ → `python scripts/gen_plugins.py && python scripts/check_plugin_sync.py`（cl7）
 
 ---
 
-## 功能全景（183 个 MCP 工具 · 19 组）
+## 功能全景（188 个 MCP 工具 · 19 组）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
 
-### 查询（2）
-`list` · `get`
+### 查询（5）
+`list` · `get` · `task_events` · `task_query` · `task_stats`
 
 ### 运维·编排（14）
 `task_plan_deep` · `conflicts_check` · `heartbeat` · `heal` · `watchdog_tick` · `task_cleanup` · `phi_accrual` · `saga_register` · `saga_rollback` · `saga_repair` · `circuit_fail` · `circuit_succeed` · `circuit_status` · `tx_contract`
@@ -78,8 +78,8 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 ### 衍生（3）
 `atgc_old_compile` · `atgc_old_run` · `atgc_old_talk`
 
-### 看板·DAG·规划（33）
-`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `lock_acquire` · `lock_renew` · `lock_release` · `lock_status` · `task_triage` · `wt_create` · `wt_destroy` · `wt_status` · `commissar_send` · `commissar_read` · `commissar_gc`
+### 看板·DAG·规划（35）
+`dag_critical_path` · `dag_parallelism` · `dag_ascii` · `dag_check` · `dag_ready` · `dag_sort` · `dag_depend` · `dag_publish` · `dag_slack` · `dag_schedule` · `dag_cost_route` · `dag_mc` · `plan_revise` · `goal_drift_check` · `board_ascii` · `state_flow_ascii` · `status_summary` · `project_health` · `health_check` · `reserve_scope` · `reserve_check` · `reserve_release` · `lock_acquire` · `lock_renew` · `lock_release` · `lock_status` · `task_triage` · `wt_create` · `wt_destroy` · `wt_status` · `wt_dispatch` · `wt_collect` · `commissar_send` · `commissar_read` · `commissar_gc`
 
 ### 多管家文件绑定协调（3）
 `file_bind` · `file_release` · `file_status`
@@ -122,7 +122,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 # 1. 构建 + 测试
 moon update            # 首次：刷新 registry 索引
 moon build --target js cmd/cli
-moon test --target js  # → Total tests: 2067, passed: 2067, failed: 0
+moon test --target js  # → Total tests: 2095, passed: 2095, failed: 0
 
 # 2. 启动 MCP Server（STDIO）
 python scripts/patch_esm_main.py  # ESM shim（moonc ≥0.10.14 输出 ESM，sqlite JS 桩用 CJS）
@@ -156,8 +156,8 @@ python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json
 它默认验 `_build/js/release` 的本机产物；**公网 Release 里那枚**（评委实际下载到的东西）这样指给它：
 
 ```bash
-gh release download v0.3.11 -R vicTop-cw/FIST-Mbt -p fist-mbt-js-v0.3.11.zip
-python -c "import zipfile;open('fist-mbt.js','wb').write(zipfile.ZipFile('fist-mbt-js-v0.3.11.zip').read('fist-mbt.js'))"
+gh release download v0.3.15 -R vicTop-cw/FIST-Mbt -p fist-mbt-js-v0.3.15.zip
+python -c "import zipfile;open('fist-mbt.js','wb').write(zipfile.ZipFile('fist-mbt-js-v0.3.15.zip').read('fist-mbt.js'))"
 FIST_ACCEPT_JS=fist-mbt.js python scripts/blackbox/e2e_acceptance_recheck.py --selftest --json   # 相对/绝对都可，见 BUG-524（本日修）
 ```
 
@@ -166,9 +166,9 @@ A4 那一格在 Windows 本机回 `SKIP` 而不是 `PASS`：探针拒绝拿「�
 
 ```bash
 mkdir -p _release/native
-curl -sSL -o _release/fist-mbt-native-linux-x64-v0.3.11.zip https://github.com/vicTop-cw/FIST-Mbt/releases/download/v0.3.11/fist-mbt-native-linux-x64-v0.3.11.zip
-head -c 2 _release/fist-mbt-native-linux-x64-v0.3.11.zip   # 必须是 PK（200 不等于拿到文件）
-python3 -c "import zipfile;z=zipfile.ZipFile('_release/fist-mbt-native-linux-x64-v0.3.11.zip');z.extract('fist-mbt','_release/native')"  # 解出的件名就叫 fist-mbt
+curl -sSL -o _release/fist-mbt-native-linux-x64-v0.3.15.zip https://github.com/vicTop-cw/FIST-Mbt/releases/download/v0.3.15/fist-mbt-native-linux-x64-v0.3.15.zip
+head -c 2 _release/fist-mbt-native-linux-x64-v0.3.15.zip   # 必须是 PK（200 不等于拿到文件）
+python3 -c "import zipfile;z=zipfile.ZipFile('_release/fist-mbt-native-linux-x64-v0.3.15.zip');z.extract('fist-mbt','_release/native')"  # 解出的件名就叫 fist-mbt
 chmod +x _release/native/fist-mbt
 FIST_ACCEPT_JS=dist/fist-mbt.js python3 scripts/blackbox/e2e_acceptance_recheck.py --selftest   # 需 Node ≥ 24
 ```
@@ -211,7 +211,7 @@ curl.exe --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://raw.githubus
 > 诚实的边界（2026-09-29 更新）：这条换掉的是「取脚本」这一步的传输工具，并把 R12 那条「重试只许对准传输层错误」的规矩搬到这一发上（`--retry 5 --retry-delay 2 --retry-all-errors`——本机实测的失效形态是**同一个 URL 有些连接被 RST、有些拿到 200**，单发不成立；`--retry-all-errors` 是必需的，因为 curl 默认只对"响应前"的连接错误重试）。安装器**内部**那两发（取 `moon.mod` 定版本、取资产 zip）以前只有 .NET 单栈，是「脚本取回来了、红在内部那一发」的真来源——现已同样接上 curl 兜底臂（判据 R12 + R14；承重证据 `python scripts/blackbox/e2e_transport_stack_fallback.py`：同一镜像三格，".NET 抛传输层错误 + 有 curl" 装通、同样条件剥掉 curl 必红、干净安装不误伤）。链路**整断**时两条栈一起红，那种情况只剩 `-LocalZip` 离线线。
 
 # 离线 / 内网线（两条公网线都被中间盒挡住时的出路；开关真源 = `install_onecmd.ps1` 的 `param()`）
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\blackbox\install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.11.zip
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\blackbox\install_onecmd.ps1 -LocalZip C:\path\to\fist-mbt-js-v0.3.15.zip
 # 或指一个内网镜像（与 GitHub Release 同形状：`<Base>/releases/download/<ver>/<asset>`，且 `<Base>/moon.mod` 必须可读）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\blackbox\install_onecmd.ps1 -BaseUrl http://内网镜像:端口
 

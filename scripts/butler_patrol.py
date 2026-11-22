@@ -19,6 +19,8 @@ import sqlite3
 import sys
 import urllib.request
 from pathlib import Path
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent          # scripts/ → 仓根
 DATA = ROOT / ".fist-mbt" / "data"
@@ -78,7 +80,24 @@ def pool_summary() -> None:
         print("  无执行中/待验收超 24h 卡项")
 
 
+def selftest() -> None:
+    """判据自证：缺失收件箱/死端口两格不崩、给读数（零网络依赖）。"""
+    global INBOX
+    saved = INBOX
+    INBOX = DATA / "__no_such_inbox__.jsonl"
+    try:
+        n = inbox_tail()
+        assert n == 0, f"缺失收件箱应计 0 行，实得 {n}"
+        assert health("1", "svc-selftest-deadport") is False, "死端口应判 DEAD"
+    finally:
+        INBOX = saved
+    print("selftest OK：缺失收件箱/死端口两格自证成立")
+
+
 def main() -> None:
+    if "--selftest" in sys.argv:
+        selftest()
+        return
     extra = [a.split(":") for a in sys.argv[1:] if ":" in a]
     print("== 1) 服务健康 ==")
     # 逐个必查：all() 生成器短路会漏检首个挂掉之后的成员（首轮实证）
