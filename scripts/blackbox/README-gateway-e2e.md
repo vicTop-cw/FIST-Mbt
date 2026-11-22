@@ -2,7 +2,9 @@
 
 本目录下 fist-gateway 面的黑盒判据脚本一览。全部为实弹：
 自建临时 db + 临时网关实例 + 测试自生成密钥（不触碰任何真实服务凭据）。
-一键串跑：`python scripts/blackbox/e2e_agent_suite.py`（退出码只对硬 FAIL 负责）。
+一键串跑：`python scripts/blackbox/e2e_agent_suite.py`（退出码只对硬 FAIL 负责）；
+实弹前快速验形状：`python scripts/blackbox/e2e_agent_suite.py --selftest`
+（只跑各成员形状自证，不起网关）。
 
 | 脚本 | 判据 | 覆盖面 |
 | --- | --- | --- |

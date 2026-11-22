@@ -259,6 +259,57 @@ def cmd_selftest() -> None:
     print("selftest OK：parse_plan 工作项/裁决项双类目拆解自证成立")
 
 
+def cmd_exec(base, key, limit: int, dry: bool) -> None:
+    """执行拍：认领 ns=autoplan 待领取项 → executor_run(atomcode) 默默实现 → 提交验收。
+
+    经由 fist-mbt 原生执行器通道（executor_run，argv 不经 shell），消耗免费
+    agent 服务额度；--limit 控制单轮派发数（巡检每轮限 2，防超时堆积）。
+    """
+    plans = load_plans()
+    dispatched = 0
+    for pid, p in sorted(plans.items()):
+        if p["state"] != "active":
+            continue
+        for i in p["items"]:
+            if i["kind"] != "work" or i.get("item_status") not in (None, "", "待领取"):
+                continue
+            tid = i.get("task_id")
+            if not tid or dispatched >= limit:
+                continue
+            prompt = (f"你是 fist-mbt 任务池的执行 agent。任务：{i['text']}\n"
+                      f"约束：只读盘点/最小改动；产出物写明路径；完成后正常收尾即可。")
+            if dry:
+                print(f"[dry] {tid}: executor_run(atomcode) ← {i['text'][:50]}")
+                dispatched += 1
+                continue
+            try:
+                call(base, key, "claim", {"task_id": tid, "assignee": "atomcode",
+                                          "namespace": NS})
+                call(base, key, "execute", {"task_id": tid, "namespace": NS,
+                                            "deliverable": f"executor_run 派发：{i['text'][:80]}"})
+                r = call(base, key, "executor_run", {
+                    "project_dir": ".", "executor": "atomcode", "prompt": prompt,
+                    "namespace": NS, "timeout_ms": 600000})
+                out = r.get("content", [{}])[0].get("text", "")[:120]
+                call(base, key, "submit", {"task_id": tid, "namespace": NS,
+                                           "deliverable": f"executor 回执：{out}"})
+                call(base, key, "verify", {"task_id": tid, "verifier": "human_steward",
+                                           "namespace": NS})
+                i["item_status"] = "已完成"
+                dispatched += 1
+                print(f"exec: {tid} 完成（executor 回执 {len(out)} 字）")
+            except Exception as e:
+                print(f"exec: {tid} ERR {str(e)[:100]}")
+                # 网关抖动/执行器超时 ⇒ 自动复位，防任务卡死在已领取/执行中
+                try:
+                    call(base, key, "reopen_task", {"task_id": tid, "namespace": NS})
+                    print(f"exec: {tid} 已自动复位回待领取")
+                except Exception as e2:
+                    print(f"exec: {tid} 复位失败 {str(e2)[:60]}（需手动 reopen_task）")
+    save_plans(plans)
+    print(f"exec 拍完成：本轮派发/完成 {dispatched} 项")
+
+
 def main() -> None:
     if "--selftest" in sys.argv:
         cmd_selftest()
@@ -284,10 +335,16 @@ def main() -> None:
     fb.add_argument("text", nargs="?")
     fb.add_argument("--list", action="store_true")
     sub.add_parser("selftest")
+    e = sub.add_parser("exec")
+    e.add_argument("--limit", type=int, default=2)
+    e.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     base, key = a.service, load_key()
     if a.cmd == "selftest":
         cmd_selftest()
+        return
+    if a.cmd == "exec":
+        cmd_exec(base, key, a.limit, a.dry_run)
         return
     if a.cmd == "drop":
         cmd_drop(base, key, a.plan)
