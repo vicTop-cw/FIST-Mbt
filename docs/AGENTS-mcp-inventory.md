@@ -27,11 +27,14 @@
 | `archive` | 归档任务 |
 | `delete` | 删除已归档任务 |
 
-### 查询（2）
+### 查询（5）
 | 工具 | 说明 |
 |---|---|
 | `list` | 列出任务 |
 | `get` | 查询任务详情 |
+| `task_events` | 任务事件时间线（只读）：按 task 取事件流水，支撑追溯与审计 |
+| `task_query` | 结构化多条件任务查询（只读）：assignee/priority/status/卡死天数/关键词 组合过滤 + 排序 + 分页，返回 {namespace, filtered, count, tasks} |
+| `task_stats` | 任务聚合观测（只读）：按状态/认领人/优先级分组计数 + 卡死检测（stale_days 默认 7），返回 {namespace, total, by_status, by_assignee, by_priority, stale} |
 
 ### 运维（15）
 | 工具 | 说明 |
@@ -105,7 +108,7 @@
 | `atgc_old_run` | ATGC-old 运行（DNA 程序执行） |
 | `atgc_old_talk` | ATGC-old 会话（叙事/模式切换） |
 
-### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（36）
+### 项目看板 / 脉冲 / 预订 / 推荐 + DAG（38）
 
 > worktree 三件工具的真源是 `src/server/wt_tools.mbt`：**存在性 ≠ 生命周期**。它们补的是**账**，状态由「目录 / git / 时间」三方读数裁决；七档与 `scripts/run_light_wt.py` 的 `classify` 同名同义（一源四态）。判定顺序承重：**脏先看**（已并入 + 有未提交改动 ⇒ `blocked`，先判 merged 会把没落盘的活一起销毁）、`idle` 只认账上的创建锚点（ff 合并后主线尖 == 分支尖，靠 git/年龄都会误判）、**git 读不到 ⇒ `unknown`**（绝不顺着年龄写成 fresh/stale）。
 | 工具 | 说明 |
@@ -135,6 +138,8 @@
 | `task_triage` | 下一步推荐：可领取任务按 能力匹配(want)→**skill 命中度(skill 非空时)**→优先级→重要度→深度 排行 + suggestion（agent 无需全量扫描即知下一单；want 为能力路由，Marketplookup 雏形）。每条含真实 DAG 依赖 `depends_on`（复用 dag_depend/gradient_dag 建边，"下一单"就绪前驱可见）。`skill` 可选（逗号分隔 skill 关键词，R§5.2-4）：非空时按 skill 命中度排在能力匹配之后、优先级之前，并在 suggestion 给 `skill`（命中关键词）与 `mode`（SKILL→MODE 建议的开发模式，如 `tdd`→`fix_and_merge`）；空串=不做 skill 路由零回归 |
 | `wt_create` | 创建 git worktree（`git worktree add` 封装）。参数：project_dir、path（均必填）、branch（可选，不传则 checkout 当前 HEAD）、detach（可选，detached HEAD）、timeout_ms（可选，默认 60000） |
 | `wt_destroy` | 三道安全：①只动**账上登记过**的路径（否则必须 `force=true`）；②分支默认不删（显式 `delete_branch=true` 才走 `git branch -d`，未并入由 git 自己拒）；③拆失败**不删账**（账留着 = 还看得见） |
+| `wt_dispatch` | **F094 Phase 3**：按执行器派发 worktree 沙箱。路径/分支由服务端推导（path=wt/<task>-<executor>，branch=wt/<task>-<executor>），调用方只给 task/executor —— **防路径注入**。同 task+executor 已有账且目录健在 ⇒ 幂等返回（reused=true）不重建。参数：project_dir(必填，git 仓库根)、task(必填)、executor(必填)、base(可选，缺省 HEAD)、ttl_min(可选，默认 120)、timeout_ms(可选，默认 60000)。返回 {ok, task, executor, path, branch, created_sha, reused, note} |
+| `wt_collect` | **F094 Phase 3**：合并收口 + 回收。**脏先看**（沙箱有未提交改动 ⇒ blocked，先 commit）；`git merge --ff-only` 打回主线，主线已前进 ⇒ blocked 点名（force=true 才允许 `--no-ff` 强并，冲突由管家 reject 协调）；merge 成功 ⇒ 自动回收沙箱 + 删分支。`FIST_BUILD_MUTEX=1` 时受构建互斥约束。参数：project_dir(必填)、task(必填)、executor(必填)、force(可选默认 false)、timeout_ms(可选，默认 60000)。返回 {ok, task, executor, path, branch, merged_mode, collect_blocked, destroy_note} |
 | `wt_status` | 列 worktree，并给每个**登记过**的沙箱判七档 `fresh/stale/blocked/merged/idle/abandoned/unknown` + `tally` + `unregistered`（目录在但无账）；保留 `worktrees_raw` 兼容旧调用方。可回收档 = merged/stale/abandoned/idle（blocked 会丢活、unknown 会丢证据） |
 | `commissar_send` | **BUG-477**：政委消息**只发送**。把一条政委信号（R1-R4 载荷）经 rhop 写入 `<project_dir>/.commissar/events/`，供接收侧**同步读取**。⚠️ **本工具只发送，当前版本不提供 watch / 订阅能力** —— 底层 `from_filesystem_with` 在 js 后端不可取消（`fs.watch(persistent:true)` 的 handle 在 `Subscription::dispose()` 后仍不释放，见 **BUG-480**），**订阅会让 server 进程永不退出** ⇒ 接收侧请同步读取（`.rhop` → `RhopEnvelope::decode` → `decrypt` → `RhopPacket::from_json_text`）。本项目**不注册** `commissar_watch`。参数：project_dir / kind / target / text（必填）、namespace（可选）。真源 `src/ops/ops_commissar.mbt`（275 行，10 处 `println` 已改 `eprintln`）+ 白盒锁 `src/ops/ops_commissar_wbtest.mbt`（3 格，含变异对照） |
 | `commissar_read` | **T0r3**：政委消息**同步读取**（接收侧）。一次性遍历 `<project_dir>/.commissar/events/*.rhop`，走 rhop 自己的解码链（`RhopEnvelope::decode` → `decrypt` → `RhopPacket::from_json_text` → `CommissarSignal::from_json`）读回信号数组 + **逐类跳过统计**，与 `commissar_send` 成对（往返）。⚠️ **不订阅、不注册 watcher、不留后台句柄**（BUG-480：`fs.watch(persistent:true)` 的 handle 在 `dispose()` 后仍不释放 ⇒ 订阅会让 server 进程永不退出）⇒ MCP 是请求/响应模型，收消息靠**反复调用**（短轮询），调用返回即结束。坏文件**逐个计数 + 逐个点名**（`bad.read/envelope/decrypt/packet/payload` + `bad.files`），绝不静默吞，且不中断其余文件读出。参数：project_dir（必填）、limit（默认 100 / 上限 1000，取最新 N 条按时间升序）、kind / target（精确过滤）、since_seq（闭区间游标 = 发送时刻 epoch 毫秒）。目录不存在 ⇒ 返回空且 `dir_exists=false`（不是错误）。真源 `src/ops/ops_commissar.mbt` + 白盒锁 `src/ops/ops_commissar_wbtest.mbt`（dl_c4~c8 五格，含变异对照） |
@@ -281,5 +286,15 @@
 | `mcpcf.run_batch` | 内嵌批量执行：按给定的任务批次串行推进 claim→execute→submit，遇门禁失败即停并回执已推进到哪一条 |
 | `mcpcf.verify` | 内嵌验收：对指定 task 跑 verify 同款校验（语料门禁/成果复验），verdict 直接回执 |
 | `mcpcf.watchdog` | 内嵌看门狗一拍：scan 超时任务 + 自动续轮，与 `watchdog_tick` 同口径但走内嵌引擎 |
+
+### Agent 服务（6，`src/server/server.mbt` 真源，P0 定案 §1.2）
+| 工具 | 说明 |
+|---|---|
+| `agent_service_register` | 把发起方 agent 登记为常驻服务（幂等；创建独立 ns + ACL grant can_write=true） |
+| `agent_service_start` | 对应 agent 手动拉起：置 running + 会话三件套落库（可选 `gateway_pid` 回填真实网关 pid；local→lan→global 升级路径约束 + API-key 熵源生成） |
+| `agent_service_stop` | 唯一中断途径：running→draining→stopped（注册保留，可再 start） |
+| `agent_service_status` | 查询常驻状态/心跳/暴露端点/API-key 哈希 |
+| `agent_service_list` | 服务矩阵清单 |
+| `agent_service_revoke` | 撤销注册（须先 stop） |
 
 Resources: `fist://map`, `fist://principles`, `fist://overview`
