@@ -502,7 +502,10 @@ class Gateway:
                 while True:
                     resp = gateway.call("tools/call", {
                         "name": "get",
-                        "arguments": {"task_id": task_id},
+                        # 与 /v1/chat/completions 的发布 ns 同源（T0r10 配对）：
+                        # 不带 ns 会落到全局默认池，撞同 id 旧任务（跨 ns 读池错位）
+                        "arguments": {"task_id": task_id,
+                                      "namespace": gateway.service_id},
                     })
                     try:
                         inner = json.loads(resp["result"]["content"][0]["text"])

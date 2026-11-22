@@ -8422,6 +8422,59 @@ pub async fn run_server() -> Unit {
         _ => return Err(@mcp_types.ToolError("agent_service_start: exposure 非法：" + rec.exposure))
       }
       let now = now_default()
+      // ── P2 三级暴露升级路径（定案 §4.2：local→lan→global 逐级升级）──
+      // 禁止 local 一步直升 global：global 档必须已有「lan 档运行验证」记录。
+      if rec.exposure == "global" && rec.lan_verified_at.is_empty() {
+        return Err(
+          @mcp_types.ToolError(
+            "agent_service_start: 禁止 local 一步直升 global——须先以 lan 档 start 至少一次（升级路径 local→lan→global）",
+          ),
+        )
+      }
+      // lan 档首次 start：落 lan_verified_at，作为后续升级 global 的前置证据。
+      let mut lan_verified = rec.lan_verified_at
+      if rec.exposure == "lan" && lan_verified.is_empty() {
+        match engine.agent_service_set_lan_verified(
+          service_id=service_id,
+          verified_at=now,
+          updated_at=now,
+        ) {
+          Err(msg) =>
+            return Err(
+              @mcp_types.ToolError("agent_service_start: 记录 lan 档验证失败：" + msg),
+            )
+          Ok(_) => lan_verified = now
+        }
+      }
+      // ── P2 API-key（lan/global 强制；只存 sha256 哈希，明文仅生成当次回显一次）──
+      let mut api_key = ""
+      let mut api_key_configured = false
+      if rec.exposure == "lan" || rec.exposure == "global" {
+        if rec.api_key_hash.is_empty() {
+          let bs = match @env.rand(32) {
+            None =>
+              return Err(
+                @mcp_types.ToolError("agent_service_start: 系统熵源不可用，无法生成 API-key"),
+              )
+            Some(v) => v
+          }
+          api_key = @mooncry.bytes_to_hex(bs)
+          let key_hash = @mooncry.bytes_to_hex(@mooncry.sha256(bs))
+          match engine.agent_service_set_api_key(
+            service_id=service_id,
+            api_key_hash=key_hash,
+            updated_at=now,
+          ) {
+            Err(msg) =>
+              return Err(
+                @mcp_types.ToolError("agent_service_start: 写入 API-key 哈希失败：" + msg),
+              )
+            Ok(_) => api_key_configured = true
+          }
+        } else {
+          api_key_configured = true
+        }
+      }
       // 会话 token：P0 以 agent_fp 派生（确定性、可复现）；P1 可换随机并轮换
       let token = agent_fp(service_id + "@" + now)
       // P4 session_pid 语义统一：调用方可回填真实网关 pid；缺省沿用旧指纹语义（零回归）
@@ -8448,8 +8501,19 @@ pub async fn run_server() -> Unit {
                 "session_token": Json::string(token),
                 "listen_addr": Json::string(listen_addr),
                 "pid": Json::string(pid.to_string()),
+                "api_key": Json::string(api_key),
+                "api_key_configured": Json::boolean(api_key_configured),
+                "lan_verified_at": Json::string(lan_verified),
                 "message": Json::string(
-                  "常驻服务已启动；会话 token 已持久化，其他 agent/脚本经 API-key 驱动",
+                  if api_key_configured {
+                    if api_key.is_empty() {
+                      "常驻服务已启动；API-key 已配置（哈希存储不回显），其他 agent/脚本经 API-key 驱动"
+                    } else {
+                      "常驻服务已启动；API-key 已生成并哈希落库（明文仅此一次回显，请妥善保存），其他 agent/脚本经 API-key 驱动"
+                    }
+                  } else {
+                    "常驻服务已启动；会话 token 已持久化（local 档，API-key 可选），其他 agent/脚本经 token 驱动"
+                  },
                 ),
               }).stringify(),
             ),
@@ -8558,6 +8622,8 @@ pub async fn run_server() -> Unit {
             "transport": Json::string(rec.transport),
             "exposure": Json::string(rec.exposure),
             "status": Json::string(rec.status),
+            "api_key_configured": Json::boolean(not(rec.api_key_hash.is_empty())),
+            "lan_verified_at": Json::string(rec.lan_verified_at),
             "session_listen_addr": Json::string(rec.session_listen_addr),
             "session_pid": Json::string(rec.session_pid.to_string()),
             "session_last_heartbeat": Json::string(rec.session_last_heartbeat),
@@ -8592,6 +8658,8 @@ pub async fn run_server() -> Unit {
               "transport": Json::string(rec.transport),
               "exposure": Json::string(rec.exposure),
               "status": Json::string(rec.status),
+              "api_key_configured": Json::boolean(not(rec.api_key_hash.is_empty())),
+              "lan_verified_at": Json::string(rec.lan_verified_at),
               "session_listen_addr": Json::string(rec.session_listen_addr),
               "session_pid": Json::string(rec.session_pid.to_string()),
               "session_last_heartbeat": Json::string(rec.session_last_heartbeat),

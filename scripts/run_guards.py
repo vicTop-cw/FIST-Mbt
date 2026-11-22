@@ -181,6 +181,8 @@ SPECIAL_CASES = [
     case("blackbox/e2e_agent_suite.py", "--selftest"),
     case("blackbox/e2e_agent_task_ns_pairing.py", "--selftest"),
     case("blackbox/e2e_agent_task_wait.py", "--selftest"),
+    # web_bridge：会话台账读写与首跑引导（--selftest 合成会话自证）。
+    case("web_bridge.py", "--selftest"),
     case("check_tools_sync.py"),
     # BUG-525 关闭条件：USAGE.md 工具计数散文自述 ↔ 真源 `_tool_registry.real_tools()` 对表
     # （精确式必须相等 / N+ 下限式真源 ≥ N / 整份无自述也红）。与 check_tools_sync 同一真源口径，
