@@ -739,7 +739,7 @@ SPECIAL_CASES = [
              kind="diag"),
     # TASK-008 第一批：scripts/ 命名词法门（N1 无角色名 / N2 连字符名，棘轮只许下降）。
     # 词表真源 = scripts/NAMING.md 的两条 anchor 行；读不到词法即自拒 rc=2，不报「都合规」。
-    # why 里的「现读 2 条命名判定面」由 R119（check_registration_numbers）逐值对表——
+    # why 里的读数由 R119（check_registration_numbers）逐值对表——
     # 改判据面（新增/修复命名违规）必须同批改这个数。
     gated("check_scripts_naming.py", "NAMING.md", why="现读 1 条命名判定面"),
     # 【债已还完】（R185 登记 → R55 还债）：R185 时的「判定面 5 条 > 上限 0」已清零 ——
