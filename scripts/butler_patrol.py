@@ -66,7 +66,7 @@ def inbox_tail(n: int = 3) -> int:
 def pool_summary() -> None:
     con = sqlite3.connect(str(DB))
     try:
-        rows = con.execute("select status, count(*) from tasks group by status")
+        rows = list(con.execute("select status, count(*) from tasks group by status"))
         dist = ", ".join(f"{s}={c}" for s, c in rows)
         total = con.execute("select count(*) from tasks").fetchone()[0]
         stale = con.execute(
@@ -76,6 +76,21 @@ def pool_summary() -> None:
     finally:
         con.close()
     print(f"  总数={total}（{dist}）")
+    # 趋势对比：与上轮快照做差（快照落 temp/，跨轮可见进度变化）
+    snap = ROOT / "temp" / "butler-pool-prev.json"
+    counts = {s: c for s, c in rows}
+    try:
+        if snap.is_file():
+            prev = json.loads(snap.read_text(encoding="utf-8"))
+            delta = {s: counts.get(s, 0) - prev.get(s, 0)
+                     for s in set(counts) | set(prev) if counts.get(s, 0) != prev.get(s, 0)}
+            print(f"  上轮对比：{'；'.join(f'{k}{v:+d}' for k, v in delta.items()) or '无变化'}")
+        else:
+            print("  上轮对比：首拍（无上轮快照）")
+        snap.parent.mkdir(parents=True, exist_ok=True)
+        snap.write_text(json.dumps(counts, ensure_ascii=False), encoding="utf-8")
+    except OSError as e:
+        print(f"  上轮对比不可用（快照读写失败：{e}）")
     if stale:
         print(f"  [!]{len(stale)} 项超 24h 未动：{stale}")
     else:

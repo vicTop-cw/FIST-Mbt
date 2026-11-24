@@ -104,6 +104,7 @@ class Gateway:
             hashlib.sha256(api_key_raw.encode()).hexdigest() if api_key_raw else ""
         )
         self.rate_limit = args.rate_limit
+        self.model_name = os.environ.get("FIST_MODEL_NAME", "")
         self._req_times: dict[str, deque] = {}   # key（或 ip）→ 窗口内时间戳
         self._req_lock = threading.Lock()
         self.audit_path = args.audit_log or f"temp/gateway-{args.service_id}.log"
@@ -245,10 +246,14 @@ class Gateway:
         if not cmd:
             return False
         log.info("拉起 MCP 子进程: %s", " ".join(cmd))
+        # Windows: 隐藏子进程窗口（CREATE_NO_WINDOW）
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         self._proc = subprocess.Popen(
             cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=sys.stderr, text=True, encoding="utf-8", errors="replace",
-            bufsize=1, cwd=str(ROOT),
+            bufsize=1, cwd=str(ROOT), creationflags=creationflags,
         )
         self._running = True
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
@@ -611,6 +616,16 @@ class Gateway:
                             a.setdefault("challenge_sig", s3s)
                             p["arguments"] = a
                             payload["params"] = p
+                # ▼▼▼ 新增：将 model_name 注入到 publish 请求（精准路由用） ▼▼▼
+                if method == "tools/call" and payload.get("name") == "publish" and not payload.get("params", {}).get("model", ""):
+                    p = dict(payload.get("params") or {})
+                    if "_meta" not in p:
+                        p["_meta"] = {}
+                    p["_meta"]["model"] = gateway.model_name
+                    payload["params"] = p
+                    # P4 §4.1 审计：model 注入事件（append-only，默认 temp/gateway-<service_id>.log）
+                    gateway._audit("model_injected", {"model": gateway.model_name, "request_method": method})
+                # ▲▲▲ 结束 ▮▲▲
                 # draining 拒新任务（§3.3）；工具调用放行存量会话
                 if gateway.stop_event.is_set():
                     body = json.dumps({"jsonrpc": "2.0", "id": payload.get("id"),
@@ -727,10 +742,12 @@ def firewall_check(host: str, port: int) -> str:
     """
     if os.name == "nt":
         try:
+            no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             r = subprocess.run(
                 ["netsh", "advfirewall", "firewall", "show", "rule",
                  "name=all", "dir=in"],
-                capture_output=True, text=True, timeout=15)
+                capture_output=True, text=True, timeout=15,
+                creationflags=no_win)
             blob = r.stdout
             if f":{port}" in blob or f"LocalPort: {port}" in blob:
                 return f"防火墙：已存在含端口 {port} 的入站规则（netsh 读数）"
@@ -754,7 +771,8 @@ def firewall_open(port: int) -> str:
     r = subprocess.run(
         ["netsh", "advfirewall", "firewall", "add", "rule", f"name={rule}",
          "dir=in", "action=allow", "protocol=TCP", f"localport={port}"],
-        capture_output=True, text=True, timeout=15)
+        capture_output=True, text=True, timeout=15,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r.returncode == 0 and "确定" in r.stdout or "Ok." in r.stdout:
         return f"防火墙：入站放行规则 {rule}（TCP {port}）已添加"
     return f"防火墙：加规则失败（需管理员权限）——{r.stderr.strip() or r.stdout.strip()}"
