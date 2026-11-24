@@ -1,10 +1,14 @@
-# `docs/plans/` — 计划提案库
+# `fist-mbt/plan/` — 计划提案库
 
 这是 fist-mbt 的**计划治理中枢**。所有**计划**必须走这里，禁止再塞进 `reports/`。
 
 > **归档位置变更（2026-10-24，owner 裁决「序号3=迁」）**：本库原在 `fist-mbt/plans/`，
-> 现迁至 `docs/plans/`，与本仓文档集骨架（`AI-DEVELOPMENT-STANDARD.md` §2）对齐——
+> 后迁至 `docs/plans/`，与本仓文档集骨架（`AI-DEVELOPMENT-STANDARD.md` §2）对齐——
 > 计划属文档面，不再占用根级专有目录。
+>
+> **统一计划目录（2026-11-24，T0r27）**：按 `fist-mbt/plan/draft/2026-11-22-unified-plan-dir.md`
+> 收编为 `<repo>/fist-mbt/plan/{draft,active,done}/` 统一形状，整库自 `docs/plans/` git mv 迁入
+> （在流计划→`draft/`，原 `archived/`→`done/`，`decisions/` 沿用原名），旧路径不再新增计划。
 
 ## 流程
 
@@ -31,7 +35,7 @@ Agent 提案 → plans/*-proposal.md (status: 提案中)
 
 ## 硬规则
 
-1. 计划只进 `docs/plans/`；完成汇报只进 `reports/`。
+1. 计划只进 `fist-mbt/plan/draft/`（定案后流转 active/done）；完成汇报只进 `reports/`。
 2. 未定案（`status != 已定案`）禁止发布任务（`plan_publish` 门禁）。
 3. 定案权仅 `human_steward`；agent 只提不定。
 4. 临时文件只进 `.fist-mbt/tmp/`，绝不进 `src/`、`docs/`、`plans/`。
@@ -40,6 +44,7 @@ Agent 提案 → plans/*-proposal.md (status: 提案中)
 
 | 子目录 | 用途 |
 |---|---|
-| `plans/`（根） | 在流提案与已定案待执行计划 |
-| `plans/decisions/` | 定案记录留痕 |
-| `plans/archived/` | 已完成/已驳回/已推迟的终态计划 |
+| `plan/draft/`（根） | 在流提案与已定案待执行计划 |
+| `plan/active/` | 定案执行中的计划（autoplan finalize 后登记） |
+| `plan/done/` | 已完成/已驳回/已推迟的终态计划（原 `docs/plans/archived/`） |
+| `plan/decisions/` | 定案记录留痕 |

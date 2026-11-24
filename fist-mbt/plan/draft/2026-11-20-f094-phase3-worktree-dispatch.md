@@ -1,3 +1,10 @@
+---
+status: 提案中
+decided_by:
+decided_at:
+decision:
+---
+
 # F094 Phase 3 · worktree 派发编排（wt_dispatch / wt_collect）
 
 > 日期：2026-11-20 ｜ 目标版本：0.3.14 ｜ 状态：实施中
