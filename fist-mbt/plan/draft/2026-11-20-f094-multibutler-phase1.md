@@ -1,3 +1,10 @@
+---
+status: 提案中
+decided_by:
+decided_at:
+decision:
+---
+
 # F094 Phase 1 收口 · file_binds 落库 + 生命周期挂钩 + 构建互斥
 
 > 日期：2026-11-20 ｜ 目标版本：0.3.13 ｜ 状态：实施中
