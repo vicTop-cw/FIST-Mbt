@@ -38,7 +38,7 @@ test "ct_01_seven_handlers_wired" {
   // (工具, 期望的门接线形状)
   let by_group : Array[String] = ["reject", "plan"]
   let agent_group : Array[String] = [
-    "submit", "retry", "pause", "resume", "reopen_task",
+    "retry", "pause", "resume", "reopen_task",
   ]
   for tool in by_group {
     let blk = ct_block(code, tool)
@@ -55,6 +55,14 @@ test "ct_01_seven_handlers_wired" {
       ) {
       abort(tool + " 没接门（或身份来源不是 agent）")
     }
+  }
+  // submit：0.3.10 派单实测 P6 收口 —— 缺省继承任务 assignee（与 execute
+  // BUG-436 同源对齐），接线形状改为 submit_write_identity + who 直传门；
+  // 其余 4 个状态类工具仍走 acl_claim_identity(agent, agent)。
+  let sflat = ct_strip_ws(ct_block(code, "submit"))
+  if !sflat.contains("submit_write_identity(eng,") ||
+    !sflat.contains("agent_write_gate(eng,who,ns)") {
+    abort("submit 没接门（或身份来源不是 submit_write_identity）")
   }
 }
 

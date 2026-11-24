@@ -84,7 +84,11 @@ pub fn FistEngine::publish(
   level~ : Int32 = 6,
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
-    return Err("publish 仅限人类指挥官（created_by=human_steward）")
+    // 0.3.10 派单实测 P2 收口：拒绝文案必须列出可用取值，否则调用方只能盲试。
+    // 保持「仅限人类指挥官」前缀不变——tool_cov_lane_c_test.mbt 按该子串断言。
+    return Err(
+      "publish 仅限人类指挥官：created_by 须为 \"human_steward\" 或 \"human\"（收到：\{created_by}）；agent 间派单请走 publish_parallel（created_by=selfdrive）或由执行方自己 claim 领单",
+    )
   }
   // 根任务 id 全局唯一：T0 被占用时顺延 T0r2/T0r3（避免第二根主键冲突）
   let id = self.first_free_root_id()
@@ -2117,7 +2121,10 @@ pub fn FistEngine::publish_with_deps(
   level~ : Int32 = 6,
 ) -> Result[String, String] {
   if created_by != "human_steward" && created_by != "human" {
-    return Err("publish 仅限人类指挥官")
+    // BUG-649 同批：与 publish 主路径文案同步列出可用取值（0.3.10 派单实测 P2）。
+    return Err(
+      "publish 仅限人类指挥官：created_by 须为 \"human_steward\" 或 \"human\"（收到：\{created_by}）；agent 间派单请走 publish_parallel（created_by=selfdrive）或由执行方自己 claim 领单",
+    )
   }
   for dep in depends_on {
     match self.store.get_task(dep) {
