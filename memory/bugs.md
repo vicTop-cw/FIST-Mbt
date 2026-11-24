@@ -15765,7 +15765,7 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 终审读数：全量 JS `2053/2053/failed: 0`（统帅复跑，见 BUG-584 FIXED 段同批读数）。
 - reported_by: lead
 
-## BUG-587 [2026-11-09T13:26:00Z] [medium] OPEN
+## BUG-587 [2026-11-09T13:26:00Z] [medium] FIXED
 - summary: 插件连接器的任务台账库落在**构建产物目录**内（`_build/js/release/build/cmd/cli/.fist-mbt/data/<ns>.db`）⇒ 任何全量重烤产物（`moon build` 重建该目录 / `build_release` / `refresh_dist` 真重跑那一支）都会连任务表一起清掉，轮次台账不是持久面
 - detail: 定位：`store_open(namespace="iter-1109")` 回显 `data_dir=.fist-mbt/data`（相对路径），而启动器以插件 workdir = `_build/js/release/build/cmd/cli` 为 server cwd ⇒ 实际落 `_build/js/release/build/cmd/cli/.fist-mbt/data/iter-1109.db`（本会话现读 `find` 实证，`iter-1107.db` 同址）。这与 BUG-565 是**同一根的第二面**：BUG-565 讲 `report_bug` 的账本落点随 server cwd，本条讲**任务台账**的落点随 server cwd——而且落在「本来就会被构建重写」的那棵树下。机制危害实锤条件是产物目录被重建（AGENTS「JS 服务端产物会被清掉」同族已实测过清除），本轮 `refresh_dist.py` 走 `moon build` 的 up-to-date 缓存（回执 `ran 4 tasks, now up-to-date`）故**未触发清档**，不得据此宣称无风险；测试计数面重跑徽章尺（`check_badge --fresh` 内部真跑全量）同样动这棵树。附带观察：`execute` 在这一跑期间回 `-32603` 且**盘上未落**（直读 sqlite：T0 仍 `已领取`、`length(deliverable)=0`）⇒ 重负载期写型 RPC 折叠时先按 sqlite 仲裁再重发，别盲重发。
 - 修法候选（待裁决）：① 启动器把 `data_dir`/`FIST_DB_PATH` 默认钉到非产物目录（如 `%LOCALAPPDATA%\FIST-Mbt\data`，与 `serve-launcher.cjs` 同址）；② 连接器侧 ns 库随 `moon.mod` 版本归档；③ 至少加一条判据：`data_dir` 解析结果不得位于 `_build/` 之下（现无任何尺看这一格）。
@@ -15791,6 +15791,9 @@ src/engine/omega_strong_test.mbt 本次改动：
 未动任何代码（越界），留给 owner 在 ①/② 里裁决。
 - reported_by: lead
 
+
+### FIXED(2026-11-24T09:58:33Z / BUG-587)
+- evidence: 本修复不需锁：纯安装侧配置修复，repo 源无代码改动、无行为可被单测锁住——serve-launcher.cjs runCli 子进程 cwd 由 bundle 目录（_build/.../cli）改回 REPO（备份 serve-launcher.cjs.bak-bug587-20261124），任务台账/run_check 相对路径/verify docs_check/laya probe 四面随 cwd 统一修复。live 验证：launcher 拉起 server 后 store_open(ns=zz-launcher-check) 落 REPO/.fist-mbt/data/ 且产物树零新增；配套 repo 侧 BUG-649 已提交 033460496。
 ## BUG-588 [2026-11-09T14:26:00Z] [low] FIXED
 - summary: mcpcf 工具面可测性缺口两条：① `tool_circuit`/`tool_watchdog` 的 `now_secs` 内部现算墙钟、无注入点 ⇒ 2038 档在 mcpcf 调用层写不出锁；② `ops_data_dir()` 只读 `MCPCONFTEST_DATA_DIR`/`LOCALAPPDATA`，MoonBit 侧无 env 写接口，且 `mcpcf_embed.mbt:48` 库名硬编码 ⇒ 任何 mcpcf 测试**必须先 `set_engine`**，否则直接往 `%LOCALAPPDATA%\mcpconftest\data\mcpconftest-ops.db` 写
 - detail: 定位：`src/server/mcpcf_embed.mbt:267/:360`（`let now_secs = (@env.now().reinterpret_as_int64() / 1000L).to_int()`，参数面只有 `circuit`/`action`/`ns`）、`:10-16`（模块级 `holder`，`set_engine` 只注入引擎不注入时钟）、`:48/:181`（库名硬编码）与 `ops_data_dir()`。后果不是行为错（BUG-583 才是），而是**验证面在调用层被结构封住**：BUG-583 的 2039 臂只能退到引擎层锁（等价但不等于调用面覆盖），车道 H 因此把「缺口本身」钉成 `mcpcf_embed_bug583_wbtest.mbt` 的 `bug583_04`（传 `now_secs=-2117514496` 被静默丢弃、落库仍是墙钟正值）——将来谁加了时钟入参，那一格就红，逼修复者改写而不是留一条与产品码脱节的假锁。另注：`check_selftest_hermetic` 的 G/S 档口径只管 `--selftest` 密封性，管不到「产品测试会不会写真用户库」这一格，无尺在看。
@@ -15856,6 +15859,19 @@ src/engine/omega_strong_test.mbt 本次改动：
 - 车道 K 在写逐条分档汇总前因账户额度耗尽中断 ⇒ 只提交了工作树上**逐条带证据**的改动，
   无半成品结论入库；逐条 A/B/C/D 清单未落盘，下一轮接手时按本文档现读重做即可。
 - reported_by: lead
+### 追记（2026-11-24 / ③ 已修 + ① 裁定 + ② 维持已修，整单仍 OPEN）
+- **③（laya probe / run_check 相对路径 / verify docs_check 按 server cwd 解析）已修复**：
+  修法①落实施——`serve-launcher.cjs` 的 runCli 子进程 cwd 由 bundle 目录改回 REPO
+  （安装侧补丁，备份 serve-launcher.cjs.bak-bug587-20261124）。live 验证：launcher 拉起
+  server 后 `store_open(namespace=zz-launcher-check)` 落 `REPO/.fist-mbt/data/`，
+  产物树零新增。BUG-587 三面随 cwd 统一全部修复（同单销账，见其 FIXED 小记）。
+- **①（安装副本陈旧 170 工具口径）裁定**：`.qoder-cn/plugins/cache/local/fist-mbt/0.1.0`
+  是 **v0.3.5 时代的「消费方手册」打包件**（129 工具口径、user-invocable 格式），与现行
+  0.3.15 开发者向 skill 是两代产物；文件级热补会破坏 qoder 插件格式，正确处置 = 在
+  qoder 客户端重装 0.3.15 打包件（或移除旧缓存）。仓库真源干净（check_tools_sync rc=0）。
+- **② 维持轮 184 已修状态**（get_int/get_bool 字符串化容忍 + get_int_wbtest 锁）。
+- 结论：①待插件包重装 ⇒ 本单维持 OPEN；②③ 两面已闭环。
+
 ## BUG-591 [2026-11-11T06:20:00Z] [low] OPEN
 - summary: 五条「文档自称有守卫、实际上没有尺在看」的自述面缺口（轮 183 车道 J 审计；2026-11-11 轮 186 终审入账）。命名的守卫大多存在，缺的是**把该守卫接到被检面**或**把断言打到分组/归属级**。
 - detail:
