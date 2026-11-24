@@ -9,6 +9,9 @@
 pub struct MultiStore {
   stores : Map[String, SqliteStore]
   data_dir : String
+  // BUG-649：主库句柄（server 启动时注入）。default 即主库——get/open("default")
+  // 特判回主库，不再惰性创建 data/default.db 幽灵库（消除两套真相）。
+  main : SqliteStore?
 }
 
 ///|
@@ -17,8 +20,11 @@ pub struct MultiStore {
 /// `.mcp.json` 以目标项目根为 cwd 启动，故默认落点即 `<target>/.fist-mbt/data`
 /// （`.fist-mbt/` 机器独有、gitignore；见 scripts/fist-init.py 双骨架）。调用方显式传
 /// data_dir 仍完全按传入值落盘（测试/scratch 隔离零回归）。
-pub fn MultiStore::new(data_dir~ : String = ".fist-mbt/data") -> MultiStore {
-  { stores: Map([]), data_dir, }
+pub fn MultiStore::new(
+  data_dir~ : String = ".fist-mbt/data",
+  main~ : SqliteStore? = None,
+) -> MultiStore {
+  { stores: Map([]), data_dir, main, }
 }
 
 ///|
@@ -86,6 +92,11 @@ pub fn MultiStore::open(
       if self.stores.contains(safe) {
         return true
       }
+      // BUG-649：default 即主库，open("default") 直接视为已打开（主库由 server
+      // 启动时持有；纯 MultiStore 场景无主库句柄时保持旧惰性语义零回归）。
+      if safe == "default" {
+        return self.main is Some(_)
+      }
       let dir = if data_dir == "" { self.data_dir } else { data_dir }
       if !MultiStore::data_dir_ok(dir) {
         return false
@@ -109,7 +120,17 @@ pub fn MultiStore::open(
 pub fn MultiStore::get(self : MultiStore, ns : String) -> SqliteStore? {
   match MultiStore::safe_ns(ns) {
     None => None
-    Some(safe) =>
+    Some(safe) => {
+      // BUG-649：default 即主库 —— get("default") 不再惰性创建 data/default.db
+      // 幽灵库（过去 task_query/task_events/file_bind 等直连本函数的调用点对
+      // default 全部落到 0 字节空库，与 engine_for_ns 的 default=主库两套真相）。
+      // 主库句柄缺失（纯 MultiStore 测试/内存后端）时保持旧惰性语义零回归。
+      if safe == "default" {
+        match self.main {
+          Some(s) => return Some(s)
+          None => ()
+        }
+      }
       match self.stores.get(safe) {
         Some(s) => Some(s)
         None =>
@@ -127,6 +148,7 @@ pub fn MultiStore::get(self : MultiStore, ns : String) -> SqliteStore? {
             }
           }
       }
+    }
   }
 }
 

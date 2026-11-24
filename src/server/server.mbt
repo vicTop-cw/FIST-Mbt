@@ -5,8 +5,8 @@
 /// —— 引擎（进程内共享的可变状态）——
 /// 运行时优先接入 SQLite 内建数据库（本项目根目录 fist-mbt.db 持久化）；
 /// 打开失败（如缺 libsqlite3）自动回退内存版，保证 server 总能启动。
-fn make_engine() -> @engine.FistEngine {
-  let eng = match @store.SqliteStore::new() {
+fn make_engine(main : @store.SqliteStore?) -> @engine.FistEngine {
+  let eng = match main {
     Some(s) => @engine.FistEngine::new(store=@store.StoreBackend::sqlite(s))
     None => @engine.FistEngine::new()
   }
@@ -24,7 +24,10 @@ fn make_engine() -> @engine.FistEngine {
 
 ///|
 /// 使用模块级 var，handler 闭包内直接引用（全局变量无需显式捕获）。
-let engine : @engine.FistEngine = make_engine()
+// BUG-649：主库句柄同时交给 MultiStore —— get/open("default") 统一回落主库，
+// 不再惰性创建 data/default.db 幽灵库（与 engine_for_ns 的 default=主库对齐）。
+let main_store : @store.SqliteStore? = @store.SqliteStore::new()
+let engine : @engine.FistEngine = make_engine(main_store)
 
 ///|
 /// 模块级心跳登记表（M4 运维：ActivityState / no_signal watchdog）。
@@ -53,7 +56,7 @@ let audit : @ops.AuditLog = @ops.AuditLog::new()
 /// 模块级多库管理器（M5 多租户：namespace 隔离的持久化，内部可变性模式）。
 /// 默认 data_dir = `.fist-mbt/data`（相对 server cwd，cwd 即目标项目根）：所有命名空间
 /// 库落到 `<target>/.fist-mbt/data/<ns>.db`，不再硬编码回 server 进程 cwd 的仓库根。
-let mstore : @store.MultiStore = @store.MultiStore::new()
+let mstore : @store.MultiStore = @store.MultiStore::new(main=main_store)
 
 ///|
 /// BUG-433：ns 非法的**拒绝文案**（纯判定，无 IO；判据真源 = `@store.MultiStore::safe_ns`，
@@ -1208,6 +1211,21 @@ fn execute_write_identity(
     acl_arg_given(args, "executor"),
     task_assignee,
   )
+}
+
+///|
+/// `submit` 的判定身份解析（与 execute_write_identity 同形）：
+/// 显式 agent > 任务当前 assignee > 缺省 manual（implicit 标记进错误文案）。
+fn submit_write_identity(
+  eng : @engine.FistEngine,
+  explicit_agent : String,
+  task_id : String,
+) -> AclIdentity {
+  let task_assignee = match eng.get_task(task_id) {
+    Some(t) => t.get_assignee().unwrap_or("")
+    None => ""
+  }
+  acl_submit_identity(explicit_agent, task_assignee)
 }
 
 ///|
@@ -2928,7 +2946,7 @@ pub async fn run_server() -> Unit {
           "可选：逗号分隔的档案库资产 keywords，按 goal 子串检索命中资产并追加到返回",
         ),
         "namespace": string_prop(
-          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）",
+          "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库，实现库级物理隔离）。⚠ 不传=default 判写门——操作 ns 库任务务必显式传 namespace（0.3.10 派单实测坑：不传时门判在 default，grant 了任务所在 ns 也拒）",
         ),
         "challenge": string_prop(
           "可选：**S3 认证挑战**（BUG-466）。由 `agent_issue_challenge` 签发（服务端单向递增、一次性）。" +
@@ -3143,7 +3161,7 @@ pub async fn run_server() -> Unit {
           "可选：目标命名空间（默认 default；传入已 open 的 ns 时路由到该独立库）",
         ),
         "agent": string_prop(
-          "可选：ACL 判定身份（缺省空 ⇒ manual；内存后端放行，sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝）",
+          "可选：ACL 判定身份。缺省**继承任务 assignee**（与 execute/BUG-436 同源对齐，0.3.10 派单实测 P6 收口）；显式传入时以显式为准。sqlite 面需该身份在本 ns 有 can_write=1，否则拒绝",
         ),
       },
       ["task_id"],
@@ -3159,15 +3177,18 @@ pub async fn run_server() -> Unit {
       // BUG-471 批 2：**质量闸门**的身份门 —— 与 `verify` 对称。
       // `submit` 是「交付方盖章说『我做完了，请验收』」，与 `verify` 同属质量闸门；
       // 二者都是「对任务结论负责」的写操作 ⇒ 同一道 ACL 写门。
-      let agent = get_str(args, "agent")
-      match agent_write_gate(eng, acl_claim_identity(agent, agent), ns) {
+      // 0.3.10 派单实测 P6 残留收口：与 execute（BUG-436）同源对齐——
+      // 同一条 claim→execute→submit 链，缺省判定身份继承任务 assignee；
+      // 旧行为缺省落到 default-manual，grant 了 assignee 照样拒。
+      let who = submit_write_identity(eng, get_str(args, "agent"), task_id)
+      match agent_write_gate(eng, who, ns) {
         Err(e) => return Err(@mcp_types.ToolError(e))
         Ok(_) => ()
       }
       match eng.submit(task_id~, now=ts) {
         Ok(t) => {
           // 0.3.15 task_events：生命周期审计
-          task_event_log(t.ns, task_id, "submitted", agent, "", ts)
+          task_event_log(t.ns, task_id, "submitted", who.raw, "", ts)
           to_result(Ok(t))
         }
         Err(e) => Err(@mcp_types.ToolError(e))
@@ -9796,6 +9817,35 @@ pub async fn run_server() -> Unit {
       let mut dir = get_str(args, "data_dir", default="")
       let scratch = get_bool(args, "scratch", default=false)
       let force_migrate = get_bool(args, "migrate", default=false)
+      // BUG-649：default 即主库 fist-mbt.db，统一路由 —— 不做迁移判定、不产生
+      // data/default.db 幽灵库；回执如实标注主库落点。
+      if ns == "default" {
+        let opened_ok = main_store is Some(_)
+        return Ok(
+          @mcp.ToolResult::text(
+            Json::object({
+              "namespace": Json::string("default"),
+              "opened": Json::boolean(opened_ok),
+              "data_dir": Json::string("./fist-mbt.db（主库；BUG-649 default 统一路由）"),
+              "scratch": Json::boolean(scratch),
+              "migrated_from": Json::string(""),
+              "migrated_tasks": Json::number(0.0),
+              "migration": @store.StoreMigration::skipped("default-is-main").to_json(),
+              "active_namespaces": Json::array(
+                mstore.ns_list().map(fn(s) { Json::string(s) }),
+              ),
+              "warning": Json::string(""),
+              "ns_routing": Json::object({
+                "bug": Json::string("BUG-649"),
+                "main_db_tasks": Json::number(
+                  bug420_main_ns_tasks("default").to_double(),
+                ),
+                "ns_db_tasks": Json::number(0.0),
+              }),
+            }).stringify(),
+          ),
+        )
+      }
       // 迁移结论的默认档：显式给了 data_dir（或 scratch）时不做任何默认落点判定
       let mut migration = @store.StoreMigration::skipped("explicit-data-dir")
       // 临时命名空间：强制落到 temp/（gitignore），不污染仓库根

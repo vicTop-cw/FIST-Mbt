@@ -292,6 +292,23 @@ fn acl_execute_identity(
 }
 
 ///|
+/// `submit` 的判定身份：显式 `agent` > **任务当前 assignee**（= claim/execute
+/// 同一条链上的身份）> 缺省 `manual`。
+///
+/// 0.3.10 派单实测 P6 残留收口：execute 已按 BUG-436 继承 assignee，但 submit
+/// 仍缺省落到 default-manual——交付方 grant 了 assignee、submit 照样拒。
+/// 口径与 acl_execute_identity 对齐：显式传参优先，缺省继承任务身份。
+fn acl_submit_identity(
+  explicit_agent : String,
+  task_assignee : String,
+) -> AclIdentity {
+  acl_identity_pick([
+    (explicit_agent, "explicit-agent"),
+    (task_assignee, "task-assignee"),
+  ])
+}
+
+///|
 /// 参数「是否由调用方显式给出」（非空字符串才算给出）。
 ///
 /// 需要它是因为 **缺省值不可当身份**：`execute` 的 `executor` 缺省 `"manual"`，
