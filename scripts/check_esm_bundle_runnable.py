@@ -55,6 +55,7 @@ ReferenceError: require is not defined in ES module scope
     python scripts/check_esm_bundle_runnable.py --selftest
 """
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -62,6 +63,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -167,6 +169,9 @@ KIND_SHIM_MISSING = "SHIM_MISSING"
 KIND_ESM_CJS_REQUIRE = "ESM_CJS_REQUIRE"
 KIND_OTHER_CRASH = "OTHER_CRASH"
 KIND_UNBUILT = "UNBUILT"
+# T0r84：产物没有 Node 版本门 / 门排在 import 之后。与 SHIM_MISSING 分开——
+# 两者独立缺失（实测旧 dist 有垫片无门），混成一个标签会让「修了哪个」看不出来。
+KIND_GATE_MISSING = "GATE_MISSING"
 
 # 崩溃特征串（来自 BUG-406 实测输出）
 _REQUIRE_RE = "require is not defined"
@@ -288,8 +293,140 @@ def shim_present(text):
     return "createRequire" in body
 
 
+# ── Node 版本门（B5，T0r84）─────────────────────────────────────────────────────
+#
+# **这一档锁的是另一件事，别与 B2 混**：B2 问「require 垫片在不在」（BUG-406），
+# 本档问「产物前言里那段 Node≥24 的判定还在不在」（T0r84）。两者可各自独立缺失——
+# 实测修复前的 `dist/fist-mbt.js` 有垫片、无门（`process.versions.node` 零命中）。
+#
+# 门为什么必须在**注入面**：`src/server/server.mbt:29` 是模块级 store 构造，产物是 ESM，
+# import 全先于模块体求值 ⇒ 源码里的门必然晚于首次 `node:sqlite`。详见
+# `scripts/patch_esm_main.py` 的 `NODE_GATE` 上方注释。
+_INJECTOR = os.path.join(ROOT, "scripts", "patch_esm_main.py")
+
+
+def _injector():
+    """加载 `patch_esm_main.py`（同目录，无需 subprocess）。读不到 ⇒ None（调用方按自拒处理）。"""
+    try:
+        spec = importlib.util.spec_from_file_location("_fist_patch_esm_main", _INJECTOR)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except (OSError, AttributeError, ImportError):
+        return None
+
+
+def injector_gate_major():
+    """从注入脚本读回门阈值（`MIN_NODE_MAJOR`）；读不到 ⇒ None（判据无法自证）。
+
+    **不在这里写死 24**：写死就是第二处真源，地板 bump 时判据会静默假绿
+    （判例-16 同族：覆盖面 < 主张面）。地板的唯一机器可读真源是 `toolchain.json`，
+    文档面一致性由 `check_doc_surface` J17 对表。
+    """
+    mod = _injector()
+    return getattr(mod, "MIN_NODE_MAJOR", None) if mod else None
+
+
+def gate_static_present(body, major):
+    """纯函数：产物里是否存在**本次阈值**的版本门。
+
+    两段都要求（与 `patch_esm_main.node_gate_present` + 幂等重排同口径）：
+      · 标记常量 `FIST_MBT_MIN_NODE_MAJOR` 在场；
+      · 正文里的阈值 == 注入器当轮的 `MIN_NODE_MAJOR` —— 否则「有门但门是旧阈值」
+        会照样报绿（地板 bump 后的典型漂移形态）。
+    """
+    if not body:
+        return False
+    if "FIST_MBT_MIN_NODE_MAJOR" not in body:
+        return False
+    return ("FIST_MBT_MIN_NODE_MAJOR = %d;" % major) in body
+
+
+def _simulate_gate(gate_src, node_ver):
+    """把产物前言里那段门**原样**写进临时 .mjs 交给真 node 跑，返回 `(exit_code, 首行提示)`。
+
+    为什么不另抄一份判定逻辑：那正是「机制格 ≠ 实现路径格」（判例-29）——
+    抄一份等于只验了抄写的那份，改坏真门照样绿。这里落盘的是**注入器真实的 NODE_GATE 文本**。
+
+    怎么造出 `<24` 那一向（本机只有 ≥24）：门读的是 `process.versions.node`。
+    用一个前置 `--import` 垫片在门求值前改写它（仅测试进程内，不动宿主、不动仓库）：
+        node --import <stub> <gate>.mjs
+    垫片只做一件事：`Object.defineProperty(process.versions, "node", {value: "<ver>"})`。
+    这是**合成对照**而非抢时序（判例-31），同一条命令对每个版本出确定读数。
+
+    退出码语义：门放行的进程自然结束 ⇒ rc=0；门拦下 ⇒ 门自己 `process.exit(1)` ⇒ rc=1。
+    """
+    tmp = tempfile.mkdtemp(prefix="fist-gate-probe-")
+    try:
+        stub = os.path.join(tmp, "stub.mjs")
+        with open(stub, "w", encoding="utf-8") as f:
+            f.write(
+                "Object.defineProperty(process.versions, 'node', "
+                "{ value: %s, configurable: true });\n" % json.dumps(node_ver))
+        probe = os.path.join(tmp, "gate.mjs")
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write(gate_src)
+        # Windows 上 `--import` 必须是 **file:// URL**（裸盘符路径实测报
+        # `ERR_UNSUPPORTED_ESM_URL_SCHEME ... protocol 'c:'`）；而**入口脚本要用普通路径**——
+        # 两个都传 URI 会被 resolver 当相对路径二次拼接（实测
+        # `file:///…/file:/…/gate.mjs` ⇒ ERR_MODULE_NOT_FOUND）。同 `_ESM_PROBE_JS` 的既有口径。
+        p = subprocess.run(
+            ["node", "--import", Path(stub).as_uri(), probe],
+            capture_output=True, timeout=60,
+        )
+        err = (p.stderr or b"").decode("utf-8", "replace")
+        first = next((ln for ln in err.splitlines() if ln.strip()), "")
+        return (p.returncode, first)
+    except (OSError, subprocess.SubprocessError):
+        # node 不可用 / 起不来 ⇒ 由调用方按自拒处理，不冒充合格
+        return (None, "")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _first_toplevel_import_pos(text):
+    """返回正文里**第一个模块顶层 import 语句**的字符偏移；没有则 None。
+
+    只认行首（允许缩进）的 `import `，排除动态 `import(` 与 `import.meta`。
+    """
+    pos = 0
+    for ln in (text or "").splitlines(keepends=True):
+        stripped = ln.lstrip()
+        if stripped.startswith("import ") and not stripped.startswith("import("):
+            return pos + (len(ln) - len(stripped))
+        pos += len(ln)
+    return None
+
+
+def gate_requires_shim_before_import(body):
+    """纯函数：门必须排在**产物自身**的第一个 import 之前（先门后库的前提）。
+
+    ⚠️ 口径修正（实测踩出来的）：注入的 `SHIM` **本身就是一条 import**
+    （`import { createRequire as _cr } from 'node:module'`），而 `patch()` 写的是
+    `SHIM + NODE_GATE + body` ⇒ 「门在全部 import 之前」这条判据对真产物**恒红**。
+    正确判据：**门早于垫片之后出现的第一个 import**（即产物自己的依赖图先求值）。
+    """
+    text = body or ""
+    mod = _injector()
+    marker = getattr(mod, "GATE_MARKER", "FIST_MBT_MIN_NODE_MAJOR")
+    gate_pos = text.find(marker)
+    if gate_pos < 0:
+        return True  # 没有门 ⇒ 本格不作数（由静态在场格出结论）
+    shim = getattr(mod, "SHIM", "") or ""
+    start = len(shim) if shim and text.startswith(shim) else 0
+    imp = _first_toplevel_import_pos(text[start:])
+    if imp is None:
+        return True
+    return gate_pos < start + imp
+
+
+def gate_before_import(body):
+    """`gate_requires_shim_before_import` 的别名入口（名字对齐 B2/B5 的 `*_present` 家族）。"""
+    return gate_requires_shim_before_import(body)
+
+
 def bundle_checks(path):
-    """对 bundle 做静态两档（B1 存在 / B2 垫片）。返回 (ok, kind, detail)。
+    """对 bundle 做静态三档（B1 存在 / B2 垫片 / B5 版本门）。返回 (ok, kind, detail)。
 
     读不到文件 ⇒ (False, "MISSING", ...)，调用方据此走 rc=2（无法自证，**不是**红）。
     """
@@ -306,7 +443,20 @@ def bundle_checks(path):
         return (False, KIND_SHIM_MISSING,
                 "bundle 里有 `require(` 但找不到 `createRequire` 垫片 ⇒ "
                 "忘了跑 `python scripts/patch_esm_main.py`")
-    return (True, KIND_OK, "静态两档通过（存在且垫片就位）")
+    # B5：Node 版本门。阈值取自注入脚本本身（不写死），读不到 ⇒ 自拒不报绿。
+    major = injector_gate_major()
+    if major is None:
+        return (False, "MISSING",
+                "读不到 `scripts/patch_esm_main.py` 的 MIN_NODE_MAJOR ⇒ 判据无法自证")
+    if not gate_static_present(body, major):
+        return (False, KIND_GATE_MISSING,
+                "产物里没有与注入器同阈值的 Node 版本门（当前应为 >=%d）⇒ "
+                "旧产物只打了垫片没打门，重跑 `python scripts/patch_esm_main.py`" % major)
+    if not gate_before_import(body):
+        return (False, KIND_GATE_MISSING,
+                "版本门排在了顶层 `import` **之后** ⇒ import 的依赖图会先求值，"
+                "门拦不住首次 node:sqlite（等于没设）")
+    return (True, KIND_OK, "静态三档通过（存在、垫片就位、版本门在场且早于 import）")
 
 
 # ── node 层 ───────────────────────────────────────────────────────────────────
@@ -424,21 +574,83 @@ def selftest():
                       "const require = _cr(import.meta.url);\n"
                       "const a = require('node:sqlite');\n"), True)
 
+    # ── 纯函数格：B5 Node 版本门（T0r84）──────────────────────────────────────
+    _mod = _injector()
+    _gate = getattr(_mod, "NODE_GATE", None) if _mod else None
+    _maj = injector_gate_major()
+    # 门文本可读且阈值非空 —— 读不到就是判据自己坏（后面的格全部依赖它）
+    cell("gate-text-available", bool(_gate and _maj), True)
+    if _gate and _maj:
+        _shim = getattr(_mod, "SHIM", "")
+        # ① 静态在场：合法产物（垫片+门+正文）不误红
+        cell("gate-static-present-ok",
+             gate_static_present(_shim + _gate + "console.log(1);\n", _maj), True)
+        # ② 缺门必红（实测旧 dist 的形状：只有垫片没有门）
+        cell("gate-static-missing-red",
+             gate_static_present(_shim + "console.log(1);\n", _maj), False)
+        # ③ 阈值漂移必红：门还在，但阈值停在旧值（地板 bump 后的典型形态）
+        _stale = _gate.replace("FIST_MBT_MIN_NODE_MAJOR = %d;" % _maj,
+                               "FIST_MBT_MIN_NODE_MAJOR = %d;" % (_maj - 1))
+        cell("gate-static-stale-threshold-red",
+             gate_static_present(_shim + _stale + "console.log(1);\n", _maj), False)
+        # ④ 位置：门必须在顶层 import 之前，否则依赖图先求值 = 门白设
+        cell("gate-before-import-ok",
+             gate_before_import(_gate + "import x from 'y';\n"), True)
+        cell("gate-after-import-red",
+             gate_before_import("import x from 'y';\n" + _gate), False)
+        cell("gate-position-not-applicable-no-import",
+             gate_before_import("console.log(1);\n"), True)
+        # ⑤ 真跑门文本：<24 拦、≥24 放。**exec 的是注入器真实的 NODE_GATE**，
+        #    不是另抄一份判定（判例-29：机制格 ≠ 实现路径格）。
+        cell("gate-sim-blocks-23", _simulate_gate(_gate, "23.9.9")[0], 1)
+        cell("gate-sim-blocks-22", _simulate_gate(_gate, "22.11.0")[0], 1)
+        cell("gate-sim-allows-24", _simulate_gate(_gate, "24.0.0")[0], 0)
+        cell("gate-sim-allows-25", _simulate_gate(_gate, "25.2.1")[0], 0)
+        # 拦下时必须给出可执行的指引（不是只抛一个栈）。
+        # `_simulate_gate` 只回 stderr **首行**，故三行提示里后两行的内容另从门文本核
+        # （门文本与本格其余各处同源：`_gate`），两向都要：真跑拦 + 文本有指引。
+        _blk_rc, _blk_msg = _simulate_gate(_gate, "22.11.0")
+        cell("gate-sim-message-has-version-and-guidance",
+             (_blk_rc == 1 and "需要 Node.js >=" in _blk_msg and "winget" in _gate), True)
+        # ⑥ **变异对照**（判例-29/30 硬要求）：把门的阈值改坏，断言锁会红。
+        #    只断言「正常路径通过」的锁证明不了它真在看。
+        _tampered = _gate.replace("FIST_MBT_MIN_NODE_MAJOR = %d;" % _maj,
+                                  "FIST_MBT_MIN_NODE_MAJOR = %d;" % (_maj + 1))
+        cell("gate-mutation-tamper-detected",
+             # 阈值抬到 25 后，24 不再被拦 ⇒ 原门拦、坏门放，两者必须不同
+             (_simulate_gate(_gate, "24.0.0")[0], _simulate_gate(_tampered, "24.0.0")[0]),
+             (0, 1))
+        cell("gate-mutation-detected-by-static",
+             gate_static_present(_shim + _tampered + "console.log(1);\n", _maj), False)
+        # ⑦ 注入器幂等往返：剥掉前言应逐字还原正文
+        cell("gate-injector-roundtrip-idempotent",
+             (_mod._strip_injected(_shim + _gate + "ORIGINAL\n") == "ORIGINAL\n"),
+             True)
+
     # ── 端到端格：真造 bundle + 真跑 node（临时目录，不碰真仓）───────────────
     tmp = tempfile.mkdtemp(prefix="fist-esm-probe-")
     try:
+        # 夹具要像**真产物**：垫片 + 版本门都在场（T0r84 之后 patch 的产物两者都有）。
+        # 早先只写裸正文的夹具在新 B5 档下必然 GATE_MISSING —— 那是夹具落后于修复面，
+        # 不是判据误红（同判例-16「判据面 == 修复面」的反向：夹具面也要跟上）。
+        _shim = getattr(_mod, "SHIM", "") if _mod else ""
+        _gate_txt = _gate if _gate else ""
+
         # 好 bundle：真能打印版本
         good = os.path.join(tmp, "good.mjs")
         with open(good, "w", encoding="utf-8") as f:
-            f.write("console.log('FIST-Mbt v0.0.0-selftest');\n")
+            f.write(_shim + _gate_txt + "console.log('FIST-Mbt v0.0.0-selftest');\n")
         rc, kind, detail, out, err = check(good)
         cell("e2e-good-bundle-rc0", rc, 0)
         cell("e2e-good-bundle-kind-ok", kind, KIND_OK)
 
-        # 坏 bundle：真造 `require is not defined`（ESM 里用 require）
+        # 坏 bundle：真造 `require is not defined`（ESM 里用 require）——
+        # **只带门、不带垫片**，确保它红的**只有** ESM/CJS 这一件事：
+        # 垫片一给，require 就可用、探针必然 OK，那这格就什么也没测到。
         bad = os.path.join(tmp, "bad.mjs")
         with open(bad, "w", encoding="utf-8") as f:
-            f.write("const s = require('node:sqlite');\nconsole.log('FIST-Mbt v0');\n")
+            f.write(_gate_txt
+                    + "const s = require('node:sqlite');\nconsole.log('FIST-Mbt v0');\n")
         rc, kind, detail, _, _ = check(bad)
         cell("e2e-bad-bundle-red", rc, 1)
         cell("e2e-bad-bundle-classified", kind, KIND_ESM_CJS_REQUIRE)
