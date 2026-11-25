@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/longrun"
+
+import {
+  "moonbitlang/core/json",
+  "vicTop-cw/fist-mbt/src/core",
+}
+
+// Values
+pub const GUARD_FAILURE_RATIO_PCT : Int32 = 30
+
+pub const GUARD_MIN_SAMPLES : Int32 = 3
+
+pub fn failure_ratio_pct(Int32, Int32) -> Int32
+
+pub fn guard_decision(Int64, Int64, Int32, Int32, Int32, Int32) -> (Bool, Array[String])
+
+pub fn parse_snapshot(String) -> Result[(String, @json.Json), String]
+
+pub fn read_snapshot(String) -> Result[(String, @json.Json), String]
+
+pub fn resume_precheck(@core.Task, String) -> Result[@core.TaskStatus, String]
+
+pub fn resume_target_status(@core.TaskStatus) -> Result[@core.TaskStatus, String]
+
+pub fn snapshot_body(String, @core.Task, String) -> @json.Json
+
+pub fn snapshot_path(String, String) -> String
+
+pub fn write_snapshot(String, @core.Task, String) -> Result[(String, String), String]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -103,6 +103,10 @@ pub struct Task {
   depends_on : Array[String]
   omega_required : Bool
   created_by : String
+  checkpoint_path : String
+  last_baton : String
+  budget_used : Int64
+  idempotency_keys : Array[String]
 }
 pub fn Task::archive(Self) -> Result[Self, String]
 pub fn Task::archive_force(Self, force~ : Bool) -> Result[Self, String]
@@ -112,19 +116,27 @@ pub fn Task::equal(Self, Self) -> Bool
 pub fn Task::execute(Self) -> Result[Self, String]
 pub fn Task::execute_exit_hint(TaskStatus) -> String
 pub fn Task::from_db(String, String?, String, String, String, String, Int32, Int32, Int32, String, String?, String, String, String, String, String?, String, Array[String], Bool) -> Self
+pub fn Task::from_db_longrun(String, String?, String, String, String, String, Int32, Int32, Int32, String, String?, String, String, String, String, String?, String, Array[String], Bool, String, String, String, Int64, Array[String]) -> Self
 pub fn Task::from_db_with_created_by(String, String?, String, String, String, String, Int32, Int32, Int32, String, String?, String, String, String, String, String?, String, Array[String], Bool, String) -> Self
 pub fn Task::get_assignee(Self) -> String?
+pub fn Task::get_budget_used(Self) -> Int64
+pub fn Task::get_checkpoint_path(Self) -> String
 pub fn Task::get_depth(Self) -> Int32
 pub fn Task::get_description(Self) -> String
 pub fn Task::get_id(Self) -> String
+pub fn Task::get_idempotency_keys(Self) -> Array[String]
+pub fn Task::get_last_baton(Self) -> String
 pub fn Task::get_level(Self) -> Int32
 pub fn Task::get_omega_required(Self) -> Bool
 pub fn Task::get_parent(Self) -> String?
 pub fn Task::get_status(Self) -> TaskStatus
 pub fn Task::get_updated_at(Self) -> String
+pub fn Task::has_idempotency_key(Self, String) -> Bool
+pub fn Task::idempotency_add(Self, String, String) -> (Self, Bool)
 pub fn Task::is_leaf(Self) -> Bool
+pub fn Task::mark_claimed(Self, String) -> Self
 pub fn Task::mark_decomposing(Self) -> Result[Self, String]
-pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int32, split_n? : Int32, level? : Int32, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String], omega_required? : Bool, created_by? : String) -> Self
+pub fn Task::new(id~ : String, project_dir~ : String, description? : String, priority? : String, importance? : String, depth? : Int32, split_n? : Int32, level? : Int32, parent_id? : String, assignee? : String, cleanup_mode? : String, created_at? : String, ns? : String, depends_on? : Array[String], omega_required? : Bool, created_by? : String, checkpoint_path? : String, last_baton? : String, budget_used? : Int64, idempotency_keys? : Array[String]) -> Self
 pub fn Task::not_equal(Self, Self) -> Bool
 pub fn Task::pause(Self) -> Result[Self, String]
 pub fn Task::reject(Self, reason? : String) -> Result[Self, String]
@@ -136,9 +148,11 @@ pub fn Task::status_to_string(Self) -> String
 pub fn Task::submit(Self) -> Result[Self, String]
 pub fn Task::to_json(Self, desc_limit? : Int32) -> @json.Json
 pub fn Task::to_repr(Self) -> @debug.Repr
+pub fn Task::with_baton(Self, String, String) -> Self
 pub fn Task::with_deliverable(Self, String, String) -> Self
 pub fn Task::with_depends_on(Self, String, String) -> Self
 pub fn Task::with_description(Self, String, String) -> Self
+pub fn Task::with_longrun_checkpoint(Self, String, String, Int64, String) -> Self
 pub fn Task::with_omega_required(Self, Bool, String) -> Self
 pub fn Task::with_priority(Self, String, String) -> Self
 pub fn Task::with_updated_at(Self, String) -> Self

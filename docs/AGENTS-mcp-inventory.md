@@ -297,4 +297,19 @@
 | `agent_service_list` | 服务矩阵清单 |
 | `agent_service_revoke` | 撤销注册（须先 stop） |
 
+### 长程接力 · checkpoint / resume / guard（3，T0r53 P0 + T0r56 P1，提案方案 C · D1=A / D2=C / D3=A）
+
+> 病根：headless 服务认领后没有跨会话执行上下文，接力棒传不出去。这两件是长程接力的最小闭环——
+> `checkpoint` 落一份任务整包快照、`resume` 按状态机迁移续接；裁决真源在 `src/longrun/longrun.mbt`，
+> server 只做 ACL + 参数面 + 回执。**与既有 `pause`/`resume` 零重叠**（那对只认 `已暂停 -> 已领取`）。
+
+| 工具 | 说明 |
+|---|---|
+| `fist_longrun_checkpoint` | 存档：写整包快照到 `<project_dir>/.fist-mbt/longrun/<task_id>.json`（写后回读校验），并把 `checkpoint_path` / `last_baton` / `budget_delta`（增量累加）写回任务行。参数：task_id, baton(可选), budget_delta(可选) |
+| `fist_longrun_resume` | 续接：合法前置态 已暂停/执行中/已领取 -> 已领取（幂等重入）；拒绝待领取/拆分中/待验收/已完成/已归档/已打回并给出各态出路。两层前置裁决（状态在前、快照存在可读在后）分开报错，参数：task_id |
+| `fist_longrun_guard` | 护栏：双阈值熔断裁决（T0r56 P1，提案 D2=C）——token 预算超限或失败比例超阈（默认 30%，样本 <min_samples 不启用），任一超限即 allowed=false 并点名原因；幂等键任务内去重（提案 D3=A，duplicate 只读判定、register=true 且未重复才经 `idempotency_add` 落库）。只裁决不迁移状态，参数：task_id, budget_limit(可选), ratio_pct(可选), min_samples(可选), idempotency_key(可选), register(可选) |
+
+- 快照信封 `{format:"fist-longrun-checkpoint-v1", task_id, written_at, task}`，body 复用 `Task::to_json()`；解析对非 JSON / 格式不符 / 缺字段一律 fail-closed 并点名原因。
+- 库内新增四列：`checkpoint_path` / `last_baton` / `budget_used` / `idempotency_keys`（`ensure_task_columns` 幂等加列）。
+
 Resources: `fist://map`, `fist://principles`, `fist://overview`

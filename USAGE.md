@@ -145,7 +145,7 @@ def rpc(method, **payload):
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28"}}}
 ```
-→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-11-20 本机实测：**194 个工具**；
+→ 返回 `{"tools":[{"name":"publish",...}, ...]}`（2026-11-20 本机实测：**197 个工具**；
    这个数**不写死在文档里当契约** —— 唯一真源是 server 注册表，`scripts/mcp_smoke.py` 逐次与之对表，
    本手册内一切计数自述由 `scripts/check_usage_tool_count.py` 同步对表（BUG-525 守卫面））
 
@@ -167,7 +167,7 @@ def rpc(method, **payload):
 三步跑通即 MCP server 端到端可用、环境就绪。
 
 > 本机实测（2026-10-31，rc=0）：`python scripts/mcp_smoke.py` 输出**四行 `PASS` + 末行 `MCP-SMOKE PASS`** ——
-> `PASS tools/list → 194 个工具（含 publish/selfdrive_publish_next 等）` /
+> `PASS tools/list → 197 个工具（含 publish/selfdrive_publish_next 等）` /
 > `PASS issue_scan → 扫描 1 文件，命中 2 条` / `PASS publish → T0r16` / `PASS get → T0r16 [待领取]`。
 > ⚠️ 本节标题曾写「三步 = 该脚本的内部逻辑，二者完全一致」——**不成立**：脚本在 `tools/list` 与 `publish`
 > 之间还有一步 `issue_scan`（源码 Step 1b），所以是四行不是三行。文档给的三步是**评委手工复现的最小面**，
@@ -242,7 +242,7 @@ def rpc(method, **payload):
 | `dag_check` | 检查某任务的依赖是否全部完成 | task_id(必) namespace(选) |
 | `dag_ready` | 列出所有依赖满足、可领取的任务 | namespace(可选) |
 | `dag_sort` | 对任务列表按依赖深度拓扑排序 | task_ids(JSON 数组，必填) namespace(选) |
-| `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，一眼看项目全貌 | namespace(可选，空=全部) |
+| `board_ascii` | 实时任务看板：按状态分组 + 深度缩进渲染，一眼看项目全貌 | namespace(可选，空=全部), group_by(可选 status\|butler) |
 | `status_summary` | 项目脉冲：{version,total_tasks,by_status,active_namespaces}，一次调用读项目健康 | namespace(可选，只统计该 ns) |
 | `reserve_scope` | 预订工作作用域防并发编辑冲突（空/超时/同 agent 可占；他人占用返回持有者） | scope(必) agent(必) ttl_until(必) challenge(选) challenge_sig(选) namespace(选) |
 | `reserve_check` | 查询作用域是否可编辑（空闲可用） | scope(必) namespace(选) |
@@ -645,7 +645,8 @@ moon publish
 ## 11. Agent 服务（常驻网关 + 注册表）
 
 把任意 agent 注册为「Agent 服务」：服务会话长期不中断、仅显式中断指令才终止；暴露范围支持 local/lan/global 三档。
-计划全文：`docs/plans/2026-11-21-fist-agent-service-platform.md`。
+计划全文：`fist-mbt/plan/draft/2026-11-21-fist-agent-service-platform.md`。
+计划统一目录：`fist-mbt/plan/{draft,active,done}/`（T0r27 收编，在流→`draft/`、执行中→`active/`、终态→`done/`；旧路径 `docs/plans/` 不再新增）。
 
 **六个 MCP 工具**（生命周期：registered → running → draining → stopped）：
 
@@ -666,11 +667,40 @@ python scripts/fist_gateway.py --service-id svc-<name> --port 18640 \
   --api-key-file .fist-mbt/data/svc-<name>.apikey --open-firewall
 ```
 
-- 端点：`GET /health`（活体）、`POST /mcp`（JSON-RPC 转发，调用方带 `X-API-Key` 头）
+- 端点：`GET /health`（活体）、`POST /mcp`（JSON-RPC 转发，调用方带 `X-API-Key` 头）、`GET /v1/tasks/<task_id>?wait=1`（终态同步等待，见下）
+- 终态同步等待（wait=1 长轮询）：`GET /v1/tasks/<task_id>?wait=1` 在任务到达终态时返回，**网关判定的终态集合是 `已完成` / `已归档`**（`scripts/autoplan.py` 的 `TERMINAL` 另含 `已暂停`，两处口径不同，勿混用）；网关每 2s 复查一次、单次上限 **25s**（硬编码），超时回当前态。不带 `wait=1` 只读当前状态、立即返回。`FIST_HTTP_WAIT_SEC`（默认 600s）**只作用于 `POST /mcp` 的 JSON-RPC 转发等待**——即 `executor_run` 一类执行类长任务经该通道时子进程回执的等待上限（`executor_run` `timeout_ms` 对齐 600000），**不改变 wait=1 端点的 25s 上限**
+- 终态主动推送（**语义已定 · 网关侧未接线**）：任务到达终态时经 `.fist-mbt/data/laya-inbox.jsonl` 追加一条 `task_terminal` 通知（字段：`type` / `service_id` / `task_id` / `status` / `title` / `at`）。通道与纪律同 `scripts/autoplan.py` 的 `notify_task_terminal`（exec / resolve / sweep 三个终态落点）：append-only，按 `task_id+status` 幂等去重，同一任务同一终态只推一次，重复轮询不刷屏。**现状（2026-11-24 盘读）：`scripts/fist_gateway.py` 尚无该实现**——无 `notify_terminal`、无 `--selftest`，`reports/2026-11-22-shim-terminal-push-report.md` 描述的网关三处改动在当前工作树上不存在；现役推送由 `autoplan.py` 一侧承担。待网关侧接线后，本行去掉「未接线」并补 `--selftest` 自证（notify_terminal 非终态不写 / 终态追加 / 幂等去重 / 异态追加）
 - watchdog：子进程崩溃自动重启（退避 1s/5s/30s）；心跳 60s 刷新 `agent_service.session_last_heartbeat`
 - 模型自动路由：默认自动加入（端点登记进 `.fist-mbt/data/model-router-default.json` 的 `agent_services` 数组）；`--no-join-model-router` 退出
 - S3 挑战签名透传：`X-S3-Challenge` / `X-S3-Signature` 头自动注入 claim / reserve_scope / lock_acquire 参数（验签与 nonce 消费留在 fist serve）
 - 黑盒判据：`python scripts/blackbox/e2e_agent_gateway.py`（A1-A9 九臂）
+
+### 11.1 消息闭环（msg/ 目录约定 · 设计真源 `fist-mbt/plan/draft/2026-11-24-msg-loop-closed.md`）
+
+消息池直接长在仓内 `.fist-mbt/msg/`（本仓已是 git 仓库，不需要独立消息伴生仓；跨机同步走 git pull/push）：
+
+| 目录 | 用途 |
+|---|---|
+| `.fist-mbt/msg/inbox/` | 待处理消息落盘点（跨机 agent `git push` 到这里） |
+| `.fist-mbt/msg/processed/` | 转发成功后的归档（防重触发；`git commit+push` 后即跨机可见回执） |
+| `.fist-mbt/msg/.failed/` | 转发失败、重试 3 次（webhook backoff）后的死信归档 |
+
+**消息 JSON schema**（`inbox/*.json`，一文件一条消息）：
+
+```json
+{ "task_id": "T0r66", "action": "execute", "target": "svc-codearts",
+  "endpoint": "http://127.0.0.1:18641/mcp", "payload": { ... } }
+```
+
+| 字段 | 语义 |
+|---|---|
+| `task_id` | 消息/任务标识（如 `T0r66`） |
+| `action` | 动作（当前固定 `execute`） |
+| `target` | 目标 agent 的服务标识（`agent_service_register` 的 service-id，如 `svc-codearts`） |
+| `endpoint` | 目标 agent 网关端点（`http://127.0.0.1:<port>/mcp`） |
+| `payload` | 透传载荷（经 `tools/call execute` 交给目标 agent） |
+
+**流转**：消息落盘 `inbox/*.json` → mcp-watcher fs watch 命中 `*.json` → webhook action POST 到 `endpoint`（载荷为 `tools/call execute`）→ 处理完成移 `processed/` → git 提交推送形成跨机回执闭环；失败重试 3 次后移 `.failed/`。触发与归档是 mcp-watcher 规则配置职责（fs watch + webhook action + 归档移动均为现成能力），fist-mbt 侧只约定本目录结构与消息格式。
 
 ---
 
@@ -691,7 +721,7 @@ python scripts/fist_gateway.py --service-id svc-<name> --port 18640 \
 
 ## 13. 一句话总结
 
-FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **194 个 MCP 工具**；
+FIST-Mbt = 用纯 MoonBit 实现的 FIST 指挥官任务编排 + MCP STDIO Server（本机 `tools/list` 实测 **197 个 MCP 工具**；
 此数由 `scripts/check_usage_tool_count.py` 与 server 注册真源逐次对表，漂移即红）。
 对 AI 客户端而言：**pub/claim/plan + spec 深拆 → 子任务闭环 → verify 上卷 → archive**，
 一路 `tools/call` 即可完成多智能体任务的发布、认领、拆分、执行、验收、归档全生命周期管理。

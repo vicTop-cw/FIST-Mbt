@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-2095%2F2095-brightgreen)](./src)
 [![CI](https://github.com/vicTop-cw/FIST-Mbt/actions/workflows/ci.yml/badge.svg)](https://github.com/vicTop-cw/FIST-Mbt/actions) (js ×2 + native)
 
-**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **194 个 MCP 工具**（19 组）暴露给任意 MCP 客户端。
+**FIST-Mbt** 用**纯 MoonBit** 重写并 MCP 化的 **AI 指挥官任务编排底座**——不是又一个 agent 框架，而是"人类指挥、AI/定时器持续自推动"的自治系统。完整闭环：**发布→认领→拆分→执行→提交→验收→归档**，叠加 **自驱审视、DGM 演化采样、Omega 强验证、跨进程看门狗**。全部以 **197 个 MCP 工具**（19 组）暴露给任意 MCP 客户端。
 
 **为什么 MoonBit**：任务编排天然"正确性敏感"（状态机、权限矩阵、追加式审计、递归拆解），MoonBit 的强类型、无运行时依赖、JS+Native 双端交叉编译让这套逻辑在 Windows 与 Linux 上以 JS 目标 2095 项测试全绿、跨环境可复现。
 
@@ -55,7 +55,7 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 
 ---
 
-## 功能全景（194 个 MCP 工具 · 19 组）
+## 功能全景（197 个 MCP 工具 · 19 组）
 
 ### 生命周期（14）
 `publish` · `publish_parallel` · `plan` · `claim` · `execute` · `submit` · `verify` · `reject` · `retry` · `pause` · `resume` · `reopen_task` · `archive` · `delete`
@@ -116,6 +116,9 @@ FIST-Mbt 的每个功能都有**四种调用形态**，核心逻辑**只写一�
 
 ### Agent 服务（6）
 `agent_service_register` · `agent_service_start` · `agent_service_stop` · `agent_service_status` · `agent_service_list` · `agent_service_revoke`
+
+### 长程接力（3）
+`fist_longrun_checkpoint` · `fist_longrun_resume` · `fist_longrun_guard`
 
 ---
 

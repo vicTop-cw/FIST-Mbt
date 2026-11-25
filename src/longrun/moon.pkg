@@ -1,0 +1,12 @@
+import {
+  "vicTop-cw/fist-mbt/src/core",
+  "moonbitlang/x/fs",
+  // T0r53：快照体用 @json 解析（与 store 层 `_array_to_json` 同一库，不新增依赖）
+  "moonbitlang/core/json",
+  // 字节↔字符串解码：与 store 的 `str_from_bytes` / core 的 `clip_utf8` 同一件
+  "moonbitlang/x/encoding",
+}
+
+supported_targets = "js+native"
+
+warnings = "-6" // multi-target unused_package suppression (align with server)

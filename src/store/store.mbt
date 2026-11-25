@@ -1317,3 +1317,19 @@ pub fn StoreBackend::recent_call_logs(
     Sql(s) => s.recent_call_logs(limit~)
   }
 }
+
+///|
+/// 按任务统计执行记录：返回 `(failed, total)`。
+/// failed = failure_reason 非空的记录数；total = 该任务全部记录数。
+/// longrun guard（T0r56，提案 D2=C）失败比例阈值的数据源。
+/// 内存后端不落执行记录（record_execution 是 no-op）⇒ 恒 (0, 0)——
+/// guard 在内存后端上不启用比例阈值，与「没数据就不裁决」的口径一致。
+pub fn StoreBackend::count_executions(
+  self : StoreBackend,
+  task_id~ : String,
+) -> (Int32, Int32) {
+  match self {
+    Mem(_) => (0, 0)
+    Sql(s) => s.count_executions(task_id)
+  }
+}

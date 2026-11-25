@@ -294,6 +294,7 @@ pub struct RouterConfig {
   use_caf_memory : Bool
   caf_default_preference : Array[String]
   caf_min_evidences : Int32
+  agent_services : Array[String]
 }
 pub fn RouterConfig::default() -> Self
 pub fn RouterConfig::equal(Self, Self) -> Bool
