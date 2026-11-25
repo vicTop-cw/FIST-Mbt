@@ -74,15 +74,80 @@ def _find_all_bundles() -> list[str]:
 SHIM = "import { createRequire as _cr } from 'node:module';\nconst require = _cr(import.meta.url);\n"
 
 
+GATE_MARKER = "FIST_MBT_MIN_NODE_MAJOR"
+
+
+def node_gate_present(c: str) -> bool:
+    """是否已经带版本门（**单独一个符号**，与垫片无关）。
+
+    旧产物只打了垫片、没有门（实测 `dist/fist-mbt.js` 里 `process.versions.node` 零命中）。
+    垫片与门是两件事：垫片修 CJS 互操作（BUG-406），门拦 Node<24（T0r84）——
+    各自可独立缺失，故不能拿「有没有垫片」当「有没有门」。
+    """
+    return GATE_MARKER in (c or "")
+
+
+# ── Node 版本门（T0r84 / 计划条目 2026-11-25「Node 版本门」）────────────────────
+#
+# **为什么门必须在产物前言、而不能写在 MoonBit 源码里**：
+# `src/server/server.mbt:29` 是**模块级** `let main_store : @store.SqliteStore? = @store.SqliteStore::new()`，
+# 而 `cmd/cli/main.mbt` 要经 `run_server()` 才走到它。产物是 ESM，`import` 全部先于模块体求值
+# ⇒ 源码里任何位置的门都跑在 store 构造**之后**，等于没设。本前言紧跟垫片注入：它排在
+# **垫片之后、产物自身依赖图的第一个 import 之前**（ESM 里先声明的 import 先求值，
+# 而 moonc 把产物的 import 全放在正文开头），是唯一「先门后库」的位置。
+# ⚠️ 别把口径写成「早于全部 import」——垫片 `SHIM` 自己就是一条 import，那条判据对真产物恒红。
+#    锁的实际口径：门排在**垫片之后、产物自身第一个顶层 import 之前**（判据同此）。
+#
+# **为什么 <24 需要显式拦**：`toolchain.json` 的 node 地板是 24（`why_node`：SQLite 依赖
+# `node:sqlite` 的 `returnArrays`；node<24 退化为对象行，列读取为空）。那个退化不是崩溃而是
+# **静默错**——不设门就等于容忍假绿。npm/宿主启动器（`packaging/dsh/launch-mcp.mjs:44-51`）
+# 与安装器（`scripts/blackbox/install_onecmd.ps1:48`）已有 ≥24 提示，缺口只在**裸调**
+# `node dist/fist-mbt.js serve` / `node _build/js/*/build/cmd/cli/cli.js serve`。
+#
+# 阈值在本脚本只出现一次（`MIN_NODE_MAJOR`）；文档面的地板一致性另有 `check_doc_surface`
+# J17 对表 `toolchain.json`。
+MIN_NODE_MAJOR = 24
+
+# 用 **const** 而非 var：产物以 ESM 严格模式加载，且 const 不挂 globalThis，零污染。
+NODE_GATE = (
+    "const FIST_MBT_MIN_NODE_MAJOR = %d;\n"
+    "if (Number((process.versions.node || '0').split('.')[0]) < FIST_MBT_MIN_NODE_MAJOR) {\n"
+    "  console.error('fist-mbt: 需要 Node.js >= ' + FIST_MBT_MIN_NODE_MAJOR\n"
+    "    + '（当前 ' + process.versions.node + '）。');\n"
+    "  console.error('原因：JS 后端的 SQLite 依赖 node:sqlite 的 returnArrays，'\n"
+    "    + '更早的 Node 会退化为对象行、列读取为空（toolchain.json 的 why_node）。');\n"
+    "  console.error('解决：升级 Node 到 24 或更新（Windows: winget install OpenJS.NodeJS.LTS；'\n"
+    "    + '或改用 native 目标）。');\n"
+    "  process.exit(1);\n"
+    "}\n"
+) % MIN_NODE_MAJOR
+
+
+def _strip_injected(c: str) -> str:
+    """剥掉前言里**已注入**的垫片与门，还原 moonc 原始正文。
+
+    两者都是本脚本逐字写入的常量文本，moonc 不会产出同串 ⇒ 按前缀剥离是安全的。
+    顺序固定为「垫片 → 门」；旧产物只有垫片，剥完即回到原始正文。
+    """
+    rest = c
+    if rest.startswith(SHIM):
+        rest = rest[len(SHIM):]
+    if rest.startswith(NODE_GATE):
+        rest = rest[len(NODE_GATE):]
+    return rest
+
+
 def patch(main_js: str) -> bool:
     if not os.path.exists(main_js):
         raise FileNotFoundError(f"not found: {main_js} (先 moon build --target js)")
     with open(main_js, "r", encoding="utf-8") as f:
         c = f.read()
-    if "createRequire" in c:
-        return False  # 已打过补丁（幂等）
+    if "createRequire" in c and node_gate_present(c):
+        return False  # 已打过补丁（幂等：垫片与门都在）
+    # 门插在垫片之后、原有正文之前 ⇒ 先于全部 import 求值（唯一「先门后库」位）。
+    body = _strip_injected(c)
     with open(main_js, "w", encoding="utf-8") as f:
-        f.write(SHIM + c)
+        f.write(SHIM + NODE_GATE + body)
     return True
 
 
