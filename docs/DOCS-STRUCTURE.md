@@ -64,7 +64,7 @@ AI-DEVELOPMENT-STANDARD.md 或当日 memory，不在第二个规范文件里复�
 
 | 你想写的东西 | 落位 |
 |---|---|
-| 新计划 / 提案（在流） | `docs/plans/`（`YYYY-MM-DD-<topic>-proposal.md`，头部字段见 `docs/plans/README.md`） |
+| 新计划 / 提案（在流） | `fist-mbt/plan/draft/`（`YYYY-MM-DD-<slug>.md`，头部字段见 `fist-mbt/plan/README.md`；定案执行中→`active/`，终态→`done/`；旧路径 `docs/plans/` 不再新增） |
 | 新提案（非计划流程） | `docs/proposals/` |
 | skill 说明（今后落位） | `docs/skills/`（目录建立后新文件进这里；存量平铺文件暂不迁移） |
 | 历史归档 / 完成使命的旧文档 | `docs/archive/`（不删除） |

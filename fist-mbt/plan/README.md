@@ -22,8 +22,9 @@ Agent 提案 → plans/*-proposal.md (status: 提案中)
 
 ## 文件规范
 
-- **文件名**：`YYYY-MM-DD-<topic>-proposal.md`
-- **头部强制字段**（缺一即红，`check_plan_location` 守卫）：
+- **文件名**：`YYYY-MM-DD-<slug>.md`（slug 为短横线小写英文；本仓真源见 `AI-DEVELOPMENT-STANDARD.md` §2「计划文件规范」）。
+  定案记录在 `decisions/`（沿用原名），命名同为日期前缀。
+- **头部强制字段**（缺一即红，`check_plan_location` 守卫）——**仅对提案卡 `*-proposal.md` 生效**：
   ```yaml
   ---
   status: 提案中   # 提案中 | 已定案 | 已驳回 | 已推迟 | 已完成
