@@ -13,7 +13,7 @@
 | e2e_agent_models_status.py | M1-M2, R1-R3, X1 | /v1/models 发现面 + GET /v1/tasks/<id> 回执面：认证门 / 形状 / 404 / 发布-查进度配对 |
 | e2e_agent_task_wait.py | W1-W4 | ?wait=1 长轮询：无 wait 即返 / 非终态轮询（W2）/ 404 快速返回 / 终态即返（W4） |
 | e2e_agent_task_ns_pairing.py | — | 跨 ns 读池错位缺陷回归锁（见下） |
-| e2e_agent_gateway.py | A1-A8 | 常驻网关生命周期：health / MCP 转发 / 认证门 / 心跳 / draining / lan 绑定 / watchdog / 模型自动路由 |
+| e2e_agent_gateway.py | A1-A9 | 常驻网关生命周期：health / MCP 转发 / 认证门 / 心跳 / draining / lan 绑定 / watchdog / 模型自动路由 / 重启恢复；入口支持 `--cli-js` 且自动回退 `dist/fist-mbt.js` |
 
 ## 判据语义约定
 
