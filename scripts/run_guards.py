@@ -172,6 +172,11 @@ SPECIAL_CASES = [
     case("notify_agent_service_up.py", "--selftest"),
     # 管家巡检盘点工具：缺失收件箱/死端口两格不崩（零网络依赖）。
     case("butler_patrol.py", "--selftest"),
+    # T0r94：六服务网关守护器自检（全合成夹具，零网络/零写盘/零 spawn）。
+    # 必须显式登记：本脚本此前是**未跟踪文件**（T0r83 报告点名），不在 REGISTRY
+    # 就会让 check_battery_count_doc 的「缺面清单」报红（判例-5：往 scripts/ 加 .py
+    # 必须同批给执行面）。--once/--status 是**活体**面（读真库真端口），不进电池。
+    case("gateway_guardian.py", "--selftest"),
     # agent 网关黑盒判据族：--selftest 均为合成夹具自证（不起真服务）。
     case("blackbox/e2e_agent_gateway.py", "--selftest"),
     case("blackbox/e2e_agent_service_http.py", "--selftest"),
