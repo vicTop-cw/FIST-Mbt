@@ -7,6 +7,76 @@ import {
 }
 
 // Values
+pub const AGENT_LOCK_FILE : String = "agent.lock"
+
+pub const AGENT_LOCK_STALE_MS : Double = 30000.0
+
+pub const AGENT_LOG_FILE : String = "worker.log"
+
+pub const AGENT_POLL_INTERVAL_MS : Double = 15000.0
+
+pub const AGENT_SERVICE_DIR : String = "agent-service"
+
+pub const AGENT_STATE_FILE : String = "state.json"
+
+pub const AGENT_STATUS_TAIL_LINES : Int32 = 10
+
+pub fn agent_db_dir(String?) -> String
+
+pub fn agent_help_text() -> String
+
+pub fn agent_io_append(String, String) -> Result[Unit, String]
+
+pub fn agent_io_mkdir(String) -> Result[Unit, String]
+
+pub fn agent_io_now_iso() -> String
+
+pub fn agent_io_now_ms() -> Double
+
+pub fn agent_io_pid() -> Int32
+
+pub fn agent_io_read(String) -> Result[String, String]
+
+pub fn agent_io_remove(String) -> Result[Unit, String]
+
+pub fn agent_io_sleep(Double) -> Unit
+
+pub fn agent_io_stat_mtime(String) -> Double
+
+pub fn agent_io_write_exclusive(String, String) -> Result[Unit, String]
+
+pub fn agent_lock_acquire() -> LockResult
+
+pub fn agent_lock_content(Int32) -> String
+
+pub fn agent_lock_is_mine() -> Bool
+
+pub fn agent_lock_path() -> String
+
+pub fn agent_lock_release() -> Result[Unit, String]
+
+pub fn agent_lock_stop_release() -> Result[Unit, String]
+
+pub fn agent_log_path() -> String
+
+pub fn agent_log_tail(Int32) -> String
+
+pub fn agent_packet_for(String, String) -> String
+
+pub fn agent_round_and_record(AgentFlags) -> Result[AgentRound, String]
+
+pub fn agent_round_text(AgentRound) -> String
+
+pub fn agent_run_once(AgentFlags, String) -> Result[AgentRound, String]
+
+pub fn agent_service_dir() -> String
+
+pub fn agent_snapshot(Int32) -> AgentSnapshot
+
+pub fn agent_snapshot_text(AgentSnapshot) -> String
+
+pub fn agent_state_path() -> String
+
 pub fn help_cli() -> String
 
 pub fn help_install() -> String
@@ -25,6 +95,18 @@ pub fn latest_url(String, String) -> String
 
 pub fn list_topics() -> String
 
+pub fn parse_agent_cmd(String) -> AgentCmd
+
+pub fn parse_agent_flags(Array[String]) -> Result[AgentFlags, String]
+
+pub fn run_agent_once() -> Int32
+
+pub fn run_agent_serve(AgentFlags) -> Int32
+
+pub fn run_agent_status(AgentFlags) -> Int32
+
+pub fn run_agent_stop(AgentFlags) -> Int32
+
 pub async fn run_upgrade_full(String, String, String, Bool) -> Result[String, String]
 
 pub async fn upgrade_fetch_latest(String, String, Int32) -> Result[String, String]
@@ -34,6 +116,58 @@ pub async fn upgrade_io(String, String) -> Result[@json.Json, String]
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
+pub enum AgentCmd {
+  Serve
+  Run
+  Status
+  Stop
+  Help
+  Unknown(String)
+}
+
+pub struct AgentFlags {
+  once : Bool
+  dry_run : Bool
+}
+pub fn AgentFlags::is_dry_run(Self) -> Bool
+pub fn AgentFlags::is_once(Self) -> Bool
+pub fn AgentFlags::should_mutate(Self) -> Bool
+
+pub struct AgentRound {
+  claimed_task_id : String
+  packet : String
+  note : String
+  dry_run : Bool
+}
+
+pub struct AgentSnapshot {
+  state : AgentState?
+  lock_holder : String
+  log_tail : String
+  service_dir : String
+}
+
+pub struct AgentState {
+  status : String
+  pid : Int32
+  started_at : String
+  last_heartbeat : String
+  last_task_id : String
+  rounds : Int32
+}
+pub fn AgentState::beat(Self, String, String) -> Self
+pub fn AgentState::from_json_text(String) -> Self?
+pub fn AgentState::mark_stopped(Self) -> Self
+pub fn AgentState::to_json_text(Self) -> String
+
+#derive(Eq, @debug.Debug)
+pub enum LockResult {
+  Acquired
+  HeldBy(String)
+  Failed(String)
+}
+
 #derive(Eq, @debug.Debug)
 type Subcmd
 

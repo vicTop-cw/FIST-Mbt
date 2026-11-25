@@ -5,6 +5,7 @@ import {
   "moonbitlang/async/js_async",
   "moonbitlang/core/env",
   "moonbitlang/core/json",
+  "moonbitlang/x/fs",
 }
 
 pkgtype(kind: "executable")
@@ -12,6 +13,12 @@ pkgtype(kind: "executable")
 supported_targets = "js+native"
 
 options(
-  targets: { "upgrade_native.mbt": [ "native" ], "upgrade_js.mbt": [ "js" ] },
+  targets: {
+    "upgrade_native.mbt": [ "native" ],
+    "upgrade_js.mbt": [ "js" ],
+    // agent 骨架：文件系统面分 target 实现（native 臂如实报未实现，不假绿）
+    "agent_js.mbt": [ "js" ],
+    "agent_native.mbt": [ "native", "llvm" ],
+  },
   link: { "native": { "cc-link-flags": "-lsqlite3" } },
 )
