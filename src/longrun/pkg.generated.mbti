@@ -7,13 +7,19 @@ import {
 }
 
 // Values
+pub const BATON_FORMAT : String = "fist-longrun-baton-v1"
+
 pub const GUARD_FAILURE_RATIO_PCT : Int32 = 30
 
 pub const GUARD_MIN_SAMPLES : Int32 = 3
 
+pub fn baton_body(String, @core.Task, String, String, String, String, String, String) -> Result[@json.Json, String]
+
 pub fn failure_ratio_pct(Int32, Int32) -> Int32
 
 pub fn guard_decision(Int64, Int64, Int32, Int32, Int32, Int32) -> (Bool, Array[String])
+
+pub fn parse_baton(String, String) -> Result[@json.Json, String]
 
 pub fn parse_snapshot(String) -> Result[(String, @json.Json), String]
 
