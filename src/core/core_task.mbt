@@ -530,7 +530,7 @@ pub fn Task::execute_exit_hint(status : TaskStatus) -> String {
       "待验收→若要改交付物先 reject（→已打回）再 retry（→执行中），再 execute"
     Paused => "已暂停→先 resume（→已领取）再 execute"
     Completed =>
-      "已完成→原地更正交付物请 reopen_task（→待领取）后重新走链路，勿新建任务覆盖旧账"
+      "已完成→原地更正交付物请 reopen_task（→已领取）再 execute（→执行中），勿新建任务覆盖旧账"
     Archived =>
       "已归档→不可写；确需返工先 reopen_task 重开，勿新建任务覆盖旧账"
   }
