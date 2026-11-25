@@ -42,6 +42,10 @@ _cron_query.py
 _cron_tmp_sends.jsonl
 # 并发 lane 的临时诊断目录（如 tmp_lanej/）：一次性件，不该入库
 /tmp_*/
+# longrun 白盒的写读回环沙箱：`src/longrun/longrun_wbtest.mbt` 在 cwd 下建
+# `.tmp-lr-roundtrip-wbtest/` 做真 IO 往返，收尾自删；进程被中断时可能残留
+# ⇒ 挡在 ignore 面（否则会被 check_publish_payload 当「未忽略未跟踪」点名）。
+/.tmp-lr-*/
 # blackbox release artifacts
 _release/
 memory/bugs_pending_github.json

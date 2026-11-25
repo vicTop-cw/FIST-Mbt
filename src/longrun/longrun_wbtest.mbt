@@ -295,6 +295,59 @@ test "core longrun writers" {
 }
 
 ///|
+/// ⑤b **写读回环（真 IO）**：`write_snapshot` 落盘 → `read_snapshot` 读回，
+///    两端的 task_id / checkpoint_path / budget_used 必须逐项一致。
+///
+/// 为什么单开一格：① 只钉了「构造的信封能解回」（内存往返），
+/// 本格才钉到「真的过了一遍文件系统」——判例-29（机制格 ≠ 实现路径格）。
+/// 落点在临时沙箱目录（`<cwd>/.tmp-lr-roundtrip-wbtest/`）并在收尾删掉，
+/// 不碰仓库内任何真实快照路径。
+test "checkpoint write/read round trip over real filesystem" {
+  let t = lr_task("T0r58rt", "已暂停")
+  let dir = ".tmp-lr-roundtrip-wbtest"
+  match write_snapshot(dir, t, "2026-11-25T12:00:00Z") {
+    Ok((path, reread_tid)) => {
+      // 路径口径：必须是该沙箱下的 <task_id>.json
+      let want = snapshot_path(dir, "T0r58rt")
+      if path != want {
+        abort("写回执路径口径不符：\{path} ≠ \{want}")
+      }
+      // 写侧自带回读校验：第二个回执值就是「落盘后读回来的 task_id」
+      if reread_tid != "T0r58rt" {
+        abort("写回执的读回 task_id 不符：\{reread_tid}")
+      }
+      match read_snapshot(path) {
+        Ok((tid, task_json)) => {
+          if tid != "T0r58rt" {
+            abort("读回 task_id 不符：\{tid}")
+          }
+          match task_json {
+            Object(m) =>
+              match m.get("id") {
+                Some(String(id)) =>
+                  if id != "T0r58rt" {
+                    abort("读回任务体 id 不符：\{id}")
+                  }
+                _ => abort("读回任务体缺 id")
+              }
+            _ => abort("读回 task 不是对象")
+          }
+        }
+        Err(e) => abort("刚写入的快照读不回来：\{e}")
+      }
+      // 收尾：删沙箱文件与目录（幂等，失败不影响断言结论）
+      @fs.remove_file(path) catch {
+        _ => ()
+      }
+      @fs.remove_dir(dir) catch {
+        _ => ()
+      }
+    }
+    Err(e) => abort("沙箱写入失败：\{e}")
+  }
+}
+
+///|
 /// ⑥ **变异对照**（判例-30/判例-29）：直接断言被测机制的源码仍在。
 ///
 /// 手法要点（判例-30 踩过）：锚定**行首的真实分支行**，而不是注释里的描述串 ——
