@@ -8,13 +8,16 @@
   A4 SIGTERM → draining → stopped（§3.3 唯一退出路径，注册保留）
   A5（posix only）杀 MCP 子进程 → watchdog 自动重启恢复 alive（退避后）
 
---selftest：不拉网关、不起子进程，只验证脚本自身判据会红（sqlite 种子/读取逻辑）。
+--selftest：不拉网关、不起子进程，只验证种子/读取 + CLI 入口解析（显式/回退/变异）。
 
 用法：
   python scripts/blackbox/e2e_agent_gateway.py --selftest
-  python scripts/blackbox/e2e_agent_gateway.py            # 全链实弹（需已构建 cmd/cli）
+  python scripts/blackbox/e2e_agent_gateway.py            # 全链实弹（_build/target/dist 自动探测）
+  python scripts/blackbox/e2e_agent_gateway.py --cli-js dist/fist-mbt.js
+  # Node.js 不在 PATH 默认位置时可指定：FIST_NODE=/path/to/node24 ...
 """
 
+import argparse
 import json
 import os
 import signal
@@ -23,12 +26,50 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parent.parent.parent  # scripts/blackbox/ → 仓根
 GATEWAY = ROOT / "scripts" / "fist_gateway.py"
-CLI_JS = ROOT / "_build" / "js" / "debug" / "build" / "cmd" / "cli" / "cli.js"
+
+# 入口候选：源码构建优先，官方预构建 dist 兜底。
+# 黑盒用户只会拿到 dist/fist-mbt.js，不能因为没有 _build 就整条判据 SKIP。
+CLI_CANDIDATES = (
+    Path("_build") / "js" / "debug" / "build" / "cmd" / "cli" / "cli.js",
+    Path("target") / "js" / "release" / "build" / "cmd" / "cli" / "cli.js",
+    Path("dist") / "fist-mbt.js",
+)
+
+
+def resolve_cli_js(explicit: str = "", root: Path = ROOT) -> Path | None:
+    """显式 --cli-js 优先；否则按 CLI_CANDIDATES 自动探测。
+
+    显式给错路径必须 fail-closed（返回 None），不得静默回退到别的产物——
+    否则「指定了 A 却跑了 B」会让判据看起来绿着但测的不是目标。
+    """
+    if explicit:
+        p = Path(explicit)
+        candidates = [p if p.is_absolute() else root / p]
+    else:
+        candidates = [root / rel for rel in CLI_CANDIDATES]
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
+def popen_group_kwargs() -> dict:
+    """Windows 才需要 CREATE_NEW_PROCESS_GROUP；POSIX 上该属性不存在。"""
+    if os.name == "posix":
+        return {}
+    flag = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    return {"creationflags": flag} if flag else {}
 
 SCHEMA = (
     "CREATE TABLE IF NOT EXISTS agent_service (service_id TEXT PRIMARY KEY, "
@@ -82,22 +123,59 @@ def http_post(url: str, payload: dict, timeout: float = 30.0,
 
 
 def selftest() -> None:
-    """判据自证：种子/读取逻辑必须会红（假库 vs 真库读数不同）。"""
+    """判据自证：种子/读取 + CLI 入口解析都必须能红。"""
     with tempfile.TemporaryDirectory() as td:
         db = os.path.join(td, "selftest.db")
         seed_db(db, "svc-selftest")
         assert read_status(db, "svc-selftest")[0] == "registered", "种子行应可读"
         assert read_status(db, "svc-absent")[0] == "", "缺席行必须给空串（会红的形状）"
-    print("selftest OK：种子/读取判据自证成立")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        dist = root / "dist" / "fist-mbt.js"
+        dist.parent.mkdir(parents=True)
+        dist.write_text("// dist", encoding="utf-8")
+        # 显式路径优先（相对路径按仓根解析）
+        assert resolve_cli_js("dist/fist-mbt.js", root) == dist
+        # 无 _build 时回退 dist（黑盒用户的真实形状）
+        assert resolve_cli_js("", root) == dist
+        # _build 存在时优先源码产物
+        build = root / CLI_CANDIDATES[0]
+        build.parent.mkdir(parents=True)
+        build.write_text("// build", encoding="utf-8")
+        assert resolve_cli_js("", root) == build
+        # 变异对照：两处产物都删掉 → 必须返回 None，不许静默给幻影路径
+        build.unlink()
+        dist.unlink()
+        assert resolve_cli_js("", root) is None
+        # 显式给错路径必须 fail-closed，不得回退到 dist
+        dist.parent.mkdir(parents=True, exist_ok=True)
+        dist.write_text("// dist", encoding="utf-8")
+        assert resolve_cli_js("dist/absent.js", root) is None
+        if os.name == "posix":
+            assert popen_group_kwargs() == {}, "POSIX 不该带 Windows 进程组参数"
+    print("selftest OK：种子/读取 + CLI 入口（显式/回退/变异）+ 进程组参数")
 
 
-def main() -> None:
-    if "--selftest" in sys.argv:
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser(
+        description="fist-gateway 常驻网关黑盒判据（A1-A9）")
+    ap.add_argument("--selftest", action="store_true",
+                    help="只跑判据自证，不起网关")
+    ap.add_argument("--cli-js", default="",
+                    help="MCP 入口 cli.js；缺省按 _build/target/dist 自动探测")
+    return ap.parse_args(argv)
+
+
+def main(argv=None) -> None:
+    args = parse_args(argv)
+    if args.selftest:
         selftest()
         return
-    if not CLI_JS.is_file():
-        print("SKIPPED: 缺 MCP 入口产物（先跑 `moon build --target js cmd/cli`）")
+    cli_js = resolve_cli_js(args.cli_js)
+    if cli_js is None:
+        print("SKIPPED: 缺 MCP 入口产物（_build/.../cli.js 或 dist/fist-mbt.js；可用 --cli-js 指定）")
         return
+    (ROOT / "temp").mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         db = os.path.join(td, "e2e.db")
         svc = "svc-gw-e2e"
@@ -111,9 +189,9 @@ def main() -> None:
             [sys.executable, str(GATEWAY), "--service-id", svc,
              "--port", str(port), "--db", db,
              "--api-key", "e2e-p2-api-key", "--audit-log", audit,
-             "--router-config", router_cfg],
+             "--router-config", router_cfg, "--cli-js", str(cli_js)],
             cwd=str(ROOT), stdout=gw_log_f, stderr=gw_log_f,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            **popen_group_kwargs(),
         )
         try:
             # A1 /health �活体（等网关起监听）
@@ -171,10 +249,11 @@ def main() -> None:
                 [sys.executable, str(GATEWAY), "--service-id", svc2,
                  "--port", str(lan_port), "--db", db, "--host", "0.0.0.0",
                  "--api-key", "e2e-lan-key",
-                 "--router-config", os.path.join(td, "model-router-lan.json")],
+                 "--router-config", os.path.join(td, "model-router-lan.json"),
+                 "--cli-js", str(cli_js)],
                 cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace",
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                **popen_group_kwargs(),
             )
             try:
                 lan_alive = None
@@ -256,9 +335,9 @@ def main() -> None:
             [sys.executable, str(GATEWAY), "--service-id", svc,
              "--port", str(port), "--db", db,
              "--api-key", "e2e-p2-api-key", "--audit-log", audit,
-             "--router-config", router_cfg],
+             "--router-config", router_cfg, "--cli-js", str(cli_js)],
             cwd=str(ROOT), stdout=gw_log_f2, stderr=gw_log_f2,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            **popen_group_kwargs(),
         )
         try:
             h3 = None
