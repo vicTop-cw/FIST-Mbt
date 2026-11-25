@@ -44,6 +44,12 @@ async fn main {
   let cmd = parse_subcmd(sub)
   match cmd {
     Serve => run_serve()
+    Agent => {
+      let rc = run_agent(args)
+      if rc != 0 {
+        cli_exit(rc)
+      }
+    }
     Version => run_version()
     Demo => run_demo()
     Doctor => if !run_doctor() { cli_exit(1) }
@@ -149,6 +155,82 @@ async fn run_upgrade() -> Unit {
       cli_exit(1)
     }
   }
+}
+
+///|
+/// agent：会话内嵌 worker（P0 骨架）。子命令面见 `agent.mbt:agent_help_text`。
+/// 参数映射：ua[1]=子命令、ua[2..]=旗标/尾参。
+/// **用法错（未知子命令/未知旗标）回 2**，与 `subcmd.mbt` 的 USAGE_ERROR_EXIT_CODE 同档；
+/// 运行错（取锁失败、一轮失败）回 1；锁冲突属正常态回 0。
+///
+/// 四个子命令**共用同一个旗标解析器**：若只有 serve 解析，那么
+/// `agent run --dry-run` / `agent stop --bogus` 会把旗标静默吞掉 ——
+/// 前者真落盘（名为观测实为写入），后者报绿却什么都没校验（R207 同族四次的形状）。
+fn run_agent(args : Array[String]) -> Int32 {
+  let sub = user_arg(args, 1)
+  match parse_agent_cmd(sub) {
+    Serve => {
+      let flags = match parse_agent_flags(agent_rest_args(args)) {
+        Ok(f) => f
+        Err(e) => return agent_usage_error(e)
+      }
+      run_agent_serve(flags)
+    }
+    Run => {
+      // 别名：语义固定为 once；--dry-run 必须仍然生效（否则「观测」变「写入」）
+      let flags = match parse_agent_flags(agent_rest_args(args)) {
+        Ok(f) => { once: true, dry_run: f.dry_run, }
+        Err(e) => return agent_usage_error(e)
+      }
+      run_agent_serve(flags)
+    }
+    Status => {
+      let flags = match parse_agent_flags(agent_rest_args(args)) {
+        Ok(f) => f
+        Err(e) => return agent_usage_error(e)
+      }
+      run_agent_status(flags)
+    }
+    Stop => {
+      let flags = match parse_agent_flags(agent_rest_args(args)) {
+        Ok(f) => f
+        Err(e) => return agent_usage_error(e)
+      }
+      run_agent_stop(flags)
+    }
+    Help => {
+      println(agent_help_text())
+      0
+    }
+    Unknown(other) => {
+      println("未知 agent 子命令: \{other}")
+      println(agent_help_text())
+      2
+    }
+  }
+}
+
+///|
+/// 取 `fist agent <sub>` 之后的旗标数组（`--once` / `--dry-run`）。
+/// 走 `user_arg` 而不是写死下标：js 与 native 的 `@env.args()` 前缀长度不同
+/// （前者 node.exe+脚本、后者 exe），写死偏移在 native 臂必然错位。
+fn agent_rest_args(args : Array[String]) -> Array[String] {
+  let out : Array[String] = []
+  let mut i : Int32 = 2
+  while args.length() > i + 2 {
+    out.push(user_arg(args, i))
+    i = i + 1
+  }
+  out
+}
+
+///|
+/// 用法错统一出口（未知子命令与未知旗标共用）：打印原因 + 帮助正文，回 2。
+/// 单独成函数是为了让「报错面」只有一处——两处各写一遍就会漂移。
+fn agent_usage_error(e : String) -> Int32 {
+  println("用法错: \{e}")
+  println(agent_help_text())
+  2
 }
 
 ///|

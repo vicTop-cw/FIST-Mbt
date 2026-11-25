@@ -7,6 +7,7 @@
 #derive(Eq, Debug)
 enum Subcmd {
   Serve
+  Agent
   Version
   Demo
   Doctor
@@ -20,6 +21,7 @@ enum Subcmd {
 fn parse_subcmd(sub : String) -> Subcmd {
   match sub {
     "serve" => Serve
+    "agent" => Agent
     "version" | "--version" | "-V" => Version
     "demo" => Demo
     "doctor" => Doctor
