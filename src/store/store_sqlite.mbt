@@ -681,6 +681,21 @@ fn SqliteStore::ensure_task_columns(self : SqliteStore) -> Bool {
         (
           "created_by", "ALTER TABLE tasks ADD COLUMN created_by TEXT NOT NULL DEFAULT ''",
         ),
+        // T0r53：longrun（长程任务）恢复面 4 列。
+        // budget_used 用 INTEGER（SqlValue::Int64 绑定，SQLite 动态类型不丢精度），
+        // 其余三列 TEXT：checkpoint_path / last_baton 允许空串 = 「无快照」。
+        (
+          "checkpoint_path", "ALTER TABLE tasks ADD COLUMN checkpoint_path TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+          "last_baton", "ALTER TABLE tasks ADD COLUMN last_baton TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+          "budget_used", "ALTER TABLE tasks ADD COLUMN budget_used INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+          "idempotency_keys", "ALTER TABLE tasks ADD COLUMN idempotency_keys TEXT NOT NULL DEFAULT '[]'",
+        ),
       ]
       let mut ok = true
       for (name, sql) in needed {
@@ -813,7 +828,7 @@ fn SqliteStore::ensure_agent_service_columns(self : SqliteStore) -> Bool {
 
 ///|
 fn SqliteStore::task_columns() -> String {
-  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on, omega_required, created_by"
+  "id, parent_id, project_dir, ns, priority, importance, depth, split_n, level, status, assignee, description, deliverable, created_at, updated_at, completed_by, cleanup_mode, depends_on, omega_required, created_by, checkpoint_path, last_baton, budget_used, idempotency_keys"
 }
 
 ///|
@@ -897,6 +912,26 @@ fn SqliteStore::bind_task_values(
   ignore(
     stmt.bind(20, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by))),
   )
+  // T0r53：longrun 恢复面（第 21..24 位）。**顺序必须与 task_columns 的尾部一致**
+  // （两处都是字面量、编译器不校验 ⇒ 只能靠判据/测试钉住，见 store_sqlite_wbtest）。
+  ignore(
+    stmt.bind(
+      21,
+      @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.checkpoint_path)),
+    ),
+  )
+  ignore(
+    stmt.bind(22, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.last_baton))),
+  )
+  ignore(stmt.bind(23, @sqlite.SqlValue::Int64(t.budget_used)))
+  ignore(
+    stmt.bind(
+      24,
+      @sqlite.SqlValue::Text(
+        @encoding.encode(UTF8, _array_to_json(t.idempotency_keys)),
+      ),
+    ),
+  )
 }
 
 ///|
@@ -977,6 +1012,25 @@ fn SqliteStore::bind_task_update_values(
   ignore(
     stmt.bind(18, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.created_by))),
   )
+  // T0r53：longrun 恢复面（第 19..22 位）。SET 顺序 = task_columns 去掉 id 后的尾部。
+  ignore(
+    stmt.bind(
+      19,
+      @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.checkpoint_path)),
+    ),
+  )
+  ignore(
+    stmt.bind(20, @sqlite.SqlValue::Text(@encoding.encode(UTF8, t.last_baton))),
+  )
+  ignore(stmt.bind(21, @sqlite.SqlValue::Int64(t.budget_used)))
+  ignore(
+    stmt.bind(
+      22,
+      @sqlite.SqlValue::Text(
+        @encoding.encode(UTF8, _array_to_json(t.idempotency_keys)),
+      ),
+    ),
+  )
 }
 
 ///|
@@ -1025,7 +1079,16 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
   let completed_raw = str_from_bytes(stmt.column_text(15))
   let depends_raw = str_from_bytes(stmt.column_text(17))
   let omega_raw = stmt.column_int(18)
-  @core.Task::from_db_with_created_by(
+  // T0r53：longrun 四列（索引 20..23）。**只从 from_db_longrun 一条路进**
+  //   ⇒ 与 INSERT/UPDATE 的绑定顺序不会分叉出第二套口径。
+  //   budget_used 走 column_int（依赖面只有 Int32 读取口，无 column_int64），
+  //   旧库迁移后该列 NOT NULL DEFAULT 0，读到 0 而不是 NULL；
+  //   单位由调用方定义，这里只做计数不做解释（避免单位漂移让护栏阈值说谎）。
+  let cp_raw = str_from_bytes(stmt.column_text(20))
+  let baton_raw = str_from_bytes(stmt.column_text(21))
+  let budget_raw = stmt.column_int(22).to_int64()
+  let idem_raw = str_from_bytes(stmt.column_text(23))
+  @core.Task::from_db_longrun(
     str_from_bytes(stmt.column_text(0)),
     if parent_raw == "" {
       None
@@ -1059,6 +1122,11 @@ fn row_to_task(stmt : @sqlite.Statement) -> @core.Task {
     omega_raw != 0,
     // BUG-475：第 20 列（索引 19）= 发布者身份
     str_from_bytes(stmt.column_text(19)),
+    // T0r53：longrun 四列（索引 20..23）
+    cp_raw,
+    baton_raw,
+    budget_raw,
+    _json_to_array(idem_raw),
   )
 }
 
@@ -1073,7 +1141,7 @@ impl Store for SqliteStore with fn create_task(self, task) {
         Some(_) => return Err("task already exists: \{task.get_id()}")
         None => ()
       }
-      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+      let sql = "INSERT INTO tasks (\{SqliteStore::task_columns()}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: create_task")
         Some(stmt) => {
@@ -1120,19 +1188,19 @@ impl Store for SqliteStore with fn update_task(self, task) {
       if self.get_task(task.get_id()) is None {
         return Err("task not found: \{task.get_id()}")
       }
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ?, created_by = ? WHERE id = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ?, created_by = ?, checkpoint_path = ?, last_baton = ?, budget_used = ?, idempotency_keys = ? WHERE id = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
-          // BUG-475 修正：bind_task_update_values 现在占了 1..18（新增 created_by），
-          // 所以 WHERE 的 id 从第 18 位后移到**第 19 位**。
-          // ⚠️ 漏了这一格 ⇒ id 被绑到 created_by、WHERE id 拿到 NULL ⇒
+          // BUG-475 修正 + T0r53 再后移：bind_task_update_values 现占 1..22
+          // （18=created_by，19..22=longrun 四列），WHERE id 因此落在**第 23 位**。
+          // ⚠️ 漏了这一格 ⇒ id 被绑到 idempotency_keys、WHERE id 拿到 NULL ⇒
           //    UPDATE 一行不改而 execute() 仍可能报成功 ⇒ **状态迁移静默失效**
-          //    （实测症状：「待领取」!=「已领取」）。
+          //    （实测症状：「待领取」!=「已领取」）。本文件 wbtest 有接线锁钉住此处。
           ignore(
             stmt.bind(
-              19,
+              23,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
@@ -1158,21 +1226,21 @@ pub fn SqliteStore::update_task_if_status(
   match self.db {
     None => Err("sqlite store 未打开")
     Some(db) => {
-      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ?, created_by = ? WHERE id = ? AND status = ?"
+      let sql = "UPDATE tasks SET parent_id = ?, project_dir = ?, ns = ?, priority = ?, importance = ?, depth = ?, split_n = ?, status = ?, assignee = ?, description = ?, deliverable = ?, created_at = ?, updated_at = ?, completed_by = ?, cleanup_mode = ?, depends_on = ?, omega_required = ?, created_by = ?, checkpoint_path = ?, last_baton = ?, budget_used = ?, idempotency_keys = ? WHERE id = ? AND status = ?"
       match db.prepare(sql) {
         None => Err("sqlite prepare 失败: update_task_if_status")
         Some(stmt) => {
           SqliteStore::bind_task_update_values(stmt, task)
-          // BUG-475 修正：id -> 19、expected_status -> 20（见 update_task 处的说明）
+          // BUG-475 修正 + T0r53 再后移：id -> 23、expected_status -> 24（见 update_task 处的说明）
           ignore(
             stmt.bind(
-              19,
+              23,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, task.get_id())),
             ),
           )
           ignore(
             stmt.bind(
-              20,
+              24,
               @sqlite.SqlValue::Text(@encoding.encode(UTF8, expected_status)),
             ),
           )
@@ -1434,7 +1502,7 @@ impl Store for SqliteStore with fn clear(self) {
     Some(db) => {
       ignore(
         db.exec(
-          "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority INTEGER NOT NULL DEFAULT 0, importance INTEGER NOT NULL DEFAULT 0, depth INTEGER NOT NULL DEFAULT 0, split_n INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Creating', assignee TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT NOT NULL DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT '', depends_on TEXT NOT NULL DEFAULT '[]', created_by TEXT NOT NULL DEFAULT '')",
+          "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL DEFAULT '', project_dir TEXT NOT NULL DEFAULT '', ns TEXT NOT NULL DEFAULT 'default', priority INTEGER NOT NULL DEFAULT 0, importance INTEGER NOT NULL DEFAULT 0, depth INTEGER NOT NULL DEFAULT 0, split_n INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Creating', assignee TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', deliverable TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '', completed_by TEXT NOT NULL DEFAULT '', cleanup_mode TEXT NOT NULL DEFAULT '', depends_on TEXT NOT NULL DEFAULT '[]', created_by TEXT NOT NULL DEFAULT '', checkpoint_path TEXT NOT NULL DEFAULT '', last_baton TEXT NOT NULL DEFAULT '', budget_used INTEGER NOT NULL DEFAULT 0, idempotency_keys TEXT NOT NULL DEFAULT '[]')",
         ),
       )
       ignore(
@@ -2668,7 +2736,32 @@ pub fn SqliteStore::record_execution(
   }
 }
 
-// —— archive 快照（Phase 2/5 预置 API，不改变 Store trait）——
+///|
+/// 按任务统计执行记录（longrun guard T0r56 数据源）：
+/// 返回 `(failed, total)`，failed = failure_reason 非空的记录数。
+/// 实现复用同包 `list_all_executions`（同一读取面，不另写一份 SQL 行解析
+/// ——判例「同一规则多份实现」）；执行记录量级小，全表过滤足够。
+pub fn SqliteStore::count_executions(
+  self : SqliteStore,
+  task_id : String,
+) -> (Int32, Int32) {
+  match self.db {
+    None => (0, 0)
+    Some(db) => {
+      let mut failed = 0
+      let mut total = 0
+      for rec in list_all_executions(db) {
+        if rec.task_id == task_id {
+          total = total + 1
+          if rec.failure_reason != "" {
+            failed = failed + 1
+          }
+        }
+      }
+      (failed, total)
+    }
+  }
+}
 
 ///|
 /// 将已归档任务写入 archive 表快照。
@@ -3999,15 +4092,14 @@ pub fn SqliteStore::agent_service_upsert(
             ),
           )
           ignore(
-            stmt.bind(
-              6,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, status)),
-            ),
+            stmt.bind(6, @sqlite.SqlValue::Text(@encoding.encode(UTF8, status))),
           )
           ignore(
             stmt.bind(
               7,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, session_listen_addr)),
+              @sqlite.SqlValue::Text(
+                @encoding.encode(UTF8, session_listen_addr),
+              ),
             ),
           )
           ignore(
@@ -4020,7 +4112,9 @@ pub fn SqliteStore::agent_service_upsert(
           ignore(
             stmt.bind(
               10,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, session_last_heartbeat)),
+              @sqlite.SqlValue::Text(
+                @encoding.encode(UTF8, session_last_heartbeat),
+              ),
             ),
           )
           ignore(
@@ -4068,10 +4162,7 @@ pub fn SqliteStore::agent_service_patch_session(
         None => Err("agent_service_patch_session prepare failed")
         Some(stmt) => {
           ignore(
-            stmt.bind(
-              1,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, status)),
-            ),
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, status))),
           )
           ignore(
             stmt.bind(
@@ -4080,10 +4171,7 @@ pub fn SqliteStore::agent_service_patch_session(
             ),
           )
           ignore(
-            stmt.bind(
-              3,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, token)),
-            ),
+            stmt.bind(3, @sqlite.SqlValue::Text(@encoding.encode(UTF8, token))),
           )
           ignore(stmt.bind(4, @sqlite.SqlValue::Int(pid)))
           ignore(
@@ -4132,16 +4220,10 @@ pub fn SqliteStore::agent_service_touch_heartbeat(
         None => Err("agent_service_touch_heartbeat prepare failed")
         Some(stmt) => {
           ignore(
-            stmt.bind(
-              1,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, now)),
-            ),
+            stmt.bind(1, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
           )
           ignore(
-            stmt.bind(
-              2,
-              @sqlite.SqlValue::Text(@encoding.encode(UTF8, now)),
-            ),
+            stmt.bind(2, @sqlite.SqlValue::Text(@encoding.encode(UTF8, now))),
           )
           ignore(
             stmt.bind(
@@ -4224,24 +4306,22 @@ pub fn SqliteStore::agent_service_list(
         None => out
         Some(stmt) => {
           while stmt.step() {
-            out.push(
-              AgentServiceRecord::{
-                service_id: str_from_bytes(stmt.column_text(0)),
-                owner_agent: str_from_bytes(stmt.column_text(1)),
-                capabilities: str_from_bytes(stmt.column_text(2)),
-                transport: str_from_bytes(stmt.column_text(3)),
-                exposure: str_from_bytes(stmt.column_text(4)),
-                status: str_from_bytes(stmt.column_text(5)),
-                session_listen_addr: str_from_bytes(stmt.column_text(6)),
-                session_token: str_from_bytes(stmt.column_text(7)),
-                session_pid: stmt.column_int(8),
-                session_last_heartbeat: str_from_bytes(stmt.column_text(9)),
-                api_key_hash: str_from_bytes(stmt.column_text(10)),
-                lan_verified_at: str_from_bytes(stmt.column_text(11)),
-                created_at: str_from_bytes(stmt.column_text(12)),
-                updated_at: str_from_bytes(stmt.column_text(13)),
-              },
-            )
+            out.push(AgentServiceRecord::{
+              service_id: str_from_bytes(stmt.column_text(0)),
+              owner_agent: str_from_bytes(stmt.column_text(1)),
+              capabilities: str_from_bytes(stmt.column_text(2)),
+              transport: str_from_bytes(stmt.column_text(3)),
+              exposure: str_from_bytes(stmt.column_text(4)),
+              status: str_from_bytes(stmt.column_text(5)),
+              session_listen_addr: str_from_bytes(stmt.column_text(6)),
+              session_token: str_from_bytes(stmt.column_text(7)),
+              session_pid: stmt.column_int(8),
+              session_last_heartbeat: str_from_bytes(stmt.column_text(9)),
+              api_key_hash: str_from_bytes(stmt.column_text(10)),
+              lan_verified_at: str_from_bytes(stmt.column_text(11)),
+              created_at: str_from_bytes(stmt.column_text(12)),
+              updated_at: str_from_bytes(stmt.column_text(13)),
+            })
           }
           stmt.finalize()
           out

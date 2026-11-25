@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/src/index"
+
+import {
+  "daqing/sqlite",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct IndexDb {
+  mut db : @sqlite.Database?
+  mut closed : Bool
+}
+pub fn IndexDb::close(Self) -> Unit
+pub fn IndexDb::open(String) -> Self?
+
+// Type aliases
+
+// Traits

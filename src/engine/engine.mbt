@@ -768,7 +768,8 @@ pub fn FistEngine::agent_service_set_api_key(
 ) -> Result[Unit, String] {
   match self.store.sqlite_store() {
     None => Err("agent service 注册表仅 SQLite 后端可用")
-    Some(s) => s.agent_service_set_api_key(service_id~, api_key_hash~, updated_at~)
+    Some(s) =>
+      s.agent_service_set_api_key(service_id~, api_key_hash~, updated_at~)
   }
 }
 
@@ -782,7 +783,8 @@ pub fn FistEngine::agent_service_set_lan_verified(
 ) -> Result[Unit, String] {
   match self.store.sqlite_store() {
     None => Err("agent service 注册表仅 SQLite 后端可用")
-    Some(s) => s.agent_service_set_lan_verified(service_id~, verified_at~, updated_at~)
+    Some(s) =>
+      s.agent_service_set_lan_verified(service_id~, verified_at~, updated_at~)
   }
 }
 
@@ -1467,6 +1469,139 @@ pub fn FistEngine::resume_task(
         Err(e) => return Err("恢复落库失败: \{e}")
       }
       Ok(c2)
+    }
+  }
+}
+
+///|
+/// **T0r53 · longrun P0**：为任务落一份整包 checkpoint 快照（提案 D1=A）。
+///
+/// 三件事一次做完：① 算快照路径（带 project_dir 前缀，跨项目不互覆）；
+/// ② 写快照落盘（写后回读校验由 `write_snapshot` 内部做）；③ 把路径/接力棒/
+/// 预算增量写回任务行（`budget_delta` 是**增量**，交换律由 core 保证）。
+///
+/// **裁决不在引擎层**：这里不判「这个任务能不能 checkpoint」——任何状态都允许
+/// 存档（存档是只增不减的动作，不是迁移）。要做前置裁决请调 `longrun_precheck_resume`
+/// （它的口径在 longrun 包里，见 `resume_target_status`）。
+pub fn FistEngine::longrun_checkpoint(
+  self : FistEngine,
+  task_id~ : String,
+  baton~ : String = "",
+  budget_delta~ : Int64 = 0L,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      let (path, _) = match @longrun.write_snapshot(t.project_dir, t, now) {
+        Ok(v) => v
+        Err(e) => return Err(e)
+      }
+      let c = t.with_longrun_checkpoint(path, baton, budget_delta, now)
+      match self.store.update_task(c) {
+        Ok(_) => ()
+        Err(e) => return Err("checkpoint 落库失败: \{e}")
+      }
+      Ok(c)
+    }
+  }
+}
+
+///|
+/// **T0r53 · longrun P0**：从 checkpoint 快照恢复任务（续接执行上下文）。
+///
+/// 顺序即契约（两层分开才各自可测，判例-29）：
+///   1. `@longrun.resume_precheck` —— 状态裁决在前、快照存在性在后；
+///      非法态会先报状态错，而不是拿「缺快照」当借口（人据此不会去建快照）；
+///   2. 落库目标态由 core 的 `mark_claimed` 提供（唯一出口，target 恒为已领取）。
+///
+/// 幂等：`Claimed` 重入仍返回成功（同一目标态，不产生第二次迁移）。
+pub fn FistEngine::longrun_resume(
+  self : FistEngine,
+  task_id~ : String,
+  now~ : String,
+) -> Result[@core.Task, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      // precheck 通过即可信其目标态；这里只取「是否放行」，不再自己判状态
+      match @longrun.resume_precheck(t, t.checkpoint_path) {
+        Ok(_) => ()
+        Err(e) => return Err(e)
+      }
+      let c = t.mark_claimed(now)
+      match self.store.update_task(c) {
+        Ok(_) => ()
+        Err(e) => return Err("恢复落库失败: \{e}")
+      }
+      Ok(c)
+    }
+  }
+}
+
+///|
+/// **T0r56 · longrun P1**：长程任务护栏——双阈值熔断裁决（提案 D2=C）
+/// + 幂等键任务内去重（提案 D3=A）。
+///
+/// 裁决真源在 `@longrun.guard_decision`（纯函数）；本函数只做三件事：
+///   1. 取任务（不存在即 Err）；
+///   2. 从 store 数该任务的执行记录得 `(failed, total)`，连同
+///      `budget_used`（checkpoint 增量累加的那份账）喂给纯裁决；
+///   3. 幂等键：`key` 非空时报告 duplicate；`register=true` 且未重复时
+///      经 `idempotency_add` 落库（append-only，唯一写入口在 core）。
+///
+/// 本函数**不改任务状态**——熔断后怎么处置（暂停/打回/收尾）执行权在调用方，
+/// 与 `tx_contract` 的「决策建议、不落迁移」同口径。
+pub fn FistEngine::longrun_guard(
+  self : FistEngine,
+  task_id~ : String,
+  budget_limit~ : Int64 = 0L,
+  ratio_pct~ : Int32 = @longrun.GUARD_FAILURE_RATIO_PCT,
+  min_samples~ : Int32 = @longrun.GUARD_MIN_SAMPLES,
+  key~ : String = "",
+  register~ : Bool = false,
+  now~ : String,
+) -> Result[Json, String] {
+  match self.store.get_task(task_id) {
+    None => Err("task not found: \{task_id}")
+    Some(t) => {
+      let (failed, total) = self.store.count_executions(task_id~)
+      let (allowed, reasons) = @longrun.guard_decision(
+        t.get_budget_used(),
+        budget_limit,
+        failed,
+        total,
+        ratio_pct,
+        min_samples,
+      )
+      // 幂等键（D3=A 任务内作用域）：duplicate 只读判定；register 才落库
+      let duplicate = key != "" && t.has_idempotency_key(key)
+      let mut registered = false
+      if register && key != "" && !duplicate {
+        let (c, added) = t.idempotency_add(key, now)
+        if added {
+          match self.store.update_task(c) {
+            Ok(_) => registered = true
+            Err(e) => return Err("幂等键落库失败: \{e}")
+          }
+        }
+      }
+      let m : Map[String, Json] = Map([])
+      m.set("task_id", Json::string(task_id))
+      m.set("allowed", Json::boolean(allowed))
+      m.set("reasons", Json::array(reasons.map(fn(r) { Json::string(r) })))
+      m.set("budget_used", Json::number(t.get_budget_used().to_double()))
+      m.set("budget_limit", Json::number(budget_limit.to_double()))
+      m.set("failed", Json::number(failed.to_double()))
+      m.set("total", Json::number(total.to_double()))
+      m.set("ratio_pct", Json::number(ratio_pct.to_double()))
+      m.set("min_samples", Json::number(min_samples.to_double()))
+      let im : Map[String, Json] = Map([])
+      im.set("key", Json::string(key))
+      im.set("duplicate", Json::boolean(duplicate))
+      im.set("registered", Json::boolean(registered))
+      m.set("idempotency", Json::object(im))
+      Ok(Json::object(m))
     }
   }
 }

@@ -65,6 +65,23 @@ pub struct AgentRecord {
   status : String
 }
 
+pub struct AgentServiceRecord {
+  service_id : String
+  owner_agent : String
+  capabilities : String
+  transport : String
+  exposure : String
+  status : String
+  session_listen_addr : String
+  session_token : String
+  session_pid : Int32
+  session_last_heartbeat : String
+  api_key_hash : String
+  lan_verified_at : String
+  created_at : String
+  updated_at : String
+}
+
 #derive(Eq, @debug.Debug)
 pub struct AssistantReg {
   agent : String
@@ -196,12 +213,13 @@ pub fn MemoryStore::write_call_log(Self, ts~ : String, tool~ : String, caller~ :
 pub struct MultiStore {
   stores : Map[String, SqliteStore]
   data_dir : String
+  main : SqliteStore?
 }
 pub fn MultiStore::close(Self, String) -> Unit
 pub fn MultiStore::close_all(Self) -> Unit
 pub fn MultiStore::data_dir_ok(String) -> Bool
 pub fn MultiStore::get(Self, String) -> SqliteStore?
-pub fn MultiStore::new(data_dir? : String) -> Self
+pub fn MultiStore::new(data_dir? : String, main? : SqliteStore?) -> Self
 pub fn MultiStore::ns_list(Self) -> Array[String]
 pub fn MultiStore::ns_stats(Self) -> @json.Json
 pub fn MultiStore::ns_task_count(Self, String) -> Int32
@@ -237,6 +255,14 @@ pub struct SqliteStore {
   mut db : @sqlite.Database?
   mut closed : Bool
 }
+pub fn SqliteStore::agent_service_delete(Self, String) -> Result[Unit, String]
+pub fn SqliteStore::agent_service_get(Self, String) -> AgentServiceRecord?
+pub fn SqliteStore::agent_service_list(Self) -> Array[AgentServiceRecord]
+pub fn SqliteStore::agent_service_patch_session(Self, service_id~ : String, status~ : String, listen_addr~ : String, token~ : String, pid~ : Int32, last_heartbeat~ : String, updated_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agent_service_set_api_key(Self, service_id~ : String, api_key_hash~ : String, updated_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agent_service_set_lan_verified(Self, service_id~ : String, verified_at~ : String, updated_at~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agent_service_touch_heartbeat(Self, service_id~ : String, now~ : String) -> Result[Unit, String]
+pub fn SqliteStore::agent_service_upsert(Self, service_id~ : String, owner_agent~ : String, capabilities~ : String, transport~ : String, exposure~ : String, status~ : String, session_listen_addr? : String, session_token? : String, session_pid? : Int32, session_last_heartbeat? : String, created_at? : String, updated_at? : String) -> Result[Unit, String]
 pub fn SqliteStore::agents_acl_check(Self, agent_id~ : String, ns~ : String, write~ : Bool, current_pid~ : Int32) -> Result[Unit, String]
 pub fn SqliteStore::agents_acl_count_writable(Self, ns~ : String) -> Int32
 pub fn SqliteStore::agents_acl_ensure(Self, agent_id~ : String, ns~ : String, now~ : String) -> Result[Unit, String]
@@ -265,6 +291,7 @@ pub fn SqliteStore::challenge_pending_count(Self, String, String) -> Int32
 pub fn SqliteStore::challenge_total_count(Self) -> Int32
 pub fn SqliteStore::clear(Self) -> Unit
 pub fn SqliteStore::close(Self) -> Unit
+pub fn SqliteStore::count_executions(Self, String) -> (Int32, Int32)
 pub fn SqliteStore::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn SqliteStore::db_path_from_env(String?) -> String
 pub fn SqliteStore::default_db_path() -> String
@@ -343,6 +370,7 @@ pub fn StoreBackend::challenge_persisted(Self) -> Bool
 pub fn StoreBackend::challenge_total_count(Self) -> Int32
 pub fn StoreBackend::clear(Self) -> Unit
 pub fn StoreBackend::cost_stats(Self) -> @json.Json
+pub fn StoreBackend::count_executions(Self, task_id~ : String) -> (Int32, Int32)
 pub fn StoreBackend::create_task(Self, @core.Task) -> Result[Unit, String]
 pub fn StoreBackend::delete_heartbeat(Self, String) -> Result[Unit, String]
 pub fn StoreBackend::delete_task(Self, String) -> Result[Unit, String]

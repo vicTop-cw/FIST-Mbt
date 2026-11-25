@@ -18,7 +18,7 @@ AIGC:
 
 用户诉求：给 fist-mbt 做一个 GUI 聊天群——默认注册一批角色当聊天群成员；用户以聊天方式发布任务；后台由 dsh super agent 静默编排干活；fistagent 拉起服务时可选择入哪个群、注册什么角色。
 
-竞品调研结论：AI 群聊协作不是空白市场，产品形态已验证（智群 AgentTeam、AI 信息中转工作台）；可借鉴 AutoGen GroupChat（RoundRobin/Selector + GroupChatManager 主持）、ChatDev（虚拟软件公司多角色研讨会）、AgentMsgr（跨平台代理聚合层）。用户底牌：常驻 Agent 服务托管平台（agent_service 表 + 常驻网关 + API-key 认证 + 自动路由）、dsh super agent 静默编排、fistagent 带身份入群机制、170 个 MCP 工具底座。
+竞品调研结论：AI 群聊协作不是空白市场，产品形态已验证（智群 AgentTeam、AI 信息中转工作台）；可借鉴 AutoGen GroupChat（RoundRobin/Selector + GroupChatManager 主持）、ChatDev（虚拟软件公司多角色研讨会）、AgentMsgr（跨平台代理聚合层）。用户底牌：常驻 Agent 服务托管平台（agent_service 表 + 常驻网关 + API-key 认证 + 自动路由）、dsh super agent 静默编排、fistagent 带身份入群机制、170+ 个 MCP 工具底座。
 
 ## 工作项
 

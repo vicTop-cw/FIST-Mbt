@@ -196,6 +196,8 @@ pub fn register_supervisor_tools(@colmugx/mcp/server.MCPServer) -> @colmugx/mcp/
 
 pub fn render_board_ascii(Array[@core.Task], String) -> @json.Json
 
+pub fn render_butler_ascii(Array[@core.Task], String) -> @json.Json
+
 pub fn render_health_check(Array[@core.Task], String) -> @json.Json
 
 pub fn render_project_health(Array[@core.Task], String) -> @json.Json
