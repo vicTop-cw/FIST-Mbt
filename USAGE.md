@@ -702,6 +702,39 @@ python scripts/fist_gateway.py --service-id svc-<name> --port 18640 \
 
 **流转**：消息落盘 `inbox/*.json` → mcp-watcher fs watch 命中 `*.json` → webhook action POST 到 `endpoint`（载荷为 `tools/call execute`）→ 处理完成移 `processed/` → git 提交推送形成跨机回执闭环；失败重试 3 次后移 `.failed/`。触发与归档是 mcp-watcher 规则配置职责（fs watch + webhook action + 归档移动均为现成能力），fist-mbt 侧只约定本目录结构与消息格式。
 
+### 11.2 会话内嵌 worker（`fist agent`）
+
+**让 agent 在会话内后台常驻、自己去任务池领活**：轮询 → 领取 → 调用执行器 → 回写回执，
+不依赖 cron/schtasks/systemd，随会话拉起，重启从池子 + 状态文件恢复。
+能力面说明见 `docs/agent-service-skill.md`，计划卡见
+`fist-mbt/plan/active/2026-11-25-fist-agent-worker-issue1.md`。
+
+> 🔴 **当前可用性（2026-11-25 实测）：这一层尚未接线，命令在本机不可用。**
+>
+> | 项 | 读数 |
+> |---|---|
+> | P0 骨架代码 | 齐备（`cmd/cli/agent.mbt`，748 行：单实例锁 / 三态状态机 / 一轮 list→claim→packet / `--once` / `--dry-run`），但**未接进 CLI、未入 git 跟踪面** |
+> | `node dist/fist-mbt.js agent status` | `未知子命令: agent`，**rc=2**（产物构建早于骨架） |
+> | P1 执行器（`--executor` 模板 + 超时 + stdout/exit 收集） | **不存在**（全仓零命中，见 `reports/2026-11-25-T0r87-executor-writeback-inventory.md`） |
+> | P2 仓库池 / 跨机接线 | **不存在**；跨机介质伴生仓是空仓（见 `reports/2026-11-25-T0r89-crossmachine-pool-wiring-report.md`） |
+
+命令面（设计口径，接线后生效）：
+
+```bash
+fist agent serve [--once] [--dry-run]   # 取单实例锁 → 轮询一轮 → 常驻 / 单轮
+fist agent run                          # serve --once 的别名（跑一轮退出）
+fist agent status                       # 只读状态 / 日志尾（不改任何东西）
+fist agent stop                         # 标 stopped + 释放锁（不杀进程）
+```
+
+设计红线：**执行器外置**（worker 不内置 LLM）、**server 保持被动不改造**
+（worker 零 spawn server，只操作状态文件 + SQLite）。状态落 `<data_dir>/agent-service/`
+（跟 `FIST_DB_PATH` 改道走）；`--dry-run` 照读照算但不写状态、不改库；
+native 目标臂如实报「未实现」而不是静默回 OK。
+
+**现在就要「长期可调用」请用上一节那条线**（`agent_service_register` + `scripts/fist_gateway.py`），
+它已上线实弹；两者的分工见 `docs/agent-service-skill.md` §4。
+
 ---
 
 ## 12. 常见问题排查
