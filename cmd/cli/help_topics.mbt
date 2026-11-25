@@ -47,6 +47,8 @@ pub fn help_cli() -> String {
   "  fist serve       start MCP server (stdio). stdout = pure JSON-RPC.\n" +
   "  fist demo        7-state closed-loop demo, in-memory store\n" +
   "  fist doctor      5 health checks, read-only\n" +
+  "  fist agent       in-session worker: serve/run/status/stop (P0 skeleton,\n" +
+  "                   NOT wired into this build yet -> 'agent' is unknown here)\n" +
   "  fist help [t]    show help. topics: overview/cli/tools/mcp/plugins/install"
 }
 
