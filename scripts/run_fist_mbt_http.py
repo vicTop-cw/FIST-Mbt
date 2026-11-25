@@ -59,10 +59,35 @@ PORT = resolve_port(sys.argv[1:], os.environ)
 # 现役 MCP 入口产物：cmd/cli（cmd/main 已退役；曾经这里指着 target/js/release/cmd/main，
 # 那个路径在本仓根本不存在 ⇒ 每次都退到 `moon run cmd/cli`，而 moon run 重发的 ESM bundle
 # 没有 require shim ⇒ ReferenceError: require is not defined，桥接服务从来就没起过 server）。
+#
+# 2026-11-25（issue #1 P11 前置缺口）：这份候选表此前只有 `_build`/`target` 两个**构建缓存**位，
+# 于是「没有 _build、也没有 moon 的宿主形态」（跨机云机器 / 干净克隆）起桥即 FATAL。
+#
+# 顺序有意保持「构建位在前」：本机优先用刚构建出来的产物（`_build` 才追得上源码），
+# dist 只作**末位兜底**；`run_fist_mbt_web.py:67` 复用本常量做新鲜度检查
+# （`ensure_mcp_build()` 只看 `MAIN_CANDIDATES[0]`，缺失才补 `moon build`），
+# 把它指向 dist 会让那个门失去意义。入口解析链见 `resolve_server_js()`。
 MAIN_CANDIDATES = (
     Path("_build") / "js" / "debug" / "build" / "cmd" / "cli" / "cli.js",
     Path("target") / "js" / "release" / "build" / "cmd" / "cli" / "cli.js",
 )
+
+# dist/fist-mbt.js 是**随提交入库的发行快照**（`scripts/refresh_dist.py` 从 build 拷来，
+# `check_dist_snapshot.py` 三面守卫），不是构建缓存：克隆者拿到的这一份与本仓一致，
+# 而本机的 `_build` 只在本机构建后才存在。故它适合当**兜底**而非首选。
+DIST_SERVER_JS = Path("dist") / "fist-mbt.js"
+
+# 入口解析优先级（与 resolve_port 同族：显式覆盖 > 环境变量 > 候选链）。
+# FIST_SERVER_JS 让调用方**钉死**一个产物（跨机云机器常把发行快照放在非标准位置）；
+# 它是严格钉死而非「首选」：钉了不存在的路径就**报错退出**，不静默换回默认链
+# ——显式意图被悄悄替换，等于把「起的是哪份代码」这件事变成不可观测的。
+def resolve_server_js(env) -> list[Path]:
+    """入口解析链：FIST_SERVER_JS（显式钉死，最前）> _build > target > dist/fist-mbt.js。"""
+    raw = (env.get("FIST_SERVER_JS") or "").strip()
+    if raw:
+        p = Path(raw)
+        return [p if p.is_absolute() else ROOT / p]
+    return list(MAIN_CANDIDATES) + [DIST_SERVER_JS]
 
 # Pending requests awaiting response
 _response_queue: Queue = Queue()
@@ -142,10 +167,16 @@ class MCPBridge:
         曾经的两级回退都不可用：① 上一代入口的 release 产物路径——那个 cmd 目标已退役，且本仓
         根本没有那个路径；② `moon run cmd/cli` 会**重新发一遍** bundle，把 patch_esm_main
         注入的 shim 抹掉 ⇒ 起服即 `ReferenceError: require is not defined`。
+
+        2026-11-25（issue #1 P11 前置缺口）：候选表此前不含 `dist/fist-mbt.js` ⇒ 没有 _build、
+        也没有 moon 的宿主形态（跨机云机器、干净克隆）起桥即 FATAL。现在按
+        **FIST_SERVER_JS（显式钉死）> _build > target > dist/fist-mbt.js** 解析：
+        dist 放末位当兜底，本机构建位仍是首选（`_build` 才追得上源码）。
         """
-        for rel in MAIN_CANDIDATES:
-            js = ROOT / rel
+        tried = []
+        for js in resolve_server_js(os.environ):
             if not js.is_file():
+                tried.append(str(js))
                 continue
             # moonc ≥0.10.14 对可执行目标输出 ESM，mizchi/sqlite 的 JS 桩用 CJS require（幂等注入）
             import importlib.util
@@ -155,9 +186,11 @@ class MCPBridge:
             spec.loader.exec_module(mod)
             mod.patch(str(js))
             return [os.environ.get("FIST_NODE", "node"), str(js), "serve"]
+        # 报错点名**真试过的路径**（含 FIST_SERVER_JS 与 dist），不复述候选表——
+        # 两者不同时（显式钉了一个不存在的路径）复述表会指向错误的下一步。
         log.error(
-            "找不到 MCP 入口产物（试过的候选：%s）⇒ 先跑 `moon build --target js cmd/cli`",
-            ", ".join(str(c) for c in MAIN_CANDIDATES))
+            "找不到 MCP 入口产物（试过的路径：%s）⇒ 先跑 `moon build --target js cmd/cli`"
+            "（或设 FIST_SERVER_JS=<产物路径>）", ", ".join(tried))
         return None
 
     def _read_loop(self) -> None:
