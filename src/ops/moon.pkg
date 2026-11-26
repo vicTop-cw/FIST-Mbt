@@ -14,6 +14,11 @@ import {
   "vicTop-cw/fist-mbt/src/store",
 } for "test"
 
+// LoopStatus 的 5 个变体只由 `ops_loop_wbtest.mbt` 构造，生产侧尚无调用方
+// （结论见 ops_loop.mbt:21 的普查注释：不是死代码，是「已实现·待接线」）。
+// `moon check` 不编译测试单元 ⇒ 5 条 unused_constructor(6) 全为误报。
+warnings = "-unused_constructor"
+
 supported_targets = "js+native"
 
 options(

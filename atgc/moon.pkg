@@ -1,6 +1,10 @@
 import {
 }
 
+// `Num(Int32)` 是**故意不构造**的：见 vm.mbt:28 注释——补上构造入口会让
+// 「Num 当指令执行」变成可达路径，而那正是 run 里那条 Err 要挡的分支。
+warnings = "-unused_constructor"
+
 supported_targets = "js+native"
 
 options(
