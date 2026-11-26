@@ -3,6 +3,7 @@
 
 ///|
 /// 八角色
+#derive(Eq, Debug)
 pub enum Role {
   /// 人类指挥官（唯一拥有任务的最终主权）
   HumanSteward
@@ -22,7 +23,7 @@ pub enum Role {
   Observer
   /// 语料创建者（Omega 强验证：为本轮任务编写 Omega 语料）
   SpecAuthor
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Role with Eq::{not_equal, equal}

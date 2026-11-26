@@ -1,6 +1,10 @@
 import {
 }
 
+// Load / Store / Mod 是 `idea.md` Q2 未分配的**占位操作码**（codon.mbt:55-60 注释），
+// 保留以待 Q2 定案，故压制而非删除。
+warnings = "-unused_constructor"
+
 supported_targets = "js+native"
 
 options(

@@ -2,4 +2,10 @@ import {
   "vicTop-cw/fist-mbt/src/store",
 }
 
+// `moon check` 不编译测试单元 ⇒ 仅被 `constraint_wbtest.mbt` 构造的
+// WorldState / ActiveReservation / PlannedAction 被误报 struct_never_constructed(9)。
+// 这三者是引擎的**公开 API 面**（eval_* 全以它们为参数类型），按 constraint.mbt:28 的
+// 普查结论保留，不删。压制用助记名，避免编号随编译器版本漂移。
+warnings = "-struct_never_constructed"
+
 supported_targets = "js+native"
