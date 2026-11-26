@@ -17,6 +17,7 @@
 /// HTTP 响应」——P1.2 失败升级/重试时这两类值得不同对待（前者可重试、后者先查连通）。
 
 ///|
+#derive(Eq, Debug)
 pub enum OfmFailure {
   InvalidCredential
   RateLimit
@@ -24,7 +25,7 @@ pub enum OfmFailure {
   NetworkError
   BadRequest
   Unknown
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OfmFailure with Eq::{not_equal, equal}

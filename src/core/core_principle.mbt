@@ -4,11 +4,12 @@
 
 ///|
 /// 单条原则
+#derive(Eq, Debug)
 pub struct Principle {
   index : Int32
   title : String
   body : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Principle with Eq::{not_equal, equal}

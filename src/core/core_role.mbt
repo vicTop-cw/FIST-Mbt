@@ -89,10 +89,11 @@ pub fn Role::description(self : Role) -> String {
 
 ///|
 /// 每个任务的完整操作清单（仅保留 Omega 强验证相关 Action）
+#derive(Eq, Debug)
 pub enum Action {
   CreateSpec // 创建语料（Omega 强验证：语料创建者）
   ReviewSpec // 审核语料 / 复验成果（Omega 强验证：验证者）
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Action with Eq::{not_equal, equal}

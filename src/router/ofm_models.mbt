@@ -14,10 +14,11 @@
 ///   · `data` 为空数组 → `Ok(空清单)`（是否可用由调用方决定，parser 不越权）
 
 ///|
+#derive(Eq, Debug)
 pub struct OfmModel {
   id : String
   owned_by : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OfmModel with Eq::{not_equal, equal}

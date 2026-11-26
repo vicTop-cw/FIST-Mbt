@@ -3,4 +3,9 @@ import {
   "vicTop-cw/fist-mbt/src/constraint",
 }
 
+// 这两个依赖只被 `constraint_store_equiv_test.mbt` 使用：
+// `moon check` 不编译测试单元 ⇒ 会误报 unused_package（实测删掉后
+// 27 个 `package X is not imported` 错误）。故按名压制而非删依赖。
+warnings = "-unused_package"
+
 supported_targets = "js+native"

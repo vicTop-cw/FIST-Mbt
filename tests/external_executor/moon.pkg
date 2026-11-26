@@ -3,6 +3,9 @@ import {
   "vicTop-cw/fist-mbt/src/executor",
 }
 
+// 同上：仅 `external_executor_test.mbt` 使用 ⇒ check 阶段误报 unused_package。
+warnings = "-unused_package"
+
 supported_targets = "js+native"
 
 options(
