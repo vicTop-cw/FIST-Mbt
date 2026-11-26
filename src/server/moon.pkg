@@ -28,7 +28,9 @@ supported_targets = "js+native"
 // stdio_js/stdio_native 使用 io/js_async 等仅在各自 target 生效；
 // json 在 native 测试端不需要, 统一压制 unused_package。
 
-warnings = "-6-35"
+// 同上：旧写法 `-6` 是 unused_constructor、`-35` 是 reserved_keyword，
+// 都不含 unused_package(29)。改用助记名并补上真正需要的这一条。
+warnings = "-unused_package-reserved_keyword"
 
 options(
   targets: {

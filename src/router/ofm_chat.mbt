@@ -29,12 +29,13 @@ pub extend OfmChatMessage with Eq::{not_equal, equal}
 pub extend OfmChatMessage with @moonbitlang/core/debug.Debug::{to_repr}
 
 ///|
+#derive(Eq, Debug)
 pub struct OfmChatRequest {
   model : String
   messages : Array[OfmChatMessage]
   temperature : Double? // None = 不传该字段
   max_tokens : Int32?
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OfmChatRequest with Eq::{not_equal, equal}

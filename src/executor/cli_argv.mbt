@@ -178,6 +178,7 @@ pub fn build_command(
 /// `ok=false / exit_code=-1 / error_tail="timeout after 900000ms"` + 「不可用」提示——
 /// 而进程活着、产物与 diff 都在盘上。「没等到」与「没装」的处置完全相反
 /// （前者先验产物再决定要不要重派，后者去修环境），把前者报成后者会让人重派一单已经干完的活。
+#derive(Eq, Debug)
 pub enum CliFailure {
   NotExecutable
   Timeout
@@ -185,7 +186,7 @@ pub enum CliFailure {
   SignalKilled
   DispatchFailed
   Unknown
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend CliFailure with Eq::{not_equal, equal}

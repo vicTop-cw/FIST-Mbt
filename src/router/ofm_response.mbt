@@ -13,6 +13,7 @@
 
 ///|
 /// 解析结果：HTTP 状态 + 是否错误 + 错误信息/类型 + 成功正文 + 原始回体。
+#derive(Eq, Debug)
 pub struct OfmChatResponse {
   http_status : Int32
   is_error : Bool
@@ -20,7 +21,7 @@ pub struct OfmChatResponse {
   error_type : String
   content : String
   raw : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend OfmChatResponse with Eq::{not_equal, equal}

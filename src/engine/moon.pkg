@@ -21,7 +21,9 @@ import {
 
 supported_targets = "js+native"
 
-warnings = "-6" // multi-target unused_package suppression (align with server)
+// 用助记名而非数字：旧写法 `-6` 是 unused_constructor（本包无此告警），
+// 真正想压的 unused_package 是 29 ⇒ 旧写法等于压了个空，告警一直在。
+warnings = "-unused_package" // multi-target unused_package suppression (align with server)
 
 options(
   link: { "native": { "cc-link-flags": "-lsqlite3" } },

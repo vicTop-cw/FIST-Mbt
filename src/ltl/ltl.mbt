@@ -24,11 +24,12 @@ pub enum LtlFormula {
 
 ///|
 /// 监控结论
+#derive(Eq, Debug)
 pub enum Verdict {
   Hold // 属性在当前轨迹上已确定满足（对 safety/liveness 语义保守判定）
   Violated // 属性已被违反
   Unknown // 前缀不足，无法确定（需要更多状态）
-} derive(Eq, Debug)
+}
 
 ///|
 pub extend Verdict with Eq::{not_equal, equal}
