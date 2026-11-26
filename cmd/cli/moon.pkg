@@ -5,6 +5,7 @@ import {
   "moonbitlang/async/js_async",
   "moonbitlang/core/env",
   "moonbitlang/core/json",
+  "moonbitlang/core/debug",
 }
 
 pkgtype(kind: "executable")

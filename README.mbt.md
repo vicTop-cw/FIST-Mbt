@@ -11,7 +11,7 @@ FIST 指挥官任务分配体系——纯 MoonBit 实现，同时作为 MCP Serv
 
 ## 依赖
 
-- `mizchi/sqlite@0.3.1`（native 后端）
+- `daqing/sqlite@0.4.0`（native 后端；v0.3.10 起从 `mizchi/sqlite@0.3.1` 迁来）
 - `colmugx/mcp@0.17.4`
 - `moonbitlang/async@0.22.3`
 - `moonbitlang/x@0.5.5`

@@ -39,6 +39,11 @@ fn mc_tri_sample(
   b : Int32,
 ) -> (Int32, Int32) {
   let (s2, v) = mc_xorshift(state)
+  // 退化或反序区间（a >= b）：denom <= 0 ⇒ 两个分支的 sqrt 都可能取负 ⇒ NaN ⇒
+  // `ceil().to_int()` 对 NaN panic。三角分布在该点本身已退化，直接返回下界。
+  if a >= b {
+    return (s2, a)
+  }
   let denom = (b - a).to_double()
   let u = v.to_double() / 2147483648.0
   let dur = if u < (m - a).to_double() / denom {
