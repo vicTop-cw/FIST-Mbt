@@ -3300,7 +3300,18 @@ pub async fn run_server() -> Unit {
                   laya_sidecar_budget_ms,
                 ) {
                 Ok(res) => {
-                  let raw_n = laya_difficulty_score(res).round().to_int() + 2
+                  // BUG-26 同族未覆盖落点：旧写法 `score.round().to_int() + 2` 在
+                  // **钳位之前**做 Double→Int 转换 ⇒ 侧车给出 NaN / 超大值（异常模型
+                  // 输出、被截断的 JSON 数字）时先 panic，永远走不到下面的 [2,6] 钳位。
+                  // 先把 score 钳进 [0,4] 再转：对一切有限寻常值**结果完全等价**
+                  // （score+2 本来就要被钳进 [2,6]），而 NaN 比较恒假 ⇒ 落到中档 2.0。
+                  let score = laya_difficulty_score(res)
+                  let safe_score = if score >= 0.0 && score <= 4.0 {
+                    score
+                  } else {
+                    2.0
+                  }
+                  let raw_n = safe_score.round().to_int() + 2
                   let n = if raw_n < 2 {
                     2
                   } else if raw_n > 6 {
