@@ -9,13 +9,16 @@ import {
   // BUG-427 的接线格（bug427_strip_tail_wired）需要读源码断言实现真在。
   // 放主 import 而非 `for "test"`：实测 `for "test"` 在本包 wbtest 里不生效
   // （同 engine 包 BUG-413 踩过的坑：报 "Package fs not found in the loaded packages"）。
-  // 生产代码不使用它；本包未设 warnings 抑制，unused_package 若告警属预期。
   "moonbitlang/x/fs",
 }
 
 import {
   "moonbitlang/core/quickcheck",
 } for "wbtest"
+
+// `moon check` 不编译测试单元 ⇒ 仅被 wbtest 使用的 x/fs 会被误报 unused_package(29)。
+// 生产代码不使用它，故按名压制（助记名，不随编译器编号漂移）。
+warnings = "-unused_package"
 
 supported_targets = "js+native"
 

@@ -175,10 +175,12 @@ pub fn latest_url(repo : String, base_url : String) -> String {
   "https://api.github.com/repos/\{repo}/releases/latest"
 }
 
-///|
 /// 要不要进写盘流程（纯逻辑，可白盒锁）：
 ///   `--check`（check_only=true）永不写盘——阶段 A 只读；
 ///   否则**仅当** `远端 > 本地`（cmp>0）才进入阶段 B/C。
+///
+/// ⚠️ `moon check` 会报 unused_value(1)：唯一调用方是 `upgrade_wbtest.mbt:92-99`，
+/// 而 check **不编译测试单元** ⇒ 这是假阳性，**不要删**（删了 wbtest 立刻 5 个 unbound）。
 fn should_upgrade(cmp : Int32, check_only : Bool) -> Bool {
   cmp > 0 && !check_only
 }
