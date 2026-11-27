@@ -13,6 +13,38 @@ AIGC:
 
 本项目变更记录（参赛期间每日至少 1 条，保证提交可追踪）。
 
+## v0.3.16 (MoonBit 1.0rc 工具链适配 + store 测试幂等修复) - 2026-11-27
+
+### Changed
+
+- **依赖升级（1.0rc 工具链适配）**：`moonbitlang/async@0.22.3 → 0.22.11`
+  （当日发布的 1.0rc 适配版）、`vicTop-cw/RX-MBT@0.4.6 → 0.5.1`
+  （envelope 深度契约显式自守 + async 依赖迁 core，API 面不变）、
+  `vicTop-cw/mcp-watcher@0.2.3 → 0.2.5`（其 1.0rc 适配，全门禁绿）。
+  `daqing/sqlite` / `moonbitlang/x` / `colmugx/mcp` / `cc06b/mooncry` 保持现版
+  （1.0rc 下实测兼容，最小变更原则）。
+- **版本真源同步**：moon.mod `0.3.16` + `project_version`（BUG-16 单一真源锁）。
+
+### Fixed
+
+- **store 测试假红（跨运行数据污染）**：`multi_store_bug649_wbtest.mbt` 固定路径
+  `.fist-mbt/tmp/bug649-main.db` 每轮运行累积 T-BUG649 审计行（event_list 上限 10，
+  跑满 10 轮必红）；按 BUG-462 去共享约定改 `bug462_unique_db/unique_dir` 唯一路径
+  （连跑两轮验证绿）。
+
+### 验证（1.0rc 工具链 moon 0.1.20261126）
+
+- `moon check`：0 errors（85 warnings 为存量弃用警告）。
+- `moon test --target js`（权威门槛）：**2128/2128**。
+- `moon test --target wasm`：各包均声明 `supported_targets="js+native"`，
+  无 wasm 测试入口（0 tests）——本仓既有设计态，非 1.0rc 变化。
+- `moon test --target native`（本地 Windows）：被 1.0rc 工具链缺陷阻塞——
+  `cc-link-flags: "-lsqlite3"`（GNU 风格，16 处 moon.pkg 声明）被 Windows MSVC
+  linker 误译成 `/lsqlite3` 而忽略（LNK4044）⇒ `sqlite3_*` 全未解析（LNK2019）。
+  CI 的 native job 在 ubuntu 运行（GNU ld，不受影响）。如需本地 Windows native
+  恢复，可参照 mcp-watcher 的 `sqlite/vendor/sqlite3.lib` 直链约定
+  （涉及跨平台变更，本版本不动）。
+
 ## v0.3.11 (黑客松拒收六项整改收口 + 跨平台三修 BUG-507/508/509) - 2026-10-31
 
 ### 本轮性质：把「已修复」的叙述换成调用面上的行为锁

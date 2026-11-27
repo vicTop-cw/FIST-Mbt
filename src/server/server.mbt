@@ -1766,7 +1766,7 @@ fn executor_machine_merge(
 /// 漂移过程与活证据见 memory/bugs.md 的 BUG-16 条目）。现收敛到本常量；回归测试
 /// （src/server/fist-mbt_wbtest.mbt）逐字比对它与 moon.mod 里 version 的声明值，并断言本文件
 /// 不再残留任何硬编码版本字面量——所以这段说明本身也不写旧版本号，否则会被回归锁误伤。
-let project_version : String = "0.3.15"
+let project_version : String = "0.3.16"
 
 ///|
 /// —— 结果转换辅助 ——
@@ -8474,7 +8474,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "agent_service_register",
-    "**P0 定案 §1.2 register**：把发起方 agent 登记为常驻服务（静态登记，**不拉起进程**）。幂等：service_id 已存在则更新能力/传输/暴露档。登记即创建独立命名空间（ns=service_id 独立 SQLite 库）并向 owner agent 授予 can_write=true。**start 必须由对应 agent 手动调用**。参数：name(必填)、capabilities(可选能力标签数组)、transport(可选 mcp/cli/http，默认 mcp)、exposure(可选 local/lan/global，默认 local)、machine_id(可选主机标识)、by(可选发起方身份，默认 local)。返回 {service_id, status, ns, acl_granted, message}。",
+    "**P0 定案 §1.2 register**：把发起方 agent 登记为常驻服务（静态登记，**不拉起进程**）。幂等：service_id 已存在则更新能力/传输/暴露档。登记即创建独立命名空间（ns=service_id 独立 SQLite 库）并向 owner agent 授予 can_write=true。**start 必须由对应 agent 手动调用**。参数：name(必填)、capabilities(可选能力标签数组)、transport(可选 mcp/cli/http，默认 mcp)、exposure(可选 local/lan，默认 local)、machine_id(可选主机标识)、by(可选发起方身份，默认 local)。返回 {service_id, status, ns, acl_granted, message}。",
     schema(
       {
         "name": string_prop(
@@ -8487,7 +8487,7 @@ pub async fn run_server() -> Unit {
           "传输方式（可选：mcp / cli / http，默认 mcp）",
         ),
         "exposure": string_prop(
-          "暴露范围（可选：local / lan / global，默认 local）",
+          "暴露范围（可选：local / lan，默认 local）",
         ),
         "machine_id": string_prop(
           "主机标识（可选，P0 记录性字段）",
@@ -8516,10 +8516,10 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
-      if !["local", "lan", "global"].contains(exposure) {
+      if !["local", "lan"].contains(exposure) {
         return Err(
           @mcp_types.ToolError(
-            "agent_service_register: exposure 仅允许 local/lan/global",
+            "agent_service_register: exposure 仅允许 local/lan",
           ),
         )
       }
@@ -8596,7 +8596,7 @@ pub async fn run_server() -> Unit {
   s1 = instrumented_tool(
     s1,
     "agent_service_start",
-    "**P0 定案 §1.3 start**：由**对应 agent 手动调用**（Marvis 启动 Marvis 服务、freebuff 启动 freebuff 服务），将已注册服务置为 running。**禁止网关自动拉起无头 CLI**：本工具不 spawn 进程，只登记会话（listen_addr/session_token/pid/last_heartbeat 落库持久化）。暴露范围映射：local→127.0.0.1、lan→0.0.0.0、global→0.0.0.0:443（TLS 由 P1 网关承接）。参数：service_id(必填)。返回 {service_id, status, session_token, listen_addr, pid, message}。",
+    "**P0 定案 §1.3 start**：由**对应 agent 手动调用**（Marvis 启动 Marvis 服务、freebuff 启动 freebuff 服务），将已注册服务置为 running。**禁止网关自动拉起无头 CLI**：本工具不 spawn 进程，只登记会话（listen_addr/session_token/pid/last_heartbeat 落库持久化）。暴露范围映射：local→127.0.0.1、lan→0.0.0.0（global 档已于 T0r161 作为公网升级路径删除）。参数：service_id(必填)。返回 {service_id, status, session_token, listen_addr, pid, message}。",
     schema(
       {
         "service_id": string_prop("已注册的 service_id（必填）"),
@@ -8636,11 +8636,10 @@ pub async fn run_server() -> Unit {
           ),
         )
       }
-      // 暴露范围三档映射（定案 §4）
+      // 暴露范围两档映射（定案 §4；global 档已于 T0r161 作为公网升级路径删除）
       let listen_addr = match rec.exposure {
         "local" => "127.0.0.1:0"
         "lan" => "0.0.0.0:0"
-        "global" => "0.0.0.0:443"
         _ =>
           return Err(
             @mcp_types.ToolError(
@@ -8649,16 +8648,8 @@ pub async fn run_server() -> Unit {
           )
       }
       let now = now_default()
-      // ── P2 三级暴露升级路径（定案 §4.2：local→lan→global 逐级升级）──
-      // 禁止 local 一步直升 global：global 档必须已有「lan 档运行验证」记录。
-      if rec.exposure == "global" && rec.lan_verified_at.is_empty() {
-        return Err(
-          @mcp_types.ToolError(
-            "agent_service_start: 禁止 local 一步直升 global——须先以 lan 档 start 至少一次（升级路径 local→lan→global）",
-          ),
-        )
-      }
-      // lan 档首次 start：落 lan_verified_at，作为后续升级 global 的前置证据。
+      // lan 档首次 start：落 lan_verified_at（P2 升级路径的历史记录字段；global 档与其
+      // 升级校验已随公网面删除（T0r161），此字段只记录与回显，不再充当任何升级前置）。
       let mut lan_verified = rec.lan_verified_at
       if rec.exposure == "lan" && lan_verified.is_empty() {
         match
@@ -8676,10 +8667,10 @@ pub async fn run_server() -> Unit {
           Ok(_) => lan_verified = now
         }
       }
-      // ── P2 API-key（lan/global 强制；只存 sha256 哈希，明文仅生成当次回显一次）──
+      // ── P2 API-key（lan 强制；只存 sha256 哈希，明文仅生成当次回显一次；global 档已删 T0r161）──
       let mut api_key = ""
       let mut api_key_configured = false
-      if rec.exposure == "lan" || rec.exposure == "global" {
+      if rec.exposure == "lan" {
         if rec.api_key_hash.is_empty() {
           let bs = match @env.rand(32) {
             None =>
@@ -12775,7 +12766,8 @@ pub async fn run_server() -> Unit {
   )
 
   // BUG-493 前提变化（owner 2026-11-13「本地池子相关落地」指令）：`commissar_gc` 接线，
-  // 工具数 182→183。原否决理由「生产 0 使用者 ⇒ 收益为负」随本地消息池落地失效。
+  // 工具数 182→183（历史增量注记，非当前总数；当前工具数以
+  // scripts/_tool_registry.py 的注册表真源为准）。原否决理由「生产 0 使用者 ⇒ 收益为负」随本地消息池落地失效。
   // 为什么是**独立运维工具**而不是并进 `commissar_read`：读操作删文件是最坏的副作用类型
   // （两个客户端并发读会互相删掉对方还没读的）⇒ 清理必须由调用方显式选择保留条数。
   s1 = instrumented_tool(
