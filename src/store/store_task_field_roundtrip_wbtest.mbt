@@ -65,3 +65,113 @@ test "task_all_fields_round_trip_through_sqlite" {
     }
   }
 }
+
+///|
+/// T0r53：longrun 四列 · **create 路径** —— 非默认值必须逐字往返。
+///
+/// 为什么需要：R191 主格走 `Task::new`，而 longrun 四字段默认全空（""/""/0/[]），
+/// 在 sqlite 层**从未被验证过** —— INSERT 绑定位（21..24）若错位一格，字段会静默
+/// 互换或落默认值，主格不会红（R148 同类事故形状：位置参数接错不报错）。
+/// 本格四列各设**不同**的非默认值再逐字段比对：错位会让相邻字段「值互换」，
+/// 逐字段比对当场抓住，而不是等 longrun checkpoint/resume 真跑起来才暴露。
+test "task_longrun_fields_round_trip_create" {
+  let db = dc_unique_db("task_lr_fields_ct")
+  match SqliteStore::open(db) {
+    None => fail("open longrun create db failed")
+    Some(store) => {
+      let backend = StoreBackend::sqlite(store)
+      let t = @core.Task::new(
+        id="T-lr-ct-1",
+        project_dir="temp/lr-proj",
+        description="longrun 四列往返（create 路径）",
+        ns="lr-wbtest",
+        checkpoint_path="temp/lr-proj/.fist-mbt/longrun/T-lr-ct-1.json",
+        last_baton="{\"next_step\":\"resume\"}",
+        budget_used=42L,
+        idempotency_keys=["k-ct-1", "k-ct-2"],
+      )
+      match backend.create_task(t) {
+        Ok(_) => ()
+        Err(e) => fail("create_task failed: " + e)
+      }
+      match backend.get_task("T-lr-ct-1") {
+        None => fail("读不回来 —— 落库失败")
+        Some(b) => {
+          assert_eq(
+            b.checkpoint_path,
+            "temp/lr-proj/.fist-mbt/longrun/T-lr-ct-1.json",
+          )
+          assert_eq(b.last_baton, "{\"next_step\":\"resume\"}")
+          assert_eq(b.budget_used, 42L)
+          assert_eq(b.idempotency_keys.length(), 2)
+          assert_eq(b.idempotency_keys[0], "k-ct-1")
+          assert_eq(b.idempotency_keys[1], "k-ct-2")
+        }
+      }
+    }
+  }
+}
+
+///|
+/// T0r53：longrun 四列 · **update 路径** —— `update_task` 写回必须逐字往返。
+///
+/// UPDATE 绑定位（19..22 + WHERE id 占第 23 位）与 INSERT（21..24）**不同**，
+/// 本格是这半边唯一的行为锁：若 WHERE id 绑错位（idempotency_keys 槽拿到 id ⇒
+/// WHERE id=NULL）⇒ UPDATE 一行不改而 execute 仍报成功 ⇒ 四字段停在创建时的
+/// 默认值，逐字段比对必红（store_sqlite.mbt:1249 注释钉的正是这一事故形状，
+/// 但测试侧此前没有行为锁）。
+/// 写入走 core 的两个唯一出口（`with_longrun_checkpoint` 增量预算 +
+/// `idempotency_add` 追加键），顺带钉住「存储面不另立写路径」的口径。
+test "task_longrun_fields_round_trip_update" {
+  let db = dc_unique_db("task_lr_fields_up")
+  match SqliteStore::open(db) {
+    None => fail("open longrun update db failed")
+    Some(store) => {
+      let backend = StoreBackend::sqlite(store)
+      let t = @core.Task::new(
+        id="T-lr-up-1",
+        project_dir="temp/lr-proj",
+        description="longrun 四列往返（update 路径）",
+        ns="lr-wbtest",
+      )
+      match backend.create_task(t) {
+        Ok(_) => ()
+        Err(e) => fail("create_task failed: " + e)
+      }
+      match backend.get_task("T-lr-up-1") {
+        None => fail("读不回来 —— create 失败")
+        Some(cur) => {
+          let m = cur.with_longrun_checkpoint(
+            "temp/lr-proj/.fist-mbt/longrun/T-lr-up-1.json", "{\"next_step\":\"guard\"}",
+            42L, "2026-11-28T10:00:00Z",
+          )
+          let (m2, added) = m.idempotency_add("k-up-1", "2026-11-28T10:00:01Z")
+          assert_true(added)
+          match backend.update_task(m2) {
+            Ok(_) => ()
+            Err(e) => fail("update_task failed: " + e)
+          }
+          match backend.get_task("T-lr-up-1") {
+            None => fail("update 后读不回来")
+            Some(b) => {
+              assert_eq(
+                b.checkpoint_path,
+                "temp/lr-proj/.fist-mbt/longrun/T-lr-up-1.json",
+              )
+              assert_eq(b.last_baton, "{\"next_step\":\"guard\"}")
+              assert_eq(b.budget_used, 42L)
+              assert_eq(b.idempotency_keys.length(), 1)
+              assert_eq(b.idempotency_keys[0], "k-up-1")
+              // update 路径不得动其他列（WHERE 错位时其他列也不该变——一并钉住）
+              assert_eq(
+                b.description,
+                "longrun 四列往返（update 路径）",
+              )
+              assert_eq(b.ns, "lr-wbtest")
+            }
+          }
+        }
+      }
+    }
+  }
+}
