@@ -1,0 +1,8 @@
+import {
+  "vicTop-cw/vsql-mbt/core" @vsqlcore,
+  "vicTop-cw/vsql-mbt/analyze" @vsqlanalyze,
+}
+
+import {
+  "vicTop-cw/vsql-mbt/analyze" @vsqlanalyze,
+} for "test"

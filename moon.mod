@@ -33,4 +33,8 @@ import {
   "cc06b/mooncry@0.13.1",
   "vicTop-cw/RX-MBT@0.5.1",
   "vicTop-cw/mcp-watcher@0.2.5",
+  // vsql-w3-spike: vsql-mbt 本地 mooncakes 缓存依赖（.mooncakes/vicTop-cw/vsql-mbt，gitignore；
+  // 供 spike/vsql_preflight 在任务发布前跑 preflight 门。完整模块另需 x@0.5.9/async，FIST-Mbt 上下文锁 x@0.5.5，
+  // spike 只 import core+analyze，零第三方依赖，不升级 FIST-Mbt 的 x）。详见 reports/vsql-w3-spike.
+  "vicTop-cw/vsql-mbt@0.1.0",
 }

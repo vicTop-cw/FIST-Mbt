@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "vicTop-cw/fist-mbt/spike/vsql_preflight"
+
+// Values
+pub fn preflight_gate(String) -> GateResult
+
+pub fn scan_task(String) -> Result[Unit, String]
+
+// Errors
+
+// Types and methods
+pub struct GateResult {
+  ok : Bool
+  text : String
+}
+pub fn GateResult::GateResult(Bool, String) -> Self
+
+// Type aliases
+
+// Traits
